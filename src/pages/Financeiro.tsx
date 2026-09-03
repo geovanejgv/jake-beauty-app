@@ -123,7 +123,6 @@ export default function Financeiro() {
 
   const addMutation = useMutation({
     mutationFn: async (payload?: any) => {
-      // Aceita payload direto (do Scanner) ou dos estados do form manual
       const dataToSave = payload || {
         description: desc, amount: parseFloat(String(amount).replace(',', '.')), 
         finance_date: financeDate, type: financeType, category, is_recurring: isRecurring, 
@@ -183,23 +182,19 @@ export default function Financeiro() {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
 
-  // ================= LÓGICA DO ESCANER (CÂMERA/ARQUIVO) =================
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Inicia a animação de escaneamento
     setIsScanning(true);
     setActionMenuDate(null);
 
-    // Simulação da Inteligência Artificial (Aguarde 2.5 segundos)
     setTimeout(() => {
       setIsScanning(false);
-      // Aqui os dados viriam da API de OCR. Estamos mockando para abrir a tela de confirmação perfeitamente.
       setScannedData({
         description: 'Boleto Digitalizado',
         amount: '145,90',
-        finance_date: new Date(new Date().setDate(new Date().getDate() + 3)).toISOString().split('T')[0], // Daqui a 3 dias
+        finance_date: new Date(new Date().setDate(new Date().getDate() + 3)).toISOString().split('T')[0], 
         receiver_name: 'ENEL DISTRIBUICAO SAO PAULO',
         barcode: '8468000000145900001000000000000000000000',
         type: 'expense',
@@ -207,7 +202,6 @@ export default function Financeiro() {
       });
     }, 2500);
 
-    // Limpa o input para poder enviar o mesmo arquivo de novo se necessário
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -231,7 +225,6 @@ export default function Financeiro() {
     navigator.clipboard.writeText(text);
     alert('Código copiado!');
   };
-  // ======================================================================
 
   const renderFinanceRow = (item: any) => {
     const isIncome = item.type === 'income';
@@ -285,7 +278,6 @@ export default function Financeiro() {
   return (
     <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3 pb-4 relative">
       
-      {/* HEADER SLIM */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 shrink-0">
         <div>
           <h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Calendário Financeiro</h2>
@@ -306,18 +298,15 @@ export default function Financeiro() {
           </div>
           
           <div className="flex space-x-2 h-8">
-            {/* NOVO: BOTÃO DE ESCANEAR CONTA QUE ABRE CÂMERA/ARQUIVOS */}
             <input type="file" accept="image/*,application/pdf" capture="environment" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
             <button onClick={() => fileInputRef.current?.click()} className="bg-slate-800 text-white px-3 rounded-lg font-bold hover:bg-slate-900 transition-colors flex items-center space-x-1.5 shadow-sm text-xs" title="Tirar foto ou enviar PDF da conta">
               <Camera size={14} /> <span className="hidden sm:inline">Escanear Conta</span>
             </button>
-
             <button onClick={() => openAddModalForType('expense', safeSelectedDate)} className="bg-rose-600 text-white px-3 rounded-lg font-bold hover:bg-rose-700 transition-colors flex items-center space-x-1.5 shadow-sm text-xs"><Plus size={14} /> <span className="hidden sm:inline">Lançamento</span></button>
           </div>
         </div>
       </div>
 
-      {/* DASHBOARD EXECUTIVO */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4 shrink-0">
         <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
           <div><p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Caixa Real</p><p className={`text-base md:text-xl font-black ${metrics.netRealCash >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(metrics.netRealCash)}</p></div><div className="bg-slate-50 p-2 md:p-3 rounded-lg text-slate-600 hidden sm:block"><Wallet size={20} /></div>
@@ -333,7 +322,6 @@ export default function Financeiro() {
         </div>
       </div>
 
-      {/* ÁREA DO CALENDÁRIO */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col min-h-0 overflow-hidden w-full">
         <div className="py-2 px-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between text-slate-600 font-medium shrink-0 text-sm">
           <div className="flex items-center space-x-2"><Calendar size={16} /> <span>{viewMode === 'day' && `Contas do dia ${safeSelectedDate.split('-').reverse().join('/')}`} {viewMode === 'week' && `Contas da Semana`} {viewMode === 'month' && `Contas do Mês (${new Date(safeSelectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })})`}</span></div>
@@ -384,9 +372,16 @@ export default function Financeiro() {
                         const isComp = item.is_completed ?? false; const isInc = item.type === 'income';
                         let bgClass = isInc ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800';
                         if (isComp) bgClass = 'bg-slate-100 border-slate-200 text-slate-400 line-through opacity-60';
+
+                        // AQUI ESTÁ A ALTERAÇÃO DO TESTE (Valor aparecendo na visão mensal)
                         return (
-                          <div key={item.id} onClick={(e) => { e.stopPropagation(); setEditingItem(item); }} className={`p-1 rounded border text-[9px] font-bold truncate cursor-pointer transition-all flex items-center justify-between ${bgClass}`} title={`${item.description} - R$ ${item.amount}`}>
-                            <span className="truncate flex items-center gap-0.5">{isInc ? <ArrowUpCircle size={8}/> : <ArrowDownCircle size={8}/>} {item.description}</span>
+                          <div key={item.id} onClick={(e) => { e.stopPropagation(); setEditingItem(item); }} className={`p-1 rounded border text-[9px] cursor-pointer transition-all flex items-center justify-between ${bgClass}`} title={`${item.description} - R$ ${item.amount}`}>
+                            <span className="truncate flex items-center gap-0.5 font-bold">
+                              {isInc ? <ArrowUpCircle size={8} className="shrink-0"/> : <ArrowDownCircle size={8} className="shrink-0"/>} {item.description}
+                            </span>
+                            <span className="shrink-0 ml-1 font-black tracking-tighter">
+                              R$ {parseFloat(item.amount || 0).toFixed(2)}
+                            </span>
                           </div>
                         );
                       })}
@@ -399,7 +394,6 @@ export default function Financeiro() {
         )}
       </div>
 
-      {/* ANIMAÇÃO DE CARREGAMENTO DO SCANNER */}
       {isScanning && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 z-[60]">
           <div className="bg-white p-6 rounded-2xl flex flex-col items-center max-w-sm w-full animate-in zoom-in-95 shadow-2xl">
@@ -413,7 +407,6 @@ export default function Financeiro() {
         </div>
       )}
 
-      {/* TELA DE CONFIRMAÇÃO DO SCANNER INTELIGENTE */}
       {scannedData && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-in slide-in-from-bottom-4">
@@ -445,7 +438,6 @@ export default function Financeiro() {
         </div>
       )}
 
-      {/* MENU RÁPIDO */}
       {actionMenuDate && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-40" onClick={() => setActionMenuDate(null)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-xs w-full p-4 space-y-2 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
@@ -453,12 +445,14 @@ export default function Financeiro() {
             <button onClick={() => { fileInputRef.current?.click(); setActionMenuDate(null); }} className="w-full flex items-center gap-3 p-3.5 bg-slate-800 text-white hover:bg-slate-900 rounded-xl font-bold transition-colors shadow-sm"><Camera size={20}/> Escanear Arquivo</button>
             <button onClick={() => openAddModalForType('income', actionMenuDate)} className="w-full flex items-center gap-3 p-3.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl font-bold transition-colors mt-2"><ArrowUpCircle size={20}/> Adicionar Receita</button>
             <button onClick={() => openAddModalForType('expense', actionMenuDate)} className="w-full flex items-center gap-3 p-3.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl font-bold transition-colors"><ArrowDownCircle size={20}/> Adicionar Despesa</button>
+            <button onClick={() => { setViewMode('day'); setSelectedDate(actionMenuDate); setActionMenuDate(null); }} className="w-full flex items-center gap-3 p-3.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl font-bold transition-colors">
+              <LayoutList size={20}/> Ver Detalhes do Dia
+            </button>
             <button onClick={() => setActionMenuDate(null)} className="w-full p-2.5 mt-2 text-slate-400 hover:text-slate-600 font-medium text-sm">Cancelar</button>
           </div>
         </div>
       )}
 
-      {/* MODAL ADICIONAR MANUAL */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
@@ -483,7 +477,6 @@ export default function Financeiro() {
         </div>
       )}
 
-      {/* MODAL EDITAR */}
       {editingItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -491,7 +484,6 @@ export default function Financeiro() {
               <div><h3 className="text-xl font-bold text-slate-800">Editar Conta</h3>{editingItem.is_completed && <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Baixado</span>}</div>
               <div className="flex gap-1"><button onClick={() => setItemToDelete(editingItem)} className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg"><Trash2 size={20}/></button><button onClick={() => setEditingItem(null)} className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg"><X size={20}/></button></div>
             </div>
-            
             <form onSubmit={(e) => {
               e.preventDefault(); const form = e.currentTarget;
               const data = {
@@ -505,20 +497,15 @@ export default function Financeiro() {
               };
               updateMutation.mutate({ id: editingItem.id, data });
             }} className="space-y-4">
-              
               {editingItem.receiver_name && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Recebedor</label><input name="editReceiver" defaultValue={editingItem.receiver_name} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm font-medium bg-slate-50 text-slate-600" /></div>
               )}
-              
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Descrição</label><input name="editDesc" defaultValue={editingItem.description} required className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm" /></div>
-              
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input name="editAmount" defaultValue={String(editingItem.amount).replace('.', ',')} required className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm font-bold" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Data</label><input type="date" name="editDate" defaultValue={editingItem.finance_date} required className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm" /></div>
               </div>
-              
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Categoria</label><select name="editCategory" defaultValue={editingItem.category || 'Geral'} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm bg-white font-medium"><option value="Geral">Geral</option><option value="Fixas">Despesa Fixa</option><option value="Variáveis">Despesa Variável</option><option value="Investimentos">Investimento</option><option value="Clientes">Receita de Clientes</option></select></div>
-              
               {editingItem.barcode && (
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <label className="block text-xs font-bold text-slate-500 mb-1">Código de Barras / PIX</label>
@@ -528,9 +515,7 @@ export default function Financeiro() {
                   </div>
                 </div>
               )}
-
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Observações</label><textarea name="editNotes" defaultValue={editingItem.notes || ''} rows={2} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-xs resize-none" /></div>
-              
               <div className="pt-2"><button type="button" onClick={() => toggleStatusMutation.mutate({ id: editingItem.id, currentStatus: editingItem.is_completed })} className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors ${editingItem.is_completed ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : editingItem.type === 'income' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-rose-100 text-rose-700 hover:bg-rose-200'}`}>{editingItem.is_completed ? <><X size={18}/> Desfazer Baixa</> : <><CheckCircle size={18}/> Marcar como {editingItem.type === 'income' ? 'Recebido' : 'Pago'}</>}</button></div>
               <div className="flex space-x-3 pt-2"><button type="button" onClick={() => setEditingItem(null)} className="w-1/2 border p-2.5 rounded-xl text-slate-500 font-medium text-sm">Cancelar</button><button type="submit" disabled={updateMutation.isPending} className="w-1/2 bg-slate-800 hover:bg-slate-900 text-white p-2.5 rounded-xl font-bold text-sm shadow-sm">Atualizar Conta</button></div>
             </form>
