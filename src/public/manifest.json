@@ -1,0 +1,9 @@
+{
+  "name": "Jake Beauty",
+  "short_name": "Jake Beauty",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#e11d48",
+  "orientation": "portrait"
+}
