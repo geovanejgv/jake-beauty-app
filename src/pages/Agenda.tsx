@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -22,8 +22,9 @@ export default function Agenda() {
   const [showAppointments, setShowAppointments] = useState(true);
   const [showReminders, setShowReminders] = useState(true);
 
+  // Celular e tablet (abaixo de 1024px) abrem na visão semanal; computador abre na mensal
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>(
-    window.innerWidth < 768 ? 'day' : 'month'
+    window.innerWidth < 1024 ? 'week' : 'month'
   );
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -444,6 +445,12 @@ export default function Agenda() {
     );
   };
 
+  // Na visão semanal, rola a faixa de dias até o dia de hoje (útil no celular, onde a semana não cabe inteira)
+  useEffect(() => {
+    if (viewMode !== 'week' || isLoading) return;
+    document.querySelector('[data-today]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }, [viewMode, isLoading, selectedDate]);
+
   return (
     <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 shrink-0">
@@ -498,7 +505,7 @@ export default function Agenda() {
               const dayEvents = filteredEvents.filter((ev: any) => ev.event_date === dateStr);
               const isToday = dateStr === todayStr; const dateObj = new Date(dateStr + 'T00:00:00');
               return (
-                <div key={dateStr} onClick={() => setActionMenuDate(dateStr)} className={`flex flex-col bg-white min-w-[150px] flex-1 cursor-pointer hover:bg-rose-50/20 transition-colors ${isToday ? 'ring-2 ring-rose-500 ring-inset' : ''}`}>
+                <div key={dateStr} data-today={isToday || undefined} onClick={() => setActionMenuDate(dateStr)} className={`flex flex-col bg-white min-w-[150px] flex-1 cursor-pointer hover:bg-rose-50/20 transition-colors ${isToday ? 'ring-2 ring-rose-500 ring-inset' : ''}`}>
                   <div className={`py-1.5 text-center border-b border-slate-200 shrink-0 ${isToday ? 'bg-rose-600 text-white font-bold' : 'bg-slate-100 text-slate-700'}`}><p className="text-[10px] tracking-wider uppercase">{dateObj.toLocaleDateString('pt-BR', { weekday: 'short' })}</p><p className="text-xs font-extrabold">{dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</p></div>
                   <div className="p-1.5 space-y-1.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
                     {dayEvents.length === 0 ? <p className="text-[10px] text-slate-300 text-center py-4 italic">Livre</p> : dayEvents.map((ev: any) => {
