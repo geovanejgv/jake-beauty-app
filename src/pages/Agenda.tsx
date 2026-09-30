@@ -303,7 +303,8 @@ export default function Agenda() {
 
   const getWeekDates = (dateStr: string) => {
     const curr = new Date(dateStr + 'T00:00:00'); const day = curr.getDay(); const diff = curr.getDate() - day + (day === 0 ? -6 : 1); const week = [];
-    for (let i = 0; i < 7; i++) { week.push(new Date(curr.setDate(diff + i)).toISOString().split('T')[0]); } return week;
+    // Usa uma cópia a cada dia: alterar "curr" direto fazia a semana pular de mês na virada (ex.: 01/10 -> 01/11)
+    for (let i = 0; i < 7; i++) { const d = new Date(curr); d.setDate(diff + i); week.push(d.toISOString().split('T')[0]); } return week;
   };
 
   const getMonthDates = (dateStr: string) => {
@@ -517,7 +518,7 @@ export default function Agenda() {
                       if (ev.is_block) return (
                         <div key={`block-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditBlockModal(ev); }} className="p-1.5 rounded border text-[10px] transition-all bg-slate-100 border-slate-300 text-slate-500 opacity-90 cursor-pointer hover:bg-slate-200">
                           <div className="flex justify-between items-center font-bold mb-0.5"><span className="flex items-center"><Lock size={10} className="mr-1" /> {hour}:{min} - {endH}:{endM}</span></div>
-                          <p className="font-bold truncate">{ev.block_reason}</p>
+                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words">{ev.block_reason}</p>
                         </div>
                       );
                       
@@ -530,7 +531,7 @@ export default function Agenda() {
                              </span>
                              <button onClick={(e) => { e.stopPropagation(); setAppointmentToDelete(ev); }} className="opacity-50 hover:opacity-100 hover:text-red-500" title="Excluir Lembrete"><Trash2 size={10} /></button>
                           </div>
-                          <p className="font-bold truncate">{ev.clients?.name}</p>
+                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words">{ev.clients?.name}</p>
                           {ev.return_reminder_sent_at && (
                             <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded mt-0.5 uppercase font-bold flex items-center gap-0.5 w-max">
                               <CheckCircle size={8}/> {new Date(ev.return_reminder_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
@@ -548,7 +549,7 @@ export default function Agenda() {
                             <span>{hour}:{min}</span>
                             <button onClick={(e) => { e.stopPropagation(); setAppointmentToDelete(ev); }} className="opacity-50 hover:opacity-100 hover:text-red-500"><Trash2 size={10} /></button>
                           </div>
-                          <p className="font-bold truncate">{ev.clients?.name}</p>
+                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words">{ev.clients?.name}</p>
                           {ev.whatsapp_sent_at && (
                             <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded mt-0.5 uppercase font-bold flex items-center gap-0.5 w-max">
                               <CheckCircle size={8}/> {new Date(ev.whatsapp_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
