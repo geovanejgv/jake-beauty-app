@@ -448,14 +448,14 @@ export default function Agenda() {
 
   // Na visão semanal, rola a faixa de dias até o dia de hoje (útil no celular, onde a semana não cabe inteira)
   useEffect(() => {
-    if (viewMode !== 'week' || isLoading) return;
+    if (viewMode !== 'week' || isLoading || window.innerWidth < 768) return;
     document.querySelector('[data-today]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
   }, [viewMode, isLoading, selectedDate]);
 
   return (
     <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 shrink-0">
-        <div><h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Agenda Conectada</h2></div>
+        <div className="hidden md:block"><h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Agenda Conectada</h2></div>
         
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <div className="bg-slate-200 p-0.5 rounded-lg flex items-center space-x-0.5">
@@ -501,14 +501,17 @@ export default function Agenda() {
              {filteredEvents.length === 0 ? <div className="text-center text-slate-400 py-12">Livre.</div> : filteredEvents.map((ev: any) => renderEventRow(ev))}
           </div>
         ) : viewMode === 'week' ? (
-          <div className="flex-1 flex min-h-0 divide-x divide-slate-200 bg-slate-50 overflow-x-auto">
-            {weekDates.map((dateStr) => {
+          // Celular (abaixo de 768px): semana em duas linhas que dividem a altura da tela,
+          // Seg a Qui em cima (4 colunas) e Sex a Dom embaixo (3 colunas), sem rolagem lateral.
+          // Tablet e computador: faixa única de 7 colunas com rolagem lateral.
+          <div className="flex-1 min-h-0 grid grid-cols-12 grid-rows-2 gap-px bg-slate-200 md:flex md:gap-0 md:divide-x md:divide-slate-200 md:bg-slate-50 md:overflow-x-auto">
+            {weekDates.map((dateStr, dayIndex) => {
               const dayEvents = filteredEvents.filter((ev: any) => ev.event_date === dateStr);
               const isToday = dateStr === todayStr; const dateObj = new Date(dateStr + 'T00:00:00');
               return (
-                <div key={dateStr} data-today={isToday || undefined} onClick={() => setActionMenuDate(dateStr)} className={`flex flex-col bg-white min-w-[150px] flex-1 cursor-pointer hover:bg-rose-50/20 transition-colors ${isToday ? 'ring-2 ring-rose-500 ring-inset' : ''}`}>
+                <div key={dateStr} data-today={isToday || undefined} onClick={() => setActionMenuDate(dateStr)} className={`flex flex-col bg-white min-w-0 min-h-0 ${dayIndex < 4 ? 'col-span-3' : 'col-span-4'} md:min-w-[150px] md:flex-1 cursor-pointer hover:bg-rose-50/20 transition-colors ${isToday ? 'ring-2 ring-rose-500 ring-inset' : ''}`}>
                   <div className={`py-1.5 text-center border-b border-slate-200 shrink-0 ${isToday ? 'bg-rose-600 text-white font-bold' : 'bg-slate-100 text-slate-700'}`}><p className="text-[10px] tracking-wider uppercase">{dateObj.toLocaleDateString('pt-BR', { weekday: 'short' })}</p><p className="text-xs font-extrabold">{dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</p></div>
-                  <div className="p-1.5 space-y-1.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+                  <div className="p-1 space-y-1 md:p-1.5 md:space-y-1.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
                     {dayEvents.length === 0 ? <p className="text-[10px] text-slate-300 text-center py-4 italic">Livre</p> : dayEvents.map((ev: any) => {
                       const hour = new Date(ev.start_time).getHours().toString().padStart(2, '0');
                       const min = new Date(ev.start_time).getMinutes().toString().padStart(2, '0');
@@ -516,14 +519,14 @@ export default function Agenda() {
                       const endM = new Date(ev.end_time).getMinutes().toString().padStart(2, '0');
 
                       if (ev.is_block) return (
-                        <div key={`block-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditBlockModal(ev); }} className="p-1.5 rounded border text-[10px] transition-all bg-slate-100 border-slate-300 text-slate-500 opacity-90 cursor-pointer hover:bg-slate-200">
+                        <div key={`block-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditBlockModal(ev); }} className="p-1 md:p-1.5 rounded border text-[10px] transition-all bg-slate-100 border-slate-300 text-slate-500 opacity-90 cursor-pointer hover:bg-slate-200">
                           <div className="flex justify-between items-center font-bold mb-0.5"><span className="flex items-center"><Lock size={10} className="mr-1" /> {hour}:{min} - {endH}:{endM}</span></div>
-                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words">{ev.block_reason}</p>
+                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words max-md:tracking-tight">{ev.block_reason}</p>
                         </div>
                       );
                       
                       if (ev.is_reminder_event) return (
-                        <div key={`rem-${ev.id}`} onClick={(e) => { e.stopPropagation(); handleSendReminderWhatsApp(ev); }} className={`p-1.5 rounded border text-[10px] transition-all cursor-pointer bg-indigo-50 border-indigo-200 text-indigo-900 font-bold hover:bg-indigo-100 flex flex-col ${ev.is_recurring ? 'animate-pulse hover:animate-none' : ''}`}>
+                        <div key={`rem-${ev.id}`} onClick={(e) => { e.stopPropagation(); handleSendReminderWhatsApp(ev); }} className={`p-1 md:p-1.5 rounded border text-[10px] transition-all cursor-pointer bg-indigo-50 border-indigo-200 text-indigo-900 font-bold hover:bg-indigo-100 flex flex-col ${ev.is_recurring ? 'animate-pulse hover:animate-none' : ''}`}>
                           <div className="flex justify-between items-center mb-0.5">
                              <span className="flex items-center text-indigo-600">
                                <CalendarHeart size={10} className="mr-1"/> Retorno
@@ -531,7 +534,7 @@ export default function Agenda() {
                              </span>
                              <button onClick={(e) => { e.stopPropagation(); setAppointmentToDelete(ev); }} className="opacity-50 hover:opacity-100 hover:text-red-500" title="Excluir Lembrete"><Trash2 size={10} /></button>
                           </div>
-                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words">{ev.clients?.name}</p>
+                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words max-md:tracking-tight">{ev.clients?.name}</p>
                           {ev.return_reminder_sent_at && (
                             <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded mt-0.5 uppercase font-bold flex items-center gap-0.5 w-max">
                               <CheckCircle size={8}/> {new Date(ev.return_reminder_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
@@ -544,12 +547,12 @@ export default function Agenda() {
                       let itemClass = 'bg-rose-50 border-rose-200 text-rose-900 font-bold hover:bg-rose-100';
                       if (isCompleted) itemClass = 'bg-slate-100 text-slate-400 line-through border-slate-200'; else if (isCancelled) itemClass = 'bg-slate-50 text-slate-400 line-through border-slate-200 opacity-60'; else if (isNoShow) itemClass = 'bg-amber-50 text-amber-600 line-through border-amber-200 opacity-70';
                       return (
-                        <div key={`apt-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-1.5 rounded border text-[10px] transition-all cursor-pointer flex flex-col ${itemClass}`}>
+                        <div key={`apt-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-1 md:p-1.5 rounded border text-[10px] transition-all cursor-pointer flex flex-col ${itemClass}`}>
                           <div className="flex justify-between items-center mb-0.5">
                             <span>{hour}:{min}</span>
                             <button onClick={(e) => { e.stopPropagation(); setAppointmentToDelete(ev); }} className="opacity-50 hover:opacity-100 hover:text-red-500"><Trash2 size={10} /></button>
                           </div>
-                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words">{ev.clients?.name}</p>
+                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words max-md:tracking-tight">{ev.clients?.name}</p>
                           {ev.whatsapp_sent_at && (
                             <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded mt-0.5 uppercase font-bold flex items-center gap-0.5 w-max">
                               <CheckCircle size={8}/> {new Date(ev.whatsapp_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
