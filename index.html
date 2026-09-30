@@ -17,6 +17,16 @@
     <link rel="manifest" href="/manifest.json">
 
     <title>Jake Beauty</title>
+
+    <!-- Aplica o tema salvo antes de renderizar, evitando o "piscar" do modo claro -->
+    <script>
+      try {
+        var t = localStorage.getItem('jb-theme');
+        if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

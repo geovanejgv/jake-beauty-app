@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, ShoppingCart, Users, LogOut, DollarSign, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, ShoppingCart, Users, LogOut, DollarSign, Menu, X, ChevronLeft, ChevronRight, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../hooks/useTheme';
 
 export default function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
+  const themeLabel = isDark ? 'Modo Claro' : 'Modo Escuro';
+  const ThemeIcon = isDark ? Sun : Moon;
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   // Estado que controla se o menu do PC está largo ou apenas com os ícones
@@ -63,6 +68,15 @@ export default function MainLayout() {
         {/* Rodapé: Botões de Sair e Recolher */}
         <div className="p-4 border-t border-slate-100 space-y-2 shrink-0">
           <button 
+            onClick={toggleTheme} 
+            title={isCollapsed ? themeLabel : ""}
+            className={`flex items-center w-full text-slate-500 hover:bg-slate-100 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
+          >
+            <ThemeIcon size={22} className="shrink-0" /> 
+            {!isCollapsed && <span className="whitespace-nowrap font-medium">{themeLabel}</span>}
+          </button>
+
+          <button 
             onClick={handleLogout} 
             title={isCollapsed ? "Sair do Sistema" : ""}
             className={`flex items-center w-full text-red-500 hover:bg-red-50 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
@@ -88,9 +102,14 @@ export default function MainLayout() {
         {/* Cabeçalho que aparece só no celular */}
         <header className="bg-white p-4 flex justify-between items-center border-b border-slate-200 shadow-sm md:hidden shrink-0 z-30">
           <h1 className="text-xl font-black text-rose-600">Jake Beauty</h1>
-          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-600">
-            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+          <div className="flex items-center">
+            <button onClick={toggleTheme} className="p-2 text-slate-600" title={themeLabel} aria-label={themeLabel}>
+              <ThemeIcon size={22} />
+            </button>
+            <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-600">
+              {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
         </header>
 
         {/* Menu Dropdown do Celular */}
