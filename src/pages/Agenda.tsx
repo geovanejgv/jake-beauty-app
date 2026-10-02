@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useNetworkState } from 'react-use';
 import { useNavigate } from 'react-router-dom';
@@ -32,6 +32,10 @@ export default function Agenda() {
 
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [selectedClient, setSelectedClient] = useState<any>(null);
+  // Atalho "Nova cliente" dentro do modal de agendamento
+  const [showNewClientForm, setShowNewClientForm] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
   const [serviceName, setServiceName] = useState('');
   const [servicePrice, setServicePrice] = useState('65,00');
   const [appointmentDate, setAppointmentDate] = useState(todayStr);
@@ -67,6 +71,23 @@ export default function Agenda() {
       if (error) throw error;
       return data || [];
     }
+  });
+
+  // Cadastra a cliente na hora e já a seleciona no agendamento
+  const addClientMutation = useMutation({
+    mutationFn: async (client: { name: string; phone: string }) => {
+      const { data, error } = await supabase.from('clients').insert([client]).select('id, name, phone').single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (client: any) => {
+      queryClient.invalidateQueries({ queryKey: ['clients-list-agenda'] });
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      setSelectedClient(client);
+      setClientSearchTerm('');
+      closeNewClientForm();
+    },
+    onError: (error: any) => alert(`Ops! Não foi possível cadastrar a cliente: ${error.message}`)
   });
 
   const addAppointmentMutation = useMutation({
@@ -201,7 +222,37 @@ export default function Agenda() {
     setBlockReason('Almoço');
   };
 
+  // Máscara (11) 99999-9999, igual à tela de Clientes
+  const formatPhoneInput = (raw: string) => {
+    let value = raw.replace(/\D/g, '').slice(0, 11);
+    if (value.length > 2) value = `(${value.substring(0, 2)}) ${value.substring(2)}`;
+    if (value.length > 10) value = `${value.substring(0, 10)}-${value.substring(10)}`;
+    return value;
+  };
+
+  // Abre o mini cadastro já preenchido com o que foi digitado na busca (nome ou telefone)
+  const openNewClientForm = () => {
+    const term = clientSearchTerm.trim();
+    const isPhone = term !== '' && /^[\d\s()+-]+$/.test(term);
+    setNewClientName(isPhone ? '' : term);
+    setNewClientPhone(isPhone ? formatPhoneInput(term) : '');
+    setShowNewClientForm(true);
+  };
+
+  const closeNewClientForm = () => {
+    setShowNewClientForm(false);
+    setNewClientName('');
+    setNewClientPhone('');
+  };
+
+  const handleSaveNewClient = () => {
+    const name = newClientName.trim();
+    if (!name) return alert('Informe o nome da cliente.');
+    addClientMutation.mutate({ name, phone: newClientPhone });
+  };
+
   const openAddModalForType = (type: 'appointment' | 'reminder', dateStr?: string) => {
+    closeNewClientForm();
     setAppointmentType(type);
     setIsRecurring(false);
     if (dateStr) setAppointmentDate(dateStr);
@@ -680,17 +731,56 @@ export default function Agenda() {
 
             <form onSubmit={handleAddSubmit} className="space-y-4">
               <div className="relative">
-                <label className="block text-xs font-bold text-slate-500 mb-1">Buscar Cliente Cadastrada *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-500">{showNewClientForm ? 'Nova Cliente' : 'Cliente *'}</label>
+                  {!selectedClient && !showNewClientForm && (
+                    <button type="button" onClick={openNewClientForm} className="flex items-center gap-1 whitespace-nowrap text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 -my-1 rounded-md transition-colors">
+                      <UserPlus size={14} /> Nova cliente
+                    </button>
+                  )}
+                </div>
                 {selectedClient ? (
                   <div className="flex items-center justify-between border p-2.5 rounded-lg bg-rose-50 border-rose-200">
                     <div><p className="font-bold text-rose-800 text-sm">{selectedClient.name}</p><p className="text-xs text-rose-600">{selectedClient.phone}</p></div>
                     <button type="button" onClick={() => setSelectedClient(null)} className="text-rose-600 hover:text-rose-800 p-1 bg-rose-100 rounded-md"><X size={16} /></button>
                   </div>
+                ) : showNewClientForm ? (
+                  // Mini cadastro (não é um <form> para não conflitar com o formulário do agendamento)
+                  <div className="border border-rose-200 bg-rose-50/30 rounded-lg p-3 space-y-2.5">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={newClientName}
+                      onChange={(e) => setNewClientName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewClient(); } }}
+                      placeholder="Nome completo *"
+                      className="w-full border bg-white px-3 py-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm"
+                    />
+                    <input
+                      type="tel"
+                      value={newClientPhone}
+                      onChange={(e) => setNewClientPhone(formatPhoneInput(e.target.value))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewClient(); } }}
+                      placeholder="WhatsApp (11) 99999-9999"
+                      className="w-full border bg-white px-3 py-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button type="button" onClick={closeNewClientForm} className="flex-1 border bg-white py-2 rounded-lg text-slate-500 font-medium text-sm">Voltar à busca</button>
+                      <button type="button" onClick={handleSaveNewClient} disabled={addClientMutation.isPending || !newClientName.trim()} className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2 rounded-lg font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-1.5">
+                        {addClientMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />} Cadastrar
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500">Aniversário e observações podem ser completados depois na tela de Clientes.</p>
+                  </div>
                 ) : (
                   <><div className="relative"><Search size={16} className="absolute left-3 top-3 text-slate-400" /><input type="text" value={clientSearchTerm} onChange={(e) => setClientSearchTerm(e.target.value)} className="w-full border pl-9 pr-3 py-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm" placeholder="Digite nome ou telefone..." /></div>
                     {clientSearchTerm.length > 0 && (
                       <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                        {filteredSearchClients.length > 0 ? (filteredSearchClients.map((c: any) => (<div key={c.id} onClick={() => { setSelectedClient(c); setClientSearchTerm(''); }} className="p-3 hover:bg-rose-50 cursor-pointer border-b border-slate-100 last:border-0"><p className="font-bold text-slate-800 text-sm">{c.name}</p><p className="text-xs text-slate-500">{c.phone}</p></div>))) : (<div className="p-3 text-sm text-slate-500 text-center">Nenhuma cliente encontrada.</div>)}
+                        {filteredSearchClients.map((c: any) => (<div key={c.id} onClick={() => { setSelectedClient(c); setClientSearchTerm(''); }} className="p-3 hover:bg-rose-50 cursor-pointer border-b border-slate-100"><p className="font-bold text-slate-800 text-sm">{c.name}</p><p className="text-xs text-slate-500">{c.phone}</p></div>))}
+                        {filteredSearchClients.length === 0 && <div className="px-3 pt-3 pb-1 text-sm text-slate-500 text-center">Nenhuma cliente encontrada.</div>}
+                        <button type="button" onClick={openNewClientForm} className="w-full p-3 flex items-center gap-2 text-sm font-bold text-rose-600 hover:bg-rose-50 text-left">
+                          <UserPlus size={16} className="shrink-0" /> <span className="truncate">Cadastrar &quot;{clientSearchTerm.trim()}&quot; como nova cliente</span>
+                        </button>
                       </div>
                     )}
                   </>
