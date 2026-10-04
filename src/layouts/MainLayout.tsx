@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, ShoppingCart, Users, LogOut, DollarSign, Menu, X, ChevronLeft, ChevronRight, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, ShoppingCart, Users, LogOut, DollarSign, Menu, X, ChevronLeft, ChevronRight, Moon, Sun, SquareKanban, Plus, SquareCheckBig } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 
@@ -38,12 +38,34 @@ export default function MainLayout() {
   const navItems = [
     { path: '/dashboard', label: 'Resumo Diário', icon: LayoutDashboard },
     { path: '/agenda', label: 'Agenda', icon: CalendarDays },
+    { path: '/tarefas', label: 'Tarefas', icon: SquareKanban },
     { path: '/clientes', label: 'Clientes', icon: Users },
     { path: '/financas', label: 'Finanças', icon: DollarSign },
     { path: '/pdv', label: 'Checkout PDV', icon: ShoppingCart },
   ];
 
   const currentPage = navItems.find((item) => item.path === location.pathname);
+
+  // Botão + global: atalhos de criação (abre a tela já com a janela aberta)
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  useEffect(() => { setIsQuickAddOpen(false); }, [location.pathname, location.search]);
+  const quickAddItems = [
+    { label: 'Tarefa', icon: SquareCheckBig, to: '/tarefas?nova=tarefa' },
+    { label: 'Novo quadro', icon: SquareKanban, to: '/tarefas?nova=quadro' },
+  ];
+  const quickAddMenu = (alignClass: string) => isQuickAddOpen && (
+    <>
+      <div className="fixed inset-0 z-40" onClick={() => setIsQuickAddOpen(false)} />
+      <div role="menu" className={`absolute z-50 top-full mt-2 ${alignClass} w-48 bg-white border border-slate-200 rounded-xl shadow-xl p-1`}>
+        {quickAddItems.map((item) => (
+          <button key={item.to} type="button" role="menuitem" onClick={() => { setIsQuickAddOpen(false); navigate(item.to); }}
+            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-600">
+            <item.icon size={16} /> {item.label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -59,6 +81,22 @@ export default function MainLayout() {
           </h1>
         </div>
         
+        {/* Botão + global (atalhos de criação) */}
+        <div className="relative px-3 pt-4">
+          <button
+            type="button"
+            onClick={() => setIsQuickAddOpen(!isQuickAddOpen)}
+            title={isCollapsed ? 'Novo' : ''}
+            aria-haspopup="menu"
+            aria-expanded={isQuickAddOpen}
+            className={`flex items-center w-full bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-sm transition-colors font-bold ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
+          >
+            <Plus size={22} className="shrink-0" />
+            {!isCollapsed && <span className="whitespace-nowrap">Novo</span>}
+          </button>
+          {quickAddMenu('left-3')}
+        </div>
+
         {/* Links de Navegação */}
         <nav className="flex-1 px-3 py-6 space-y-3 overflow-y-auto overflow-x-hidden custom-scrollbar">
           {navItems.map((item) => {
@@ -130,9 +168,15 @@ export default function MainLayout() {
               {currentPage && <p className="text-xs text-slate-500 truncate leading-tight">{currentPage.label}</p>}
             </div>
           </div>
-          <button onClick={toggleTheme} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg" title={themeLabel} aria-label={themeLabel}>
-            <ThemeIcon size={22} />
-          </button>
+          <div className="relative flex items-center">
+            <button onClick={toggleTheme} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg" title={themeLabel} aria-label={themeLabel}>
+              <ThemeIcon size={22} />
+            </button>
+            <button onClick={() => setIsQuickAddOpen(!isQuickAddOpen)} className="ml-1 p-2 bg-rose-600 text-white rounded-lg" aria-label="Novo" aria-haspopup="menu" aria-expanded={isQuickAddOpen}>
+              <Plus size={22} />
+            </button>
+            {quickAddMenu('right-0')}
+          </div>
         </header>
 
         {/* Menu sanduíche (gaveta lateral) do celular e tablet */}
