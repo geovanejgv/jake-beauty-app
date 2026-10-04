@@ -45,6 +45,19 @@ export default function Dashboard() {
     }
   });
 
+  // 1b. Agendamentos ainda não finalizados (para "previsto" e pendências do filtro)
+  const { data: scheduledAppointments = [] } = useQuery({
+    queryKey: ['dashboard-scheduled'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('appointments')
+        .select('id, start_time, is_block, services ( price )')
+        .eq('status', 'scheduled');
+      if (error) throw error;
+      return (data || []).filter((a: any) => !a.is_block);
+    }
+  });
+
   // 2. Busca Despesas
   const { data: expenses = [], isLoading: isLoadingExp } = useQuery({
     queryKey: ['dashboard-expenses'],
@@ -60,6 +73,8 @@ export default function Dashboard() {
 
   // Lógica de Datas
   const getLocalDateStr = (date: Date) => new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+  // Dia do atendimento no fuso local (antes usava UTC: atendimentos após 21h caíam no dia seguinte)
+  const aptLocalDate = (startTime: string) => getLocalDateStr(new Date(startTime));
   const now = new Date();
   const todayStr = getLocalDateStr(now);
   const currentDayOfWeek = now.getDay();
@@ -81,27 +96,40 @@ export default function Dashboard() {
     endOfFortnightStr = getLocalDateStr(new Date(currentYear, currentMonth + 1, 0));
   }
   const startOfMonthStr = getLocalDateStr(new Date(currentYear, currentMonth, 1));
+  const endOfMonthStr = getLocalDateStr(new Date(currentYear, currentMonth + 1, 0));
   const getDaysAgoStr = (days: number) => { const d = new Date(); d.setDate(d.getDate() - days); return getLocalDateStr(d); };
   
   // Cálculos Consolidados (Receitas + Despesas)
   const financials = useMemo(() => {
     let todayTotal = 0; let weekTotal = 0; let biweekTotal = 0; let monthTotal = 0; let customTotal = 0;
+    let customCount = 0; let customForecast = 0; let customPendingCount = 0; let customPendingTotal = 0;
+    const hasCustomRange = !!(startDate && endDate && startDate <= endDate);
     let week1 = 0; let week2 = 0; let week3 = 0; let week4 = 0;
 
     appointments.forEach((apt: any) => {
-      const aptDate = new Date(apt.start_time).toISOString().split('T')[0];
+      const aptDate = aptLocalDate(apt.start_time);
       const price = parseFloat(apt.services?.price || 0);
 
       if (aptDate === todayStr) todayTotal += price;
       if (aptDate >= startOfWeekStr && aptDate <= endOfWeekStr) weekTotal += price;
       if (aptDate >= startOfFortnightStr && aptDate <= endOfFortnightStr) biweekTotal += price;
-      if (aptDate >= startOfMonthStr) monthTotal += price;
-      if (startDate && endDate && aptDate >= startDate && aptDate <= endDate) customTotal += price;
+      if (aptDate >= startOfMonthStr && aptDate <= endOfMonthStr) monthTotal += price;
+      if (hasCustomRange && aptDate >= startDate && aptDate <= endDate) { customTotal += price; customCount++; }
 
       if (aptDate >= getDaysAgoStr(7)) week4 += price;
       else if (aptDate >= getDaysAgoStr(14)) week3 += price;
       else if (aptDate >= getDaysAgoStr(21)) week2 += price;
       else if (aptDate >= getDaysAgoStr(28)) week1 += price;
+    });
+
+    // Agendados no período: previsto e os que já passaram sem finalizar (checkout)
+    scheduledAppointments.forEach((apt: any) => {
+      if (!hasCustomRange) return;
+      const aptDate = aptLocalDate(apt.start_time);
+      if (aptDate < startDate || aptDate > endDate) return;
+      const price = parseFloat(apt.services?.price || 0);
+      customForecast += price;
+      if (aptDate < todayStr) { customPendingCount++; customPendingTotal += price; }
     });
 
     let monthExpensesPaid = 0;
@@ -117,26 +145,27 @@ export default function Dashboard() {
     const netIncome = monthTotal - monthExpensesPaid;
 
     return { 
-      todayTotal, weekTotal, biweekTotal, monthTotal, customTotal, chartData: [week1, week2, week3, week4],
+      todayTotal, weekTotal, biweekTotal, monthTotal, customTotal, customCount, customForecast, customPendingCount, customPendingTotal, hasCustomRange,
+      chartData: [week1, week2, week3, week4],
       monthExpensesPaid, monthExpensesPending, netIncome
     };
-  }, [appointments, expenses, startDate, endDate, todayStr, startOfWeekStr, endOfWeekStr, startOfFortnightStr, endOfFortnightStr, startOfMonthStr]);
+  }, [appointments, scheduledAppointments, expenses, startDate, endDate, todayStr, startOfWeekStr, endOfWeekStr, startOfFortnightStr, endOfFortnightStr, startOfMonthStr, endOfMonthStr]);
 
   // Filtro do Relatório de Faturamento
   const reportData = useMemo(() => {
     if (!reportFilterName) return [];
     return appointments.filter((apt: any) => {
-      const aptDate = new Date(apt.start_time).toISOString().split('T')[0];
+      const aptDate = aptLocalDate(apt.start_time);
       switch (reportFilterName) {
         case 'Faturamento Hoje': return aptDate === todayStr;
         case 'Semana Atual': return aptDate >= startOfWeekStr && aptDate <= endOfWeekStr;
         case 'Quinzena Atual': return aptDate >= startOfFortnightStr && aptDate <= endOfFortnightStr;
-        case 'Mês Atual': return aptDate >= startOfMonthStr;
+        case 'Mês Atual': return aptDate >= startOfMonthStr && aptDate <= endOfMonthStr;
         case 'Período Filtrado': return (startDate && endDate && aptDate >= startDate && aptDate <= endDate);
         default: return false;
       }
     });
-  }, [appointments, reportFilterName, todayStr, startOfWeekStr, endOfWeekStr, startOfFortnightStr, endOfFortnightStr, startOfMonthStr, startDate, endDate]);
+  }, [appointments, reportFilterName, todayStr, startOfWeekStr, endOfWeekStr, startOfFortnightStr, endOfFortnightStr, startOfMonthStr, endOfMonthStr, startDate, endDate]);
 
   const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
@@ -259,10 +288,21 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center space-x-4">
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase leading-none">Total Filtrado</p>
-            <p className="text-lg font-black text-rose-600 leading-none mt-1">{startDate && endDate ? formatCurrency(financials.customTotal) : 'R$ 0,00'}</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase leading-none">Total Filtrado (concluídos)</p>
+            <p className="text-lg font-black text-rose-600 leading-none mt-1">{financials.hasCustomRange ? formatCurrency(financials.customTotal) : 'R$ 0,00'}</p>
+            {financials.hasCustomRange && (
+              <p className="text-[11px] text-slate-500 mt-1">
+                {financials.customCount} atendimento{financials.customCount === 1 ? '' : 's'} · Previsto (agendados): {formatCurrency(financials.customForecast)}
+              </p>
+            )}
+            {financials.hasCustomRange && financials.customPendingCount > 0 && (
+              <p className="text-[11px] font-bold text-amber-700 mt-0.5">
+                {financials.customPendingCount} atendimento{financials.customPendingCount === 1 ? '' : 's'} passado{financials.customPendingCount === 1 ? '' : 's'} sem finalizar ({formatCurrency(financials.customPendingTotal)})
+              </p>
+            )}
+            {startDate && endDate && startDate > endDate && <p className="text-[11px] font-bold text-red-600 mt-1">A data inicial é depois da final.</p>}
           </div>
-          {startDate && endDate && (
+          {financials.hasCustomRange && (
              <button onClick={() => setReportFilterName('Período Filtrado')} className="bg-rose-50 text-rose-600 font-bold px-4 py-2 rounded-lg text-sm hover:bg-rose-100 transition-colors">
                Detalhes
              </button>

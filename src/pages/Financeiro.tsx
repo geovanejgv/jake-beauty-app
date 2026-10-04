@@ -1,7 +1,32 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { ArrowUpCircle, ArrowDownCircle, Trash2, Repeat, CheckCircle, Clock, Edit2, X, AlertTriangle, Calendar, Wallet, TrendingUp, TrendingDown, PieChart, ChevronLeft, ChevronRight, LayoutList, Columns, Grid, Plus, Loader2, Camera, Upload, ScanBarcode, Copy } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Trash2, Repeat, CheckCircle, Clock, Edit2, X, AlertTriangle, Calendar, Wallet, TrendingUp, TrendingDown, PieChart, ChevronLeft, ChevronRight, LayoutList, Columns, Grid, Plus, Loader2, Camera, Upload, ScanBarcode, Copy, Briefcase, User, Layers } from 'lucide-react';
+
+type Escopo = 'negocio' | 'pessoal';
+type VisaoEscopo = 'todos' | Escopo;
+
+const ESCOPOS: { valor: VisaoEscopo; rotulo: string; Icone: typeof Layers }[] = [
+  { valor: 'todos', rotulo: 'Tudo', Icone: Layers },
+  { valor: 'negocio', rotulo: 'Negócio', Icone: Briefcase },
+  { valor: 'pessoal', rotulo: 'Pessoal', Icone: User },
+];
+
+// Categorias: para despesas, o tipo de custo (fixo ou variável); para receitas, a origem
+const CATEGORIAS_DESPESA = [
+  { valor: 'Fixas', rotulo: 'Custo fixo' },
+  { valor: 'Variáveis', rotulo: 'Custo variável' },
+  { valor: 'Investimentos', rotulo: 'Investimento' },
+  { valor: 'Geral', rotulo: 'Outros' },
+];
+const CATEGORIAS_RECEITA = [
+  { valor: 'Clientes', rotulo: 'Receita de clientes' },
+  { valor: 'Investimentos', rotulo: 'Rendimentos' },
+  { valor: 'Geral', rotulo: 'Outras receitas' },
+];
+const categoriasDo = (tipo: string) => (tipo === 'income' ? CATEGORIAS_RECEITA : CATEGORIAS_DESPESA);
+const rotuloCategoria = (tipo: string, valor: string) => categoriasDo(tipo).find((c) => c.valor === valor)?.rotulo || valor || 'Outros';
+const escopoDo = (r: any): Escopo => (r.escopo === 'negocio' ? 'negocio' : 'pessoal');
 
 export default function Financeiro() {
   const queryClient = useQueryClient();
@@ -23,6 +48,15 @@ export default function Financeiro() {
   const [isScanning, setIsScanning] = useState(false);
   const [scannedData, setScannedData] = useState<any>(null);
 
+  // Visão: tudo, só o negócio ou só o pessoal (lembrada neste aparelho)
+  const [escopoView, setEscopoViewState] = useState<VisaoEscopo>(() => {
+    try { const v = localStorage.getItem('jb-financas-escopo'); if (v === 'negocio' || v === 'pessoal' || v === 'todos') return v; } catch {}
+    return 'todos';
+  });
+  const setEscopoView = (v: VisaoEscopo) => { setEscopoViewState(v); try { localStorage.setItem('jb-financas-escopo', v); } catch {} };
+  const escopoPadrao: Escopo = escopoView === 'todos' ? 'negocio' : escopoView;
+  const [escopo, setEscopo] = useState<Escopo>(escopoPadrao);
+
   const [financeType, setFinanceType] = useState<'income' | 'expense'>('expense');
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
@@ -42,14 +76,20 @@ export default function Financeiro() {
     }
   });
 
+  const scopedRecords = useMemo(
+    () => (escopoView === 'todos' ? records : records.filter((r: any) => escopoDo(r) === escopoView)),
+    [records, escopoView],
+  );
+
   const safeSelectedDate = selectedDate || todayStr;
   const currentMonthStr = safeSelectedDate.substring(0, 7);
   
   const metrics = useMemo(() => {
     let totalIncomes = 0; let receivedIncomes = 0;
     let totalExpenses = 0; let paidExpenses = 0;
+    let fixedExpenses = 0; let variableExpenses = 0; let otherExpenses = 0;
 
-    records.filter((r: any) => r.finance_date?.startsWith(currentMonthStr)).forEach((r: any) => {
+    scopedRecords.filter((r: any) => r.finance_date?.startsWith(currentMonthStr)).forEach((r: any) => {
       const val = parseFloat(r.amount || 0);
       if (r.type === 'income') {
         totalIncomes += val;
@@ -57,16 +97,20 @@ export default function Financeiro() {
       } else {
         totalExpenses += val;
         if (r.is_completed) paidExpenses += val;
+        if (r.category === 'Fixas') fixedExpenses += val;
+        else if (r.category === 'Variáveis') variableExpenses += val;
+        else otherExpenses += val;
       }
     });
 
     return { 
       totalIncomes, receivedIncomes, 
       totalExpenses, paidExpenses, 
+      fixedExpenses, variableExpenses, otherExpenses,
       netRealCash: receivedIncomes - paidExpenses, 
       netProjected: totalIncomes - totalExpenses 
     };
-  }, [records, currentMonthStr]);
+  }, [scopedRecords, currentMonthStr]);
 
   const handleNavigateDate = (direction: 'prev' | 'next') => {
     const currentDate = new Date(safeSelectedDate + 'T12:00:00');
@@ -110,7 +154,7 @@ export default function Financeiro() {
   const weekDates = getWeekDates(safeSelectedDate);
   const monthDays = getMonthDates(safeSelectedDate);
 
-  const filteredRecords = records.filter((r: any) => {
+  const filteredRecords = scopedRecords.filter((r: any) => {
     if (!r.finance_date) return false;
     if (viewMode === 'day') return r.finance_date === safeSelectedDate;
     if (viewMode === 'week') return weekDates.includes(r.finance_date);
@@ -126,7 +170,8 @@ export default function Financeiro() {
       const dataToSave = payload || {
         description: desc, amount: parseFloat(String(amount).replace(',', '.')), 
         finance_date: financeDate, type: financeType, category, is_recurring: isRecurring, 
-        is_completed: false, notes: notes || null, receiver_name: receiver || null, barcode: barcode || null
+        is_completed: false, notes: notes || null, receiver_name: receiver || null, barcode: barcode || null,
+        escopo
       };
 
       const { error } = await supabase.from('personal_finances').insert([dataToSave]);
@@ -145,7 +190,8 @@ export default function Financeiro() {
       const formattedAmount = parseFloat(String(data.amount).replace(',', '.'));
       const { error } = await supabase.from('personal_finances').update({
         description: data.desc, amount: formattedAmount, finance_date: data.date, category: data.category, 
-        notes: data.notes || null, receiver_name: data.receiver || null, barcode: data.barcode || null
+        notes: data.notes || null, receiver_name: data.receiver || null, barcode: data.barcode || null,
+        escopo: data.escopo
       }).eq('id', id);
       if (error) throw error;
     },
@@ -172,6 +218,8 @@ export default function Financeiro() {
 
   const openAddModalForType = (type: 'income' | 'expense', dateStr?: string) => {
     setFinanceType(type);
+    setCategory(type === 'income' ? 'Clientes' : 'Fixas');
+    setEscopo(escopoPadrao);
     if (dateStr) setFinanceDate(dateStr);
     setActionMenuDate(null);
     setShowAddModal(true);
@@ -216,7 +264,8 @@ export default function Financeiro() {
       receiver_name: scannedData.receiver_name,
       barcode: scannedData.barcode,
       is_completed: false,
-      is_recurring: false
+      is_recurring: false,
+      escopo: escopoPadrao
     };
     addMutation.mutate(payload);
   };
@@ -249,7 +298,12 @@ export default function Financeiro() {
           <div className="flex-1 min-w-0">
             <h4 className={`font-bold flex items-center space-x-2 text-sm ${textClass}`}>
               <span className="truncate">{item.description}</span>
-              <span className="text-[9px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded uppercase font-bold no-underline shrink-0">{item.category || 'Geral'}</span>
+              <span className="text-[9px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded uppercase font-bold no-underline shrink-0">{rotuloCategoria(item.type, item.category)}</span>
+              {escopoView === 'todos' && (
+                <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold no-underline shrink-0 ${escopoDo(item) === 'negocio' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {escopoDo(item) === 'negocio' ? 'Negócio' : 'Pessoal'}
+                </span>
+              )}
               {item.barcode && <ScanBarcode size={14} className="text-slate-400 shrink-0" title="Contém Código de Barras/Pix"/>}
             </h4>
             <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
@@ -279,8 +333,17 @@ export default function Financeiro() {
     <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3 pb-4 relative">
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 shrink-0">
-        <div>
+        <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Calendário Financeiro</h2>
+          {/* Controle financeiro do negócio e pessoal */}
+          <div className="bg-slate-200 p-0.5 rounded-lg flex items-center space-x-0.5" role="radiogroup" aria-label="Visão financeira">
+            {ESCOPOS.map(({ valor, rotulo, Icone }) => (
+              <button key={valor} role="radio" aria-checked={escopoView === valor} onClick={() => setEscopoView(valor)}
+                className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${escopoView === valor ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+                <Icone size={12} /> <span>{rotulo}</span>
+              </button>
+            ))}
+          </div>
         </div>
         
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
@@ -318,7 +381,7 @@ export default function Financeiro() {
           <div><p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Receitas</p><p className="text-base md:text-xl font-black text-emerald-600">{formatCurrency(metrics.receivedIncomes)} <span className="text-[10px] md:text-xs font-normal text-slate-400 block sm:inline">/ {formatCurrency(metrics.totalIncomes)}</span></p></div><div className="bg-emerald-50 p-2 md:p-3 rounded-lg text-emerald-600 hidden sm:block"><TrendingUp size={20} /></div>
         </div>
         <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-          <div><p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Despesas</p><p className="text-base md:text-xl font-black text-rose-600">{formatCurrency(metrics.paidExpenses)} <span className="text-[10px] md:text-xs font-normal text-slate-400 block sm:inline">/ {formatCurrency(metrics.totalExpenses)}</span></p></div><div className="bg-rose-50 p-2 md:p-3 rounded-lg text-rose-600 hidden sm:block"><TrendingDown size={20} /></div>
+          <div><p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Despesas</p><p className="text-base md:text-xl font-black text-rose-600">{formatCurrency(metrics.paidExpenses)} <span className="text-[10px] md:text-xs font-normal text-slate-400 block sm:inline">/ {formatCurrency(metrics.totalExpenses)}</span></p><p className="text-[10px] md:text-[11px] text-slate-500 mt-0.5">Fixos {formatCurrency(metrics.fixedExpenses)} · Variáveis {formatCurrency(metrics.variableExpenses)}{metrics.otherExpenses > 0 ? ` · Outros ${formatCurrency(metrics.otherExpenses)}` : ''}</p></div><div className="bg-rose-50 p-2 md:p-3 rounded-lg text-rose-600 hidden sm:block"><TrendingDown size={20} /></div>
         </div>
       </div>
 
@@ -458,8 +521,8 @@ export default function Financeiro() {
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex justify-between items-center"><h3 className="text-xl font-bold text-slate-800">Novo Lançamento</h3><button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button></div>
             <div className="flex bg-slate-100 p-1 rounded-xl mb-4">
-              <button onClick={() => setFinanceType('income')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${financeType === 'income' ? 'bg-emerald-500 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}><ArrowUpCircle size={14}/> Receita</button>
-              <button onClick={() => setFinanceType('expense')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${financeType === 'expense' ? 'bg-rose-500 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}><ArrowDownCircle size={14}/> Despesa</button>
+              <button onClick={() => { setFinanceType('income'); setCategory('Clientes'); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${financeType === 'income' ? 'bg-emerald-500 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}><ArrowUpCircle size={14}/> Receita</button>
+              <button onClick={() => { setFinanceType('expense'); setCategory('Fixas'); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${financeType === 'expense' ? 'bg-rose-500 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}><ArrowDownCircle size={14}/> Despesa</button>
             </div>
             <form onSubmit={(e) => { e.preventDefault(); addMutation.mutate(); }} className="space-y-4">
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Descrição</label><input required value={desc} onChange={e => setDesc(e.target.value)} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm" placeholder="Ex: Aluguel, Produto..." /></div>
@@ -467,7 +530,18 @@ export default function Financeiro() {
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input required value={amount} onChange={e => setAmount(e.target.value)} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm font-bold" placeholder="0,00" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Data</label><input type="date" required value={financeDate} onChange={e => setFinanceDate(e.target.value)} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm" /></div>
               </div>
-              <div><label className="block text-xs font-bold text-slate-500 mb-1">Categoria</label><select value={category} onChange={e => setCategory(e.target.value)} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm bg-white font-medium"><option value="Geral">Geral</option><option value="Fixas">Despesa Fixa</option><option value="Variáveis">Despesa Variável</option><option value="Investimentos">Investimento</option><option value="Clientes">Receita de Clientes</option></select></div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Controle</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['negocio', 'pessoal'] as Escopo[]).map((e) => (
+                    <button key={e} type="button" onClick={() => setEscopo(e)} aria-pressed={escopo === e}
+                      className={`py-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 ${escopo === e ? 'bg-slate-800 border-slate-800 text-white' : 'border-slate-200 text-slate-600'}`}>
+                      {e === 'negocio' ? <><Briefcase size={14} /> Negócio</> : <><User size={14} /> Pessoal</>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1">{financeType === 'income' ? 'Origem' : 'Tipo de custo'}</label><select value={category} onChange={e => setCategory(e.target.value)} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm bg-white font-medium">{categoriasDo(financeType).map((c) => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}</select></div>
               <div className="flex space-x-3 pt-2">
                 <button type="button" onClick={() => setShowAddModal(false)} className="w-1/2 border p-2.5 rounded-xl text-slate-500 font-medium text-sm">Cancelar</button>
                 <button type="submit" disabled={addMutation.isPending} className={`w-1/2 text-white p-2.5 rounded-xl font-bold text-sm shadow-sm ${financeType === 'income' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>Salvar</button>
@@ -491,6 +565,7 @@ export default function Financeiro() {
                 amount: (form.elements.namedItem('editAmount') as HTMLInputElement).value,
                 date: (form.elements.namedItem('editDate') as HTMLInputElement).value,
                 category: (form.elements.namedItem('editCategory') as HTMLSelectElement).value,
+                escopo: (form.elements.namedItem('editEscopo') as HTMLSelectElement).value,
                 receiver: (form.elements.namedItem('editReceiver') as HTMLInputElement).value,
                 barcode: (form.elements.namedItem('editBarcode') as HTMLInputElement).value,
                 notes: (form.elements.namedItem('editNotes') as HTMLInputElement).value
@@ -505,7 +580,10 @@ export default function Financeiro() {
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input name="editAmount" defaultValue={String(editingItem.amount).replace('.', ',')} required className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm font-bold" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Data</label><input type="date" name="editDate" defaultValue={editingItem.finance_date} required className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm" /></div>
               </div>
-              <div><label className="block text-xs font-bold text-slate-500 mb-1">Categoria</label><select name="editCategory" defaultValue={editingItem.category || 'Geral'} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm bg-white font-medium"><option value="Geral">Geral</option><option value="Fixas">Despesa Fixa</option><option value="Variáveis">Despesa Variável</option><option value="Investimentos">Investimento</option><option value="Clientes">Receita de Clientes</option></select></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">Controle</label><select name="editEscopo" defaultValue={escopoDo(editingItem)} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm bg-white font-medium"><option value="negocio">Negócio</option><option value="pessoal">Pessoal</option></select></div>
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">{editingItem.type === 'income' ? 'Origem' : 'Tipo de custo'}</label><select name="editCategory" defaultValue={categoriasDo(editingItem.type).some((c) => c.valor === editingItem.category) ? editingItem.category : 'Geral'} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm bg-white font-medium">{categoriasDo(editingItem.type).map((c) => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}</select></div>
+              </div>
               {editingItem.barcode && (
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <label className="block text-xs font-bold text-slate-500 mb-1">Código de Barras / PIX</label>

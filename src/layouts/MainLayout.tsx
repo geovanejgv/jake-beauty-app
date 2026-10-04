@@ -68,11 +68,11 @@ export default function MainLayout() {
   );
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
+    <div className="app-shell flex h-screen font-sans overflow-hidden">
       
       {/* MENU LATERAL DESKTOP (Esconde no celular e tablet, exibe no PC a partir de 1024px) */}
       <aside 
-        className={`hidden lg:flex flex-col bg-white border-r border-slate-200 shadow-sm transition-all duration-300 ease-in-out z-20 ${isCollapsed ? 'w-20' : 'w-64'}`}
+        className={`glass hidden lg:flex flex-col bg-white border-r border-slate-200 shadow-sm transition-all duration-300 ease-in-out z-20 ${isCollapsed ? 'w-20' : 'w-64'}`}
       >
         {/* Topo / Logo */}
         <div className="h-20 flex items-center justify-center border-b border-slate-100 shrink-0">
@@ -153,7 +153,7 @@ export default function MainLayout() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         
         {/* Cabeçalho que aparece no celular e no tablet */}
-        <header className="bg-white px-2 sm:px-4 h-16 flex items-center justify-between border-b border-slate-200 shadow-sm lg:hidden shrink-0 z-30">
+        <header className="glass bg-white px-2 sm:px-4 h-16 flex items-center justify-between border-b border-slate-200 shadow-sm lg:hidden shrink-0 z-30">
           <div className="flex items-center min-w-0">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
@@ -188,7 +188,7 @@ export default function MainLayout() {
           />
 
           <aside
-            className={`absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-white flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
+            className={`glass glass-forte absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-white flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
           >
             <div className="h-16 px-4 flex items-center justify-between border-b border-slate-100 shrink-0">
               <h2 className="text-xl font-black text-rose-600">Jake Beauty</h2>
@@ -229,7 +229,7 @@ export default function MainLayout() {
         </div>
 
         {/* Tela que renderiza as páginas (Agenda, Dashboard, etc) */}
-        <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 relative z-10">
+        <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 relative">
           <Outlet />
         </main>
       </div>
