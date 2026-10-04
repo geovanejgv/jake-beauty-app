@@ -275,3 +275,145 @@ input.bg-transparent { background-color: transparent; }
 
 /* Colunas do Kanban ficam dentro de uma área com rolagem lateral: sem sombra, para não aparecer cortada */
 .bg-slate-100.rounded-2xl { box-shadow: none; }
+
+
+/* =========================================================================
+   HOVER STATE: translate + pseudo-elementos + elevação
+   - Só em aparelhos com mouse ((hover: hover) and (pointer: fine)): no
+     celular/tablet o hover "gruda" após o toque, então lá fica só o clique.
+   - Respeita "reduzir movimento" do sistema (sem deslocamento).
+   - Elementos desativados não reagem. Classe .sem-hover desliga o efeito.
+   ========================================================================= */
+
+:root {
+  --elev-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
+  --elev-2: 0 4px 10px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.06);
+  --elev-3: 0 12px 28px rgba(15, 23, 42, 0.14), 0 4px 10px rgba(15, 23, 42, 0.08);
+  --elev-rosa: 0 10px 24px rgba(225, 29, 72, 0.30), 0 3px 8px rgba(225, 29, 72, 0.20);
+  --hover-anel: rgba(244, 63, 94, 0.45);
+  --hover-duracao: 180ms;
+  --hover-curva: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+html.dark {
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.30);
+  --elev-2: 0 6px 14px rgba(0, 0, 0, 0.40), 0 2px 5px rgba(0, 0, 0, 0.30);
+  --elev-3: 0 16px 34px rgba(0, 0, 0, 0.55), 0 5px 12px rgba(0, 0, 0, 0.35);
+  --elev-rosa: 0 10px 26px rgba(244, 63, 94, 0.35), 0 3px 8px rgba(244, 63, 94, 0.25);
+  --hover-anel: rgba(251, 113, 133, 0.55);
+}
+
+/* Transições suaves em tudo que é clicável */
+:is(button, a[href], [role="button"], [role="menuitem"], [role="radio"], [data-tarefa], .cursor-pointer) {
+  transition:
+    transform var(--hover-duracao) var(--hover-curva),
+    box-shadow var(--hover-duracao) var(--hover-curva),
+    background-color var(--hover-duracao) ease,
+    color var(--hover-duracao) ease,
+    border-color var(--hover-duracao) ease,
+    opacity var(--hover-duracao) ease;
+}
+
+/* Botões principais (cores sólidas): base para o brilho do pseudo-elemento */
+:is(.bg-rose-500, .bg-rose-600, .bg-slate-800, .bg-red-600, .bg-emerald-500, .bg-emerald-600, .bg-indigo-600):is(button, a[href]):not(.absolute):not(.fixed) {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* Itens do menu lateral: base para a barra de destaque */
+aside nav a[href] { position: relative; }
+
+@media (hover: hover) and (pointer: fine) {
+  /* 1. Translate + elevação leve: botões, links e itens de menu */
+  :is(button, a[href], [role="button"], [role="menuitem"]):not(:disabled):not([aria-disabled="true"]):not(.sem-hover):hover {
+    transform: translateY(-1px);
+  }
+  :is(button, a[href], [role="button"], [role="menuitem"]):not(:disabled):not([aria-disabled="true"]):not(.sem-hover):active {
+    transform: translateY(0) scale(0.98);
+    transition-duration: 80ms;
+  }
+
+  /* 2. Elevação forte: botões sólidos ganham sombra colorida */
+  :is(.bg-rose-500, .bg-rose-600):is(button, a[href]):not(:disabled):hover { box-shadow: var(--elev-rosa); }
+  :is(.bg-slate-800, .bg-red-600, .bg-emerald-500, .bg-emerald-600, .bg-indigo-600):is(button, a[href]):not(:disabled):hover { box-shadow: var(--elev-3); }
+
+  /* Pseudo-elemento: brilho que atravessa o botão sólido */
+  :is(.bg-rose-500, .bg-rose-600, .bg-slate-800, .bg-red-600, .bg-emerald-500, .bg-emerald-600, .bg-indigo-600):is(button, a[href]):not(.absolute):not(.fixed)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.28) 50%, transparent 70%);
+    transform: translateX(-120%);
+    transition: transform 600ms var(--hover-curva);
+    pointer-events: none;
+  }
+  :is(.bg-rose-500, .bg-rose-600, .bg-slate-800, .bg-red-600, .bg-emerald-500, .bg-emerald-600, .bg-indigo-600):is(button, a[href]):not(:disabled):hover::after {
+    transform: translateX(120%);
+  }
+
+  /* 3. Cards clicáveis: sobem mais e ganham elevação + anel (pseudo-elemento) */
+  :is([data-tarefa], a.rounded-2xl, button.rounded-2xl, .cursor-pointer.rounded-xl, .cursor-pointer.rounded-lg, .cursor-pointer.rounded):not(.sem-hover) {
+    position: relative;
+  }
+  :is([data-tarefa], a.rounded-2xl, button.rounded-2xl, .cursor-pointer.rounded-xl, .cursor-pointer.rounded-lg, .cursor-pointer.rounded):not(.sem-hover)::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: 0 0 0 2px var(--hover-anel);
+    opacity: 0;
+    transition: opacity var(--hover-duracao) ease;
+    pointer-events: none;
+  }
+  /* :not() extras deixam esta regra mais específica que a genérica de botões e links */
+  :is([data-tarefa], a.rounded-2xl, button.rounded-2xl, .cursor-pointer.rounded-xl, .cursor-pointer.rounded-lg, .cursor-pointer.rounded):not(.sem-hover):not(:disabled):not([aria-disabled="true"]):not(.sem-hover-card):hover {
+    transform: translateY(-3px);
+    box-shadow: var(--elev-3);
+  }
+  :is([data-tarefa], a.rounded-2xl, button.rounded-2xl, .cursor-pointer.rounded-xl, .cursor-pointer.rounded-lg, .cursor-pointer.rounded):not(.sem-hover):hover::before {
+    opacity: 1;
+  }
+  /* Card do Kanban sendo arrastado: sem deslocamento */
+  [data-tarefa][draggable="true"]:active { transform: none; }
+
+  /* Painéis de vidro: elevação leve ao passar o mouse (sem deslocamento, para não "dançar") */
+  .bg-white.rounded-xl:not(.cursor-pointer):not(button):not(a):hover,
+  .bg-white.rounded-2xl:not(.cursor-pointer):not(button):not(a):not([role="dialog"]):not(.shadow-xl):not(.shadow-2xl):hover {
+    box-shadow: var(--elev-2);
+  }
+
+  /* Células de calendário e itens de lista clicáveis (sem arredondamento): anel interno */
+  .cursor-pointer:not(.rounded-xl):not(.rounded-lg):not(.rounded-2xl):not(.rounded):not(button):hover {
+    box-shadow: inset 0 0 0 2px var(--hover-anel);
+  }
+
+  /* Pseudo-elemento: barra de destaque nos itens do menu lateral */
+  aside nav a[href]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 22%;
+    bottom: 22%;
+    width: 3px;
+    border-radius: 999px;
+    background: #e11d48;
+    transform: scaleY(0);
+    transition: transform var(--hover-duracao) var(--hover-curva);
+  }
+  aside nav a[href]:hover::before,
+  aside nav a[href].font-bold::before { transform: scaleY(1); }
+  aside nav a[href]:not(:disabled):not([aria-disabled="true"]):not(.sem-hover):not(.sem-hover-card):hover { transform: translateX(3px); }
+}
+
+/* Item ativo do menu lateral: barra visível também sem mouse */
+@media not ((hover: hover) and (pointer: fine)) {
+  aside nav a[href].font-bold { box-shadow: inset 3px 0 0 #e11d48; }
+}
+
+/* Reduzir movimento: mantém cores, anel e sombras; tira deslocamentos e o brilho */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 1ms !important; }
+  :is(button, a[href], [role="button"], [role="menuitem"], [data-tarefa], .cursor-pointer):hover { transform: none !important; }
+  :is(button, a[href])::after { display: none; }
+}

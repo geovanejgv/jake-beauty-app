@@ -508,7 +508,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
               <div
                 onDragOver={(e) => aoArrastarSobreColuna(e, c.id)}
                 onDrop={(e) => aoSoltar(e, c.id)}
-                className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 max-h-[calc(100dvh-230px)] md:max-h-[calc(100vh-300px)] min-h-[120px]"
+                className="flex-1 overflow-y-auto px-2 pt-1 pb-2 space-y-2 max-h-[calc(100dvh-230px)] md:max-h-[calc(100vh-300px)] min-h-[120px]"
               >
                 {tarefasQ.isLoading ? (
                   <div className="flex justify-center py-8"><Loader2 className="animate-spin text-rose-400" size={22} /></div>
