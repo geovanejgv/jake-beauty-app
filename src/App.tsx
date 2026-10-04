@@ -6,6 +6,7 @@ import Clientes from './pages/Clientes';
 import Financeiro from './pages/Financeiro';
 import PDV from './pages/PDV';
 import Login from './pages/Login';
+import Tarefas from './pages/Tarefas';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="clientes" element={<Clientes />} />
             <Route path="financas" element={<Financeiro />} />
             <Route path="pdv" element={<PDV />} />
+            <Route path="tarefas" element={<Tarefas />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/agenda" replace />} />
