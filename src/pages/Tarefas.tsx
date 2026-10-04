@@ -71,12 +71,37 @@ export default function Tarefas() {
     setParams(p, { replace: true });
   };
 
-  const [quadroModal, setQuadroModal] = useState<null | 'novo' | 'editar'>(null);
+  const [quadroModal, setQuadroModal] = useState<null | 'novo'>(null);
+  // Quadro em edição (pelo ⋮ do quadro aberto ou pelo menu do card na tela inicial)
+  const [quadroEditandoId, setQuadroEditandoId] = useState<string | null>(null);
+  const quadroEditando = listaQuadros.find((q) => q.id === quadroEditandoId) || null;
+  // Exclusão pelo menu do card na tela inicial
+  const [quadroExcluir, setQuadroExcluir] = useState<Quadro | null>(null);
+  const [excluindoQuadro, setExcluindoQuadro] = useState(false);
+  const pedirExclusao = (q: Quadro) => {
+    if (listaQuadros.length <= 1) setAviso('Este é o único quadro. Crie outro antes de excluí-lo.');
+    else setQuadroExcluir(q);
+  };
+  const confirmarExclusaoQuadro = async () => {
+    if (!quadroExcluir) return;
+    setExcluindoQuadro(true);
+    try {
+      await api.excluirQuadro(quadroExcluir.id);
+      setQuadroExcluir(null);
+      await qc.invalidateQueries({ queryKey: kanbanKeys.base });
+    } catch (e) {
+      setQuadroExcluir(null);
+      setAviso(mensagemErro(e, 'Não foi possível excluir o quadro.'));
+    } finally {
+      setExcluindoQuadro(false);
+    }
+  };
   // Quadro recém-criado: abre ao fechar a janela (uma única troca de URL, que também tira o ?nova=)
   const quadroCriado = useRef<string | null>(null);
   const abrirNovoQuadro = () => setQuadroModal('novo');
   const fecharQuadroModal = () => {
     setQuadroModal(null);
+    setQuadroEditandoId(null);
     if (quadroCriado.current) { setParams({ quadro: quadroCriado.current }); quadroCriado.current = null; }
     else if (nova === 'quadro') limparNova();
   };
@@ -119,26 +144,31 @@ export default function Tarefas() {
           onFecharNova={limparNova}
           onFiltros={(f) => setParams(urlFiltros(f, { quadro: quadroAtual.id }))}
           onNovoQuadro={abrirNovoQuadro}
-          onEditarQuadro={() => setQuadroModal('editar')}
+          onEditarQuadro={() => setQuadroEditandoId(quadroAtual.id)}
           onAviso={setAviso}
         />
       ) : (
-        <TelaInicial quadros={listaQuadros} colunas={todasColunas} onNovoQuadro={abrirNovoQuadro} />
+        <TelaInicial quadros={listaQuadros} colunas={todasColunas} onNovoQuadro={abrirNovoQuadro} onEditar={setQuadroEditandoId} onExcluir={pedirExclusao} />
       )}
 
       {(quadroModal === 'novo' || nova === 'quadro') && <QuadroModal onClose={fecharQuadroModal} onSalvar={criarQuadro} />}
-      {quadroModal === 'editar' && quadroAtual && (
+      {quadroEditando && (
         <QuadroModal
-          quadro={quadroAtual}
-          colunas={todasColunas.filter((c) => c.quadro_id === quadroAtual.id).sort((a, b) => a.posicao - b.posicao)}
+          key={quadroEditando.id}
+          quadro={quadroEditando}
+          colunas={todasColunas.filter((c) => c.quadro_id === quadroEditando.id).sort((a, b) => a.posicao - b.posicao)}
           onClose={fecharQuadroModal}
           onSalvar={async (nome, cols) => {
             try {
-              await api.salvarQuadro(quadroAtual.id, nome, cols);
+              await api.salvarQuadro(quadroEditando.id, nome, cols);
               await qc.invalidateQueries({ queryKey: kanbanKeys.base });
             } catch (e) { throw new Error(mensagemErro(e)); }
           }}
         />
+      )}
+      {quadroExcluir && (
+        <Confirmar titulo="Excluir quadro" texto={`O quadro "${quadroExcluir.nome}", as colunas e todos os cartões dele serão apagados. Esta ação não pode ser desfeita.`}
+          botao="Excluir quadro" ocupado={excluindoQuadro} onConfirmar={confirmarExclusaoQuadro} onCancelar={() => setQuadroExcluir(null)} />
       )}
       <Aviso texto={aviso} onFechar={fecharAviso} />
     </>
@@ -148,8 +178,11 @@ export default function Tarefas() {
 // =============================================================================
 // Tela inicial: só os quadros
 // =============================================================================
-function TelaInicial({ quadros, colunas, onNovoQuadro }: { quadros: Quadro[]; colunas: Coluna[]; onNovoQuadro: () => void }) {
+function TelaInicial({ quadros, colunas, onNovoQuadro, onEditar, onExcluir }: {
+  quadros: Quadro[]; colunas: Coluna[]; onNovoQuadro: () => void; onEditar: (id: string) => void; onExcluir: (q: Quadro) => void;
+}) {
   const resumo = useQuery({ queryKey: kanbanKeys.resumo, queryFn: api.listarResumo });
+  const [menuAberto, setMenuAberto] = useState<string | null>(null);
   const porColuna = useMemo(() => {
     const m = new Map<string, number>();
     for (const t of resumo.data || []) m.set(t.coluna_id, (m.get(t.coluna_id) || 0) + 1);
@@ -171,9 +204,10 @@ function TelaInicial({ quadros, colunas, onNovoQuadro }: { quadros: Quadro[]; co
           const fazendo = contagens.slice(1, -1).reduce((a, b) => a + b, 0);
           const total = afazer + fazendo + concluido;
           return (
-            <Link key={q.id} to={`/tarefas?quadro=${q.id}`} style={{ backgroundImage: CORES_QUADRO[i % CORES_QUADRO.length] }}
+            <div key={q.id} className="relative group/quadro">
+            <Link to={`/tarefas?quadro=${q.id}`} style={{ backgroundImage: CORES_QUADRO[i % CORES_QUADRO.length] }}
               className="h-32 rounded-2xl p-4 flex flex-col justify-between text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all">
-              <p className="text-lg font-black leading-tight break-words line-clamp-2">{q.nome}</p>
+              <p className="text-lg font-black leading-tight break-words line-clamp-2 pr-8">{q.nome}</p>
               <div className="space-y-1.5">
                 <div className="h-1.5 rounded-full bg-white/20 overflow-hidden flex" aria-hidden>
                   {total > 0 && <>
@@ -187,6 +221,31 @@ function TelaInicial({ quadros, colunas, onNovoQuadro }: { quadros: Quadro[]; co
                 </p>
               </div>
             </Link>
+            {/* Menu do quadro: editar (nome e colunas) e excluir */}
+            <button
+              type="button"
+              onClick={() => setMenuAberto(menuAberto === q.id ? null : q.id)}
+              className="absolute top-2.5 right-2.5 p-1.5 rounded-lg text-white/90 bg-white/10 hover:bg-white/25 backdrop-blur-sm"
+              aria-label={`Opções do quadro ${q.nome}`}
+              aria-haspopup="menu"
+              aria-expanded={menuAberto === q.id}
+            >
+              <EllipsisVertical size={16} />
+            </button>
+            {menuAberto === q.id && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMenuAberto(null)} />
+                <div role="menu" className="absolute z-50 top-11 right-2.5 w-44 bg-white border border-slate-200 rounded-xl shadow-xl p-1">
+                  <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onEditar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                    <Pencil size={14} /> Editar quadro
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onExcluir(q); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50">
+                    <Trash2 size={14} /> Excluir quadro
+                  </button>
+                </div>
+              </>
+            )}
+            </div>
           );
         })}
         <button type="button" onClick={onNovoQuadro}

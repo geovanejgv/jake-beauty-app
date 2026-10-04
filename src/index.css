@@ -168,3 +168,110 @@ html {
 @media (min-width: 768px) and (max-width: 1023px) {
   .md\:text-xs { font-size: 0.8125rem; line-height: 1.4; }
 }
+
+
+/* =========================================================================
+   GLASSMORPHISM (padrão "Standard Glass")
+   Fundo em degradê suave e painéis translúcidos com desfoque, borda clara e
+   sombra difusa. Vale nos modos claro e escuro.
+   - Painéis grandes (cards arredondados, menus, janelas): vidro com desfoque.
+   - Demais fundos brancos (células, itens pequenos): só translúcidos, sem
+     desfoque, para não pesar no celular.
+   - Campos de formulário e janelas ficam mais opacos, para leitura.
+   ========================================================================= */
+
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --glass-bg-soft: rgba(255, 255, 255, 0.35);
+  --glass-slate: rgba(241, 245, 249, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-shadow: 0 8px 32px rgba(31, 38, 135, 0.10);
+  --glass-blur: blur(16px) saturate(170%);
+  --app-bg:
+    radial-gradient(at 0% 0%, rgba(244, 63, 94, 0.20) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.20) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(20, 184, 166, 0.18) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, rgba(245, 158, 11, 0.14) 0px, transparent 50%),
+    #eef2f7;
+}
+
+html.dark {
+  --glass-bg: rgba(30, 41, 59, 0.55);
+  --glass-bg-strong: rgba(30, 41, 59, 0.88);
+  --glass-bg-soft: rgba(15, 23, 42, 0.35);
+  --glass-slate: rgba(51, 65, 85, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --app-bg:
+    radial-gradient(at 0% 0%, rgba(244, 63, 94, 0.22) 0px, transparent 45%),
+    radial-gradient(at 100% 0%, rgba(124, 58, 237, 0.22) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(13, 148, 136, 0.18) 0px, transparent 45%),
+    radial-gradient(at 0% 100%, rgba(37, 99, 235, 0.16) 0px, transparent 45%),
+    #0b1120;
+}
+
+body,
+.dark body,
+.app-shell {
+  background: var(--app-bg);
+  background-attachment: fixed;
+}
+
+/* Fundos claros viram vidro translúcido */
+.bg-white,
+.dark .bg-white { background-color: var(--glass-bg); }
+.bg-slate-50,
+.dark .bg-slate-50 { background-color: var(--glass-bg-soft); }
+.bg-slate-100,
+.dark .bg-slate-100 { background-color: var(--glass-slate); }
+
+/* Painéis: desfoque, borda clara e sombra difusa */
+.glass,
+.bg-white.rounded-xl,
+.bg-white.rounded-2xl,
+.bg-slate-100.rounded-2xl,
+[role="menu"].bg-white {
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+.dark .bg-white.rounded-xl,
+.dark .bg-white.rounded-2xl,
+.dark .bg-slate-100.rounded-2xl { border-color: var(--glass-border); }
+
+/* Janelas, menus e gaveta do celular: vidro mais opaco para leitura */
+.bg-white.shadow-xl,
+.bg-white.shadow-2xl,
+[role="dialog"].bg-white,
+[role="alertdialog"].bg-white,
+[role="menu"].bg-white,
+.glass-forte,
+.dark .bg-white.shadow-xl,
+.dark .bg-white.shadow-2xl,
+.dark [role="dialog"].bg-white,
+.dark [role="alertdialog"].bg-white,
+.dark [role="menu"].bg-white,
+.dark .glass-forte { background-color: var(--glass-bg-strong); }
+
+/* Fundo escurecido atrás das janelas: mais leve, com desfoque */
+.bg-slate-900\/60,
+.bg-slate-900\/50 {
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* Campos de formulário: mais opacos para leitura */
+input.bg-white, select.bg-white, textarea.bg-white,
+.dark input.bg-white, .dark select.bg-white, .dark textarea.bg-white,
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+  background-color: var(--glass-bg-strong);
+}
+input.bg-transparent { background-color: transparent; }
+
+/* Camadas fixas de tela cheia (fundos de janelas) não herdam margem de contêineres "space-y-*" */
+.fixed.inset-0 { margin: 0 !important; }
+
+/* Colunas do Kanban ficam dentro de uma área com rolagem lateral: sem sombra, para não aparecer cortada */
+.bg-slate-100.rounded-2xl { box-shadow: none; }
