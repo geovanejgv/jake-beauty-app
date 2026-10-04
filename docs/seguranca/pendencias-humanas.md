@@ -12,12 +12,13 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
    - Criar `VITE_SUPABASE_URL` (URL do projeto, Supabase, Project Settings, API) e `VITE_SUPABASE_PUBLISHABLE_KEY` (a chave **publishable**, nunca a secret/service role), marcando Production e Preview.
    - Conferir em Settings, Domains que o domínio usa HTTPS (padrão da Vercel).
    - Não colar valor na conversa com o agente (DEV-07).
-2. **Trocar a senha fraca.** A conta da administradora está com uma senha curta e fraca, definida a pedido em conversa anterior com o agente. Trocar por uma senha longa (12 caracteres ou mais) antes de qualquer outro ajuste de senha. Depois, Supabase, Authentication, Sign In / Providers, Email: mínimo de 12 caracteres (AUT-03) [Confirmar].
+2. **Trocar a senha fraca.** A conta da administradora está com uma senha curta e fraca, definida a pedido em conversa anterior com o agente. Trocar por uma senha longa (12 caracteres ou mais) antes de qualquer outro ajuste de senha, pelo botão **Alterar senha** do menu do portal. Depois, Supabase, Authentication, Sign In / Providers, Email: mínimo de 12 caracteres (AUT-03) [Confirmar].
 3. **Supabase Auth: sessão e cadastro (AUT-03, AUT-05, SES-03, SES-07).**
    - Desligar cadastro público ("Allow new users to sign up" desligado): contas só criadas pela administradora.
    - Ativar "Prevent use of leaked passwords" (pode exigir plano Pro) [Confirmar].
    - Validade do access token (JWT expiry) de no máximo 3600 segundos; rotação de refresh token ligada com detecção de reuso.
    - Expiração do link de e-mail (redefinição de senha) de no máximo 1 hora.
+   - Ligar o aviso por e-mail de senha alterada (notificações de segurança do Auth) [Confirmar] (AUT-07).
    - Opcional: "Inactivity timeout" da sessão (plano Pro) [Confirmar].
 4. **MFA (AUT-04).** Ativar TOTP em Authentication, Multi-Factor. Depois disso, o agente implementa a tela de cadastro do aplicativo autenticador e a exigência de `aal2` no banco para ações de administradora. Decidir se entra na próxima entrega.
 5. **Limites e CAPTCHA no login (RAT-02, RAT-03, RAT-04).** Authentication, Rate Limits: conferir o limite de tentativas de login por IP. Para CAPTCHA, ativar Turnstile ou hCaptcha em Authentication, Attack Protection [Confirmar]; o agente ajusta a tela de login depois.
