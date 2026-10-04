@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronDown, ChevronLeft, EllipsisVertical, Loader2, Pencil, Plus, RefreshCw, SquareKanban, Trash2, Users } from 'lucide-react';
 import * as api from '../features/kanban/api';
 import { kanbanKeys, mensagemErro } from '../features/kanban/api';
+import { ErroPublico } from '../lib/seguranca/erros';
+import { useAuth } from '../contexts/AuthContext';
 import {
   idsDaColuna, lerFiltros, passaNoFiltro, reordenar, statusDaPosicao, urlFiltros, hojeISO,
   type Coluna, type ColunaEdicao, type Filtros, type ItemTarefa, type NovaTarefa, type Pessoa, type Quadro, type Tarefa,
@@ -110,7 +112,7 @@ export default function Tarefas() {
     try {
       quadroCriado.current = await api.criarQuadro(nome, cols);
       await Promise.all([qc.invalidateQueries({ queryKey: kanbanKeys.quadros }), qc.invalidateQueries({ queryKey: kanbanKeys.colunas })]);
-    } catch (e) { throw new Error(mensagemErro(e)); }
+    } catch (e) { throw new ErroPublico(mensagemErro(e)); }
   };
 
   if (init.isError || quadros.isError || colunas.isError) {
@@ -162,7 +164,7 @@ export default function Tarefas() {
             try {
               await api.salvarQuadro(quadroEditando.id, nome, cols);
               await qc.invalidateQueries({ queryKey: kanbanKeys.base });
-            } catch (e) { throw new Error(mensagemErro(e)); }
+            } catch (e) { throw new ErroPublico(mensagemErro(e)); }
           }}
         />
       )}
@@ -294,6 +296,8 @@ function QuadroAberto(p: QuadroAbertoProps) {
   const [excluindo, setExcluindo] = useState<Tarefa | null>(null);
   const [excluirQuadro, setExcluirQuadro] = useState(false);
   const [equipe, setEquipe] = useState(false);
+  // Só a administradora gerencia a equipe; o banco também barra (AUZ-07, política "users: administradora gerencia").
+  const ehAdmin = useAuth().perfil?.role === 'admin';
   const [ocupado, setOcupado] = useState(false);
   const [arrastando, setArrastando] = useState<string | null>(null);
   const [alvo, setAlvo] = useState<{ coluna: string; antesDe: string | null } | null>(null);
@@ -353,7 +357,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
     try {
       await api.editarTarefa(id, campos);
     } catch (e) {
-      throw new Error(mensagemErro(e));
+      throw new ErroPublico(mensagemErro(e));
     } finally {
       qc.invalidateQueries({ queryKey: chave });
       qc.invalidateQueries({ queryKey: kanbanKeys.resumo });
@@ -361,13 +365,13 @@ function QuadroAberto(p: QuadroAbertoProps) {
   };
   const salvarObservacao = (t: Tarefa, texto: string) => {
     patchLocal((l) => l.map((x) => (x.id === t.id ? { ...x, descricao: texto.trim() ? texto : null } : x)));
-    salvarTarefa(t.id, { descricao: texto.trim() ? texto : null }).catch((e) => p.onAviso((e as Error).message));
+    salvarTarefa(t.id, { descricao: texto.trim() ? texto : null }).catch((e) => p.onAviso(mensagemErro(e)));
   };
   const criarTarefa = async (dados: NovaTarefa) => {
     try {
       await api.criarTarefa(dados);
     } catch (e) {
-      throw new Error(mensagemErro(e));
+      throw new ErroPublico(mensagemErro(e));
     }
     qc.invalidateQueries({ queryKey: kanbanKeys.base });
   };
@@ -469,7 +473,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
             <Painel aberto={menu === 'mais'} titulo="Opções do quadro" onClose={() => setMenu(null)} alinhar="right">
               <div role="menu" className="space-y-0.5 min-w-[200px]">
                 <button type="button" role="menuitem" onClick={() => { setMenu(null); p.onEditarQuadro(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50"><Pencil size={14} /> Editar quadro</button>
-                <button type="button" role="menuitem" onClick={() => { setMenu(null); setEquipe(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50"><Users size={14} /> Equipe</button>
+                {ehAdmin && (<button type="button" role="menuitem" onClick={() => { setMenu(null); setEquipe(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50"><Users size={14} /> Equipe</button>)}
                 <button type="button" role="menuitem" onClick={() => { setMenu(null); if (p.quadros.length <= 1) p.onAviso('Este é o único quadro. Crie outro antes de excluí-lo.'); else setExcluirQuadro(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50"><Trash2 size={14} /> Excluir quadro</button>
               </div>
             </Painel>
@@ -585,7 +589,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
       {equipe && (
         <EquipeModal pessoas={p.pessoas} onClose={() => setEquipe(false)}
           onSalvar={async (pessoa) => {
-            try { await api.salvarPessoa(pessoa); } catch (e) { throw new Error(mensagemErro(e)); }
+            try { await api.salvarPessoa(pessoa); } catch (e) { throw new ErroPublico(mensagemErro(e)); }
             qc.invalidateQueries({ queryKey: kanbanKeys.pessoas });
           }}
         />

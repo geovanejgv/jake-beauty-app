@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { mensagemDeErro } from '../lib/seguranca/erros';
 import { useNetworkState } from 'react-use';
 import { useNavigate } from 'react-router-dom';
 
@@ -87,7 +88,7 @@ export default function Agenda() {
       setClientSearchTerm('');
       closeNewClientForm();
     },
-    onError: (error: any) => alert(`Ops! Não foi possível cadastrar a cliente: ${error.message}`)
+    onError: (error: unknown) => alert(mensagemDeErro(error, 'Ops! Não foi possível cadastrar a cliente.', 'agenda.nova_cliente'))
   });
 
   const addAppointmentMutation = useMutation({
@@ -97,7 +98,7 @@ export default function Agenda() {
       if (sError) throw sError;
       
       const inserts = [];
-      const groupId = newApt.is_recurring ? Math.random().toString(36).substring(2, 15) : null;
+      const groupId = newApt.is_recurring ? crypto.randomUUID() : null;
       const loopCount = newApt.is_recurring ? 24 : 1;
 
       for (let i = 0; i < loopCount; i++) {
@@ -430,7 +431,7 @@ export default function Agenda() {
             <div>
               <h4 className="font-bold flex items-center space-x-1 text-sm text-indigo-900">
                 <User size={14} className="text-indigo-400" /> <span>{cName}</span>
-                {ev.is_recurring && <Repeat size={14} className="ml-1 text-indigo-500" title="Recorrente Mensal" />}
+                {ev.is_recurring && <Repeat size={14} className="ml-1 text-indigo-500"><title>Recorrente Mensal</title></Repeat>}
                 {ev.return_reminder_sent_at && <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded ml-2 uppercase font-bold flex items-center gap-1"><CheckCircle size={8}/> Já Chamou ({new Date(ev.return_reminder_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})})</span>}
               </h4>
               <p className="text-xs text-indigo-600">Lembrar de agendar: {sName}</p>
@@ -581,7 +582,7 @@ export default function Agenda() {
                           <div className="flex justify-between items-center mb-0.5">
                              <span className="flex items-center text-indigo-600">
                                <CalendarHeart size={10} className="mr-1"/> Retorno
-                               {ev.is_recurring && <Repeat size={10} className="ml-1 text-indigo-500" title="Recorrente Mensal" />}
+                               {ev.is_recurring && <Repeat size={10} className="ml-1 text-indigo-500"><title>Recorrente Mensal</title></Repeat>}
                              </span>
                              <button onClick={(e) => { e.stopPropagation(); setAppointmentToDelete(ev); }} className="opacity-50 hover:opacity-100 hover:text-red-500" title="Excluir Lembrete"><Trash2 size={10} /></button>
                           </div>
@@ -643,11 +644,11 @@ export default function Agenda() {
                              <div className="flex items-center justify-between w-full min-w-0">
                                <span className="truncate flex items-center">
                                  <CalendarHeart size={8} className="mr-0.5 text-indigo-500 shrink-0"/>
-                                 {ev.is_recurring && <Repeat size={8} className="mr-0.5 text-indigo-500 shrink-0" title="Recorrente Mensal" />}
+                                 {ev.is_recurring && <Repeat size={8} className="mr-0.5 text-indigo-500 shrink-0"><title>Recorrente Mensal</title></Repeat>}
                                  <span className="truncate">{ev.clients?.name}</span>
                                </span>
                                <div className="flex items-center shrink-0 ml-1 gap-0.5">
-                                 {ev.return_reminder_sent_at && <CheckCircle size={8} className="text-emerald-600" title={`Chamou às ${new Date(ev.return_reminder_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`} />}
+                                 {ev.return_reminder_sent_at && <CheckCircle size={8} className="text-emerald-600"><title>{`Chamou às ${new Date(ev.return_reminder_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`}</title></CheckCircle>}
                                  <button onClick={(e) => { e.stopPropagation(); setAppointmentToDelete(ev); }} className="opacity-50 hover:opacity-100 hover:text-red-500" title="Excluir Lembrete"><Trash2 size={9} /></button>
                                </div>
                              </div>
@@ -660,7 +661,7 @@ export default function Agenda() {
                         return (
                           <div key={`apt-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-1 rounded border text-[9px] cursor-pointer transition-all w-full flex items-center justify-between ${itemClass}`} title={`${hour}:${min} - ${ev.clients?.name}`}>
                               <span className="truncate mr-1">{hour}:{min} {ev.clients?.name}</span>
-                              {ev.whatsapp_sent_at && <CheckCircle size={8} className="text-emerald-600 shrink-0" title={`Chamou às ${new Date(ev.whatsapp_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`} />}
+                              {ev.whatsapp_sent_at && <CheckCircle size={8} className="text-emerald-600 shrink-0"><title>{`Chamou às ${new Date(ev.whatsapp_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`}</title></CheckCircle>}
                           </div>
                         );
                       })}

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { registrarAuditoria } from '../lib/seguranca/auditoria';
+import { buscarPerfilAtivo } from '../contexts/AuthContext';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -12,13 +14,18 @@ export default function Login() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
+      // Mesma mensagem para conta inexistente, senha errada ou bloqueio (AUT-06).
       setError('Credenciais inválidas. Verifique seu email e senha.');
+    } else if (data.user) {
+      // Trilha de auditoria (LOG-05): login com perfil ativo ou login sem acesso liberado.
+      const perfil = await buscarPerfilAtivo(data.user.id).catch(() => undefined);
+      if (perfil !== undefined) await registrarAuditoria(perfil ? 'login' : 'login_negado');
     }
     setLoading(false);
   };

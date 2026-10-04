@@ -1,0 +1,153 @@
+# Pipeline de qualidade e segurança (docs/seguranca/requisitos.md).
+# Ações de terceiros fixadas por versão principal; fixar por SHA é pendência (DEP-05).
+name: Segurança e testes
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 9 * * 1" # varredura semanal mesmo sem mudanças
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    name: Typecheck, testes e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # mesma versão do projeto na Vercel (npm 11)
+          cache: npm
+      # Instalação reproduzível pelo lockfile, sem scripts de pacote (DEP-02, DEP-06)
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      # Inclui tests/seguranca (SEG-01..03, CAB-01..03, LOG-01/02/04, VAL-03/04, CRI-05/06...): TST-03
+      - run: npm test
+      - name: Build com variáveis fictícias (nenhum valor real no CI)
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://exemplo.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ficticia_para_build_ci
+      - name: Nenhuma chave administrativa no bundle do navegador (SEG-03, AUZ-05)
+        run: |
+          # Chave secreta nova (sb_secret_...) ou JWT antigo (anon/service_role) escrito no código
+          if grep -rlE "sb_secret_[A-Za-z0-9_-]{10,}|eyJhbGci[A-Za-z0-9_-]{10,}\.eyJ" dist; then
+            echo "Possível chave administrativa no bundle do cliente"; exit 1
+          fi
+      - name: Sem source maps públicos (LOG-02)
+        run: test -z "$(find dist -name '*.map' -print -quit)"
+      - name: Build falha sem variáveis (SEG-01)
+        run: |
+          if VITE_SUPABASE_URL= VITE_SUPABASE_PUBLISHABLE_KEY= npx vite build --outDir /tmp/build-sem-env >/tmp/saida.txt 2>&1; then
+            echo "O build deveria falhar sem as variáveis"; exit 1
+          fi
+          grep -q "Configuração inválida" /tmp/saida.txt
+
+  banco:
+    name: RLS e auditoria no Postgres local (AUZ-04, AUZ-09, LOG-06)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Banco descartável do próprio job: nunca usa credencial de produção (DEV-01).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres-local-do-ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres-local-do-ci
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash supabase/tests/seguranca/run.sh
+      - run: bash supabase/tests/kanban/run.sh
+
+  dependencias:
+    name: Auditoria de dependências (DEP-03)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # mesma versão do projeto na Vercel (npm 11)
+      # Bloqueia vulnerabilidade alta/crítica no que vai para o navegador.
+      - name: Dependências de produção (bloqueia)
+        run: npm audit --omit=dev --audit-level=high
+      # Ferramentas de build e teste: hoje há achados que só se resolvem com salto de
+      # versão principal (vite, vitest, tailwind). Relatório sem bloquear até o plano
+      # de atualização em docs/seguranca/pendencias-humanas.md ser executado.
+      - name: Todas as dependências (relatório)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  segredos:
+    name: Varredura de segredos (SEG-05)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # histórico completo
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sast:
+    name: SAST com CodeQL (TST-01)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      security-events: read # nada é enviado (upload: never)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+        with:
+          upload: never
+          output: sarif-results
+      - name: Bloquear achado de severidade alta (security-severity >= 7)
+        run: |
+          node - <<'JS'
+          const fs = require("fs");
+          const dir = "sarif-results";
+          let bloqueantes = 0, total = 0;
+          for (const f of fs.readdirSync(dir).filter((f) => f.endsWith(".sarif"))) {
+            const sarif = JSON.parse(fs.readFileSync(`${dir}/${f}`, "utf8"));
+            for (const run of sarif.runs ?? []) {
+              const regras = new Map((run.tool?.driver?.rules ?? []).map((r) => [r.id, r]));
+              for (const r of run.results ?? []) {
+                total++;
+                const regra = regras.get(r.ruleId) ?? {};
+                const sev = Number(regra.properties?.["security-severity"] ?? 0);
+                const loc = r.locations?.[0]?.physicalLocation;
+                const onde = `${loc?.artifactLocation?.uri}:${loc?.region?.startLine}`;
+                console.log(`${sev >= 7 ? "BLOQUEIA" : "aviso   "} [${sev}] ${r.ruleId} ${onde} - ${r.message?.text}`);
+                if (sev >= 7) bloqueantes++;
+              }
+            }
+          }
+          console.log(`CodeQL: ${total} achado(s), ${bloqueantes} de severidade alta.`);
+          if (bloqueantes > 0) process.exit(1);
+          JS
