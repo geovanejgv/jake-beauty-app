@@ -1,3 +1,4 @@
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import Dashboard from './pages/Dashboard';
@@ -7,7 +8,15 @@ import Financeiro from './pages/Financeiro';
 import PDV from './pages/PDV';
 import Login from './pages/Login';
 import Tarefas from './pages/Tarefas';
+import Configuracoes from './pages/Configuracoes';
+import Profissionais from './pages/Profissionais';
+import Servicos from './pages/Servicos';
+import MeuPainel from './pages/MeuPainel';
+import PagamentoProfissionais from './pages/PagamentoProfissionais';
+import RelatorioComissoes from './pages/RelatorioComissoes';
+import ImprimirComissoes from './pages/ImprimirComissoes';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { moduloVisivel, rotaInicial, type IdModulo } from './features/acesso/modulos';
 
 /** Negação por padrão (AUZ-01): sem sessão vai para /login; sem perfil ativo não entra. */
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -16,6 +25,22 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   if (!user) return <Navigate to="/login" />;
   if (acesso !== 'liberado') return <AcessoNaoLiberado />;
   return <>{children}</>;
+}
+
+/**
+ * Rota de um módulo: só abre se o papel permite e o módulo não foi escondido nas
+ * preferências. É conveniência de interface; o banco barra o dado (AUZ-07).
+ */
+function RotaModulo({ id, children }: { id: IdModulo; children: React.ReactNode }) {
+  const { perfil } = useAuth();
+  if (!perfil) return null;
+  if (!moduloVisivel(id, perfil.role, perfil.preferencias_ui)) return <Navigate to={rotaInicial(perfil.role, perfil.preferencias_ui)} replace />;
+  return <>{children}</>;
+}
+
+function Inicio() {
+  const { perfil } = useAuth();
+  return perfil ? <Navigate to={rotaInicial(perfil.role, perfil.preferencias_ui)} replace /> : null;
 }
 
 /** Quem já está logado não fica na tela de login. */
@@ -58,18 +83,29 @@ export default function App() {
               <MainLayout />
             </PrivateRoute>
           }>
-            {/* AGORA REDIRECIONA DIRETO PARA A AGENDA AO ABRIR O PROGRAMA */}
-            <Route index element={<Navigate to="/agenda" replace />} />
-            
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="agenda" element={<Agenda />} />
-            <Route path="clientes" element={<Clientes />} />
-            <Route path="financas" element={<Financeiro />} />
-            <Route path="pdv" element={<PDV />} />
-            <Route path="tarefas" element={<Tarefas />} />
+            <Route index element={<Inicio />} />
+            <Route path="dashboard" element={<RotaModulo id="resumo"><Dashboard /></RotaModulo>} />
+            <Route path="meu-painel" element={<RotaModulo id="meu_painel"><MeuPainel /></RotaModulo>} />
+            <Route path="agenda" element={<RotaModulo id="agenda"><Agenda /></RotaModulo>} />
+            <Route path="tarefas" element={<RotaModulo id="tarefas"><Tarefas /></RotaModulo>} />
+            <Route path="clientes" element={<RotaModulo id="clientes"><Clientes /></RotaModulo>} />
+            <Route path="profissionais" element={<RotaModulo id="profissionais"><Profissionais /></RotaModulo>} />
+            <Route path="servicos" element={<RotaModulo id="servicos"><Servicos /></RotaModulo>} />
+            <Route path="financas" element={<RotaModulo id="financas"><Financeiro /></RotaModulo>} />
+            <Route path="pagamentos" element={<RotaModulo id="pagamentos"><PagamentoProfissionais /></RotaModulo>} />
+            <Route path="pdv" element={<RotaModulo id="pdv"><PDV /></RotaModulo>} />
+            <Route path="relatorios/comissoes" element={<RotaModulo id="relatorio_comissoes"><RelatorioComissoes /></RotaModulo>} />
+            <Route path="configuracoes" element={<RotaModulo id="configuracoes"><Configuracoes /></RotaModulo>} />
           </Route>
 
-          <Route path="*" element={<Navigate to="/agenda" replace />} />
+          {/* Relatório para imprimir/salvar em PDF: página limpa, sem o menu */}
+          <Route path="/relatorios/comissoes/imprimir" element={
+            <PrivateRoute>
+              <RotaModulo id="relatorio_comissoes"><ImprimirComissoes /></RotaModulo>
+            </PrivateRoute>
+          } />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

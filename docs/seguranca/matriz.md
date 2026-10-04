@@ -4,9 +4,9 @@ Situação de cada requisito de `docs/seguranca/requisitos.md` neste projeto (SP
 
 Situações: `atende`, `parcial`, `aguarda humano`, `não se aplica`, `pendente`.
 
-Última atualização: 2026-10-04 (entrega da especificação de segurança). A migração `20261011120000_seguranca_endurecimento.sql` foi **aplicada em produção em 2026-10-04** com aprovação do usuário; conferência: 0 tabelas sem RLS, 0 políticas `using (true)`, 0 funções executáveis por anon.
+Última atualização: 2026-10-04 (gestão do salão: papéis, catálogo, agenda, comissões e Kanban; migração 20261012120000 NÃO aplicada). A migração `20261011120000_seguranca_endurecimento.sql` foi **aplicada em produção em 2026-10-04** com aprovação do usuário; conferência: 0 tabelas sem RLS, 0 políticas `using (true)`, 0 funções executáveis por anon.
 
-Resumo: 38 atende, 35 não se aplica, 28 aguarda humano, 22 parcial, 9 pendente (total 132).
+Resumo: 41 atende, 35 não se aplica, 28 aguarda humano, 20 parcial, 8 pendente (total 132).
 
 ## Adaptação da especificação a este projeto
 
@@ -47,24 +47,24 @@ Resumo: 38 atende, 35 não se aplica, 28 aguarda humano, 22 parcial, 9 pendente 
 | SES-05 | C | não se aplica | Autenticação por cabeçalho Authorization (Bearer), não por cookie: não há CSRF. Nenhuma rota GET grava dados (PostgREST). |
 | SES-06 | C | atende | JWT validado pelo próprio Supabase (PostgREST/Auth) a cada requisição; o app não decide acesso por token decodificado; `tests/seguranca/varreduras.test.ts`. |
 | SES-07 | R | pendente | Sem expiração por inatividade. Depende de "Inactivity timeout" no Supabase Auth (plano Pro): pendencias-humanas.md item 3. |
-| AUZ-01 | C | atende | Negação por padrão no banco: toda tabela exige perfil ativo (`supabase/migrations/20261011120000_seguranca_endurecimento.sql`:31-75); na tela, `src/App.tsx:13` (sem sessão vai para /login; sem perfil ativo, tela "Acesso ainda não liberado"); `supabase/tests/seguranca/seguranca.test.sql` seções 2 e 3. |
-| AUZ-02 | C | atende | Instalação de uma única empresa (sem multiempresa): o isolamento é por perfil ativo e papel, aplicado no próprio RLS; `supabase/tests/seguranca/seguranca.test.sql`. |
+| AUZ-01 | C | atende | Negação por padrão no banco: perfil ativo obrigatório e, na gestão do salão, acesso por papel (administradora global; profissional só o que é dela) em `supabase/migrations/20261012120000_gestao_salao.sql`; rotas da tela protegidas por papel e preferência (`src/App.tsx`, `RotaModulo`); `supabase/tests/seguranca/gestao.test.sql` e `supabase/tests/seguranca/seguranca.test.sql`. |
+| AUZ-02 | C | atende | Instalação de uma única empresa; o isolamento é por profissional na própria consulta (RLS por `professional_id`/`profissional_id`): agenda, fechamentos, vínculos de serviço e tarefas. `supabase/tests/seguranca/gestao.test.sql` "outra profissional não vê a agenda alheia", "não vê o fechamento", "não vê a tarefa". |
 | AUZ-03 | C | não se aplica | Não é multiempresa (um único estúdio). |
-| AUZ-04 | C | atende | Nenhuma política `using (true)` (`supabase/migrations/20261011120000_seguranca_endurecimento.sql`); toda tabela com RLS; política FOR ALL com using + with check (vale para as quatro operações) nas tabelas antigas, por operação no Kanban; `supabase/tests/seguranca/seguranca.test.sql` seção 1; `tests/seguranca/varreduras.test.ts` "AUZ-04". |
-| AUZ-05 | C | atende | Nenhuma service role no front; `src/lib/env.ts:45` recusa service role/secret key; `tests/seguranca/varreduras.test.ts` "AUZ-05"; busca no bundle em `.github/workflows/seguranca.yml`. |
-| AUZ-06 | C | atende | Papel e status vêm de `public.users`; só a administradora altera (`supabase/migrations/20261011120000_seguranca_endurecimento.sql`:88-92); `supabase/tests/seguranca/seguranca.test.sql` "profissional não se promove". |
-| AUZ-07 | C | atende | Menu "Equipe" escondido para não-admin (`src/pages/Tarefas.tsx:300`) e barrado no banco; finanças pessoais e auditoria só para admin no RLS; `supabase/tests/seguranca/seguranca.test.sql` seção 4. |
-| AUZ-08 | I | parcial | Ações de administradora barradas no banco e auditadas (`permissao_alterada`, `usuario_criado`). Não há prefixo de rota (SPA sem API própria). |
-| AUZ-09 | I | atende | `supabase/tests/seguranca/seguranca.test.sql` (sem sessão, sem perfil, inativa, profissional e administradora em cada recurso), no job "banco" de `.github/workflows/seguranca.yml`. Sem multiusuário por dono: o recurso é do estúdio. |
+| AUZ-04 | C | atende | Toda tabela com RLS e política por operação (tabelas novas da gestão nascem com RLS na mesma migração, `supabase/migrations/20261012120000_gestao_salao.sql`); nenhuma política `using (true)`; `supabase/tests/seguranca/gestao.test.sql` seção 7; `tests/seguranca/varreduras.test.ts` "AUZ-04". |
+| AUZ-05 | C | atende | Nenhuma service role no front (`src/lib/env.ts` recusa); a única chave de serviço fica na Edge Function `supabase/functions/admin-usuarios/index.ts`, no servidor do Supabase; `tests/seguranca/varreduras.test.ts` "AUZ-05". |
+| AUZ-06 | C | atende | Papel, status, comissão e valores vêm do banco: perfil profissional só a administradora altera; profissional não muda valor, comissão, gorjeta, forma de pagamento nem dono do atendimento (gatilho `appointments_protecao`); `supabase/tests/seguranca/gestao.test.sql` "profissional não altera a própria comissão", "valor do catálogo (preço enviado ignorado)". |
+| AUZ-07 | C | atende | Menus de administradora escondidos para a profissional (`src/features/acesso/modulos.ts`) e barrados no banco: finanças, pagamentos, equipe, catálogo, fechamentos e auditoria; contato de clientes mascarado pela view `clientes_visiveis`; `supabase/tests/seguranca/gestao.test.sql` seções 1 a 5. |
+| AUZ-08 | I | atende | Ações de administradora em funções próprias: Edge Function `admin-usuarios` (confere `usuario_admin()` antes de agir, CORS restrito) e funções `gerar_fechamento`/`cancelar_fechamento`/`habilitar_servicos`; todas auditadas em `access_logs`. |
+| AUZ-09 | I | atende | `supabase/tests/seguranca/gestao.test.sql` (administradora, profissional, outra profissional e visitante em perfis, clientes, catálogo, agenda, fechamentos e tarefas) e `supabase/tests/seguranca/seguranca.test.sql`, no job "banco" de `.github/workflows/seguranca.yml`. |
 | VAL-01 | C | parcial | Sem servidor próprio: a validação de servidor é feita no banco (tipos, `check`, funções `kanban_*` e `registrar_auditoria` validam tudo). Zod não foi adicionado (DEP-01: aguarda aprovação); validação da tela continua só como usabilidade. |
 | VAL-02 | C | parcial | O PostgREST só aceita colunas existentes; colunas sensíveis (papel, status) protegidas por RLS. Campos extras não previstos são recusados pelo banco. |
 | VAL-03 | C | atende | Acesso só pelo query builder do supabase-js e funções com parâmetros; `tests/seguranca/varreduras.test.ts` "VAL-03". |
 | VAL-04 | C | atende | Sem `dangerouslySetInnerHTML`/`innerHTML`; `tests/seguranca/varreduras.test.ts` "VAL-04". |
 | VAL-05 | I | não se aplica | O app não busca URL informada pelo usuário. |
 | VAL-06 | I | não se aplica | Sem caminho de arquivo montado com entrada do usuário. |
-| VAL-07 | C | pendente | Checkout (PDV) e comissões calculados na tela. Mover para função no banco: pendencias-humanas.md item 12. |
+| VAL-07 | C | atende | Preço, duração e comissão do agendamento calculados no banco a partir do catálogo (`agendar_atendimento`); fechamento calcula taxa, material, comissão e gorjeta no banco (`gerar_fechamento`) e congela os valores; `supabase/tests/seguranca/gestao.test.sql` "totais calculados no banco" e "preço enviado pela profissional ignorado". |
 | VAL-08 | I | atende | Sem redirecionamento por parâmetro; destinos são rotas fixas do React Router. |
-| VAL-09 | I | parcial | Ordem do Kanban com trava (`pg_advisory_xact_lock`, migração do Kanban). Conflito de horário na agenda e estoque sem trava: pendencias-humanas.md item 12. |
+| VAL-09 | I | atende | Agenda: trava pessimista por profissional (`pg_advisory_xact_lock`) + restrição de exclusão `appointments_sem_conflito` (garantia final mesmo sem a função); fechamento com trava por profissional; `supabase/tests/seguranca/gestao.test.sql` "Conflito de horário" e "inserção direta sobreposta falha". |
 | UPL-01 | C | não se aplica | O app não tem upload (nenhum bucket no Storage). |
 | UPL-02 | C | não se aplica | Sem upload. |
 | UPL-03 | C | não se aplica | Sem download de arquivo de usuário. |
@@ -79,7 +79,7 @@ Resumo: 38 atende, 35 não se aplica, 28 aguarda humano, 22 parcial, 9 pendente 
 | CRI-06 | C | atende | `Math.random` trocado por `crypto.randomUUID` (`src/pages/Agenda.tsx:101`); `tests/seguranca/varreduras.test.ts` "sem Math.random". |
 | CAB-01 | I | atende | `vercel.json` CSP `script-src 'self'` (sem unsafe-inline/eval); script de tema movido para `public/tema.js`; `tests/seguranca/cabecalhos.test.ts`; conferido no navegador sem violações. Exceção: `style-src 'unsafe-inline'` porque o React aplica `style` inline. |
 | CAB-02 | I | atende | `vercel.json` nosniff, Referrer-Policy, `frame-ancestors 'none'` e X-Frame-Options DENY; `tests/seguranca/cabecalhos.test.ts`. |
-| CAB-03 | C | atende | Nenhum `Access-Control-Allow-Origin` no app (`tests/seguranca/cabecalhos.test.ts`). O CORS da API é do Supabase (aceita qualquer origem por desenho; o controle é o RLS). |
+| CAB-03 | C | atende | Nenhum `Access-Control-Allow-Origin` no app (`tests/seguranca/cabecalhos.test.ts`); a Edge Function só responde CORS para as origens do portal na Vercel e as de `ORIGENS_PERMITIDAS`. |
 | RAT-01 | I | aguarda humano | Firewall da Vercel: pendencias-humanas.md item 10. |
 | RAT-02 | C | parcial | Sem servidor próprio: o limite de login é o do Supabase Auth (contador no servidor dele). Ajuste: pendencias-humanas.md item 5. |
 | RAT-03 | C | parcial | Idem RAT-02: limites de login e de verificação no Supabase Auth; leitura e escrita da API sem limite por conta. |
@@ -90,7 +90,7 @@ Resumo: 38 atende, 35 não se aplica, 28 aguarda humano, 22 parcial, 9 pendente 
 | LOG-02 | C | atende | `vite.config.ts:13` `sourcemap: false`; job "Sem source maps públicos" em `.github/workflows/seguranca.yml`; `tests/seguranca/varreduras.test.ts` "LOG-02". |
 | LOG-03 | I | pendente | Sem ferramenta de monitoramento (Sentry). Exige dependência nova (DEP-01): pendencias-humanas.md item 11. |
 | LOG-04 | C | atende | `src/lib/seguranca/logger.ts:12` (mascaramento); `console.*` só no logger (`tests/seguranca/varreduras.test.ts`); `tests/seguranca/config-logs-erros.test.ts` "LOG-04". |
-| LOG-05 | I | parcial | Tabela `access_logs` + gatilhos (exclusões, alterações de clientes e finanças, permissões) e `registrar_auditoria` para login, login negado e logout (`supabase/migrations/20261011120000_seguranca_endurecimento.sql`:121-290); `supabase/tests/seguranca/seguranca.test.sql` seção 8. Falha de login não é gravada pelo app (sem sessão): fica nos logs do Supabase Auth. |
+| LOG-05 | I | parcial | `access_logs` + gatilhos (exclusões, alterações de clientes, finanças, perfis, comissões, serviços e taxas; mudanças de permissão), eventos de fechamento (gerado, contestado, cancelado, assinado) e de acesso pela Edge Function; `supabase/tests/seguranca/gestao.test.sql` "assinatura registrada na auditoria". Falha de login fica nos logs do Supabase Auth. |
 | LOG-06 | I | parcial | Somente inserção por gatilho e permissões (`supabase/migrations/20261011120000_seguranca_endurecimento.sql`:144-163); `supabase/tests/seguranca/seguranca.test.sql` seção 7. Prazo de retenção a definir: pendencias-humanas.md item 14. |
 | LOG-07 | I | aguarda humano | pendencias-humanas.md item 10. |
 | LOG-08 | I | não se aplica | Sem ferramenta de gravação de sessão. |
@@ -114,7 +114,7 @@ Resumo: 38 atende, 35 não se aplica, 28 aguarda humano, 22 parcial, 9 pendente 
 | IAD-06 | I | não se aplica | O app não chama modelo de linguagem (sem integração com IA). |
 | IAD-07 | I | não se aplica | O app não chama modelo de linguagem (sem integração com IA). |
 | IAD-08 | C | não se aplica | O app não chama modelo de linguagem (sem integração com IA). |
-| DEP-01 | C | atende | Nenhuma dependência nova nesta entrega (Zod e Sentry ficaram pendentes de aprovação). |
+| DEP-01 | C | atende | Nenhuma dependência nova. O PDF é gerado pelo navegador ("Salvar como PDF") a partir de página própria, sem biblioteca e sem enviar dados para fora. |
 | DEP-02 | C | atende | `package-lock.json` versionado; `vercel.json` `installCommand: npm ci`; workflow `npm ci --ignore-scripts`; build sem `npm install`; `tests/seguranca/cabecalhos.test.ts` "DEP-02". |
 | DEP-03 | I | parcial | Job em `.github/workflows/seguranca.yml` bloqueia alta/crítica nas dependências de produção. Ferramentas de build (vite, vitest, tailwind) têm achados que só saem com salto de versão principal: relatório sem bloquear, plano em pendencias-humanas.md item 15. |
 | DEP-04 | I | parcial | `.github/dependabot.yml`. Ativar "Dependabot security updates": pendencias-humanas.md item 7. |
@@ -146,7 +146,7 @@ Resumo: 38 atende, 35 não se aplica, 28 aguarda humano, 22 parcial, 9 pendente 
 | BKP-02 | I | aguarda humano | pendencias-humanas.md item 9. |
 | BKP-03 | I | aguarda humano | pendencias-humanas.md item 9. |
 | LGP-01 | I | parcial | Rascunho em `docs/seguranca/lgpd-registro-tratamento.md`; aprovação do usuário pendente. |
-| LGP-02 | I | parcial | Finalidades no rascunho de LGP-01; `clients.email`, `birth_date` e `birthday` a confirmar. |
+| LGP-02 | I | parcial | Finalidades no rascunho de LGP-01, incluindo os dados novos (CPF, CNPJ/MEI, PIX e contrato do profissional; histórico técnico da cliente; IP e navegador da assinatura de fechamento). `clients.email`, `birth_date` e `birthday` a confirmar. |
 | LGP-03 | I | aguarda humano | Prazos de retenção: pendencias-humanas.md item 14. |
 | LGP-04 | I | pendente | Sem função de exportação/exclusão de dados do titular; canal a definir: pendencias-humanas.md item 14. |
 | LGP-05 | I | aguarda humano | Operadores: Supabase, Vercel. pendencias-humanas.md item 14. |

@@ -64,3 +64,16 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
     - **Finanças pessoais (`personal_finances`) só para a administradora**;
     - equipe (`public.users`) só alterada pela administradora;
     - exclusões, alterações de clientes e finanças, logins e logouts passam a ser auditados.
+
+## Gestão do salão (papéis, catálogo, agenda, comissões)
+
+19. **Migração `20261012120000_gestao_salao.sql` (DEV-02).** Só aplicar com "autorizo" explícito, **antes** de publicar o front desta entrega (o front novo lê colunas e funções que ela cria; o front atual continua funcionando com ela aplicada). Efeitos visíveis:
+    - profissional só vê a própria agenda, os próprios fechamentos e as tarefas em que é responsável, envolvida ou criadora;
+    - profissional vê clientes pela view `clientes_visiveis`: nome e histórico técnico, com telefone e e-mail mascarados;
+    - finanças do negócio (despesas, receitas avulsas, transações) passam a ser só da administradora;
+    - agenda passa a recusar dois atendimentos sobrepostos do mesmo profissional (os 181 agendamentos atuais não têm profissional e não são afetados);
+    - formas de pagamento aceitas: pix, dinheiro, débito, crédito, cartão (antigos) e outro.
+20. **Deploy da Edge Function `admin-usuarios` (DEV-02).** Necessária para "Criar acesso", "Redefinir senha" e "Desativar/Reativar" com bloqueio de login. Usa a chave de serviço que o próprio Supabase injeta na função (ninguém precisa copiá-la). Opcional: segredo `ORIGENS_PERMITIDAS` com um domínio próprio, se houver. Sem o deploy, o cadastro de profissionais funciona, mas sem login.
+21. **Agendamentos antigos sem profissional.** Decidir se os 181 atendimentos existentes devem ser atribuídos a alguém (ex.: à administradora). Hoje aparecem como "Sem profissional" e não entram em fechamento de comissão.
+22. **Contrato de parceria (Lei 13.352/2016) [Confirmar].** O sistema guarda CPF, CNPJ/MEI, modelo e início do contrato e avisa quando falta CNPJ/MEI; a redação, a homologação e a guarda do contrato assinado são fora do sistema.
+23. **Com profissionais entrando no sistema, os itens 2 a 5 ficam mais urgentes**: mínimo de 12 caracteres e senhas vazadas no Supabase Auth, cadastro público desligado e MFA para a administradora.

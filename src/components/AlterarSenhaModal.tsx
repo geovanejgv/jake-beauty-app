@@ -11,9 +11,13 @@ import { Campo, Modal, inputCls } from '../features/kanban/components/ui';
  * Troca de senha pelo próprio Supabase Auth (AUT-01): sem hash nem token próprios.
  * Exige a senha atual antes de trocar (AUT-07) e, depois da troca, encerra as
  * sessões dos outros aparelhos (SES-04). A senha nunca vai para log nem para a tela.
+ *
+ * obrigatoria: primeiro acesso com senha temporária criada pela administradora; a
+ * janela não fecha até a troca (ou sair do sistema).
  */
-export default function AlterarSenhaModal({ onClose }: { onClose: () => void }) {
-  const { user } = useAuth();
+export default function AlterarSenhaModal({ onClose, obrigatoria = false }: { onClose: () => void; obrigatoria?: boolean }) {
+  const { user, signOut } = useAuth();
+  const fechar = obrigatoria ? () => {} : onClose;
   const [atual, setAtual] = useState('');
   const [nova, setNova] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
@@ -39,7 +43,8 @@ export default function AlterarSenhaModal({ onClose }: { onClose: () => void }) 
       const conferencia = await supabase.auth.signInWithPassword({ email: user.email, password: atual });
       if (conferencia.error) return setErro(traduzir(conferencia.error, 'Não foi possível conferir a senha atual.'));
 
-      const troca = await supabase.auth.updateUser({ password: nova });
+      // Também desmarca a troca obrigatória do primeiro acesso.
+      const troca = await supabase.auth.updateUser({ password: nova, data: { trocar_senha: false } });
       if (troca.error) return setErro(traduzir(troca.error, 'Não foi possível trocar a senha.'));
 
       // Quem estava logado em outro aparelho precisa entrar de novo com a senha nova.
@@ -71,10 +76,12 @@ export default function AlterarSenhaModal({ onClose }: { onClose: () => void }) 
   }
 
   return (
-    <Modal titulo="Alterar senha" onClose={onClose}
+    <Modal titulo={obrigatoria ? 'Defina a sua senha' : 'Alterar senha'} onClose={fechar} semFechar={obrigatoria}
       rodape={
         <>
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 font-medium text-sm hover:bg-slate-100">Cancelar</button>
+          {obrigatoria
+            ? <button type="button" onClick={() => { void signOut(); }} className="px-4 py-2 rounded-lg text-slate-600 font-medium text-sm hover:bg-slate-100">Sair</button>
+            : <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 font-medium text-sm hover:bg-slate-100">Cancelar</button>}
           <button type="submit" form="form-alterar-senha" disabled={ocupado} className="px-4 py-2 rounded-lg bg-rose-600 text-white font-bold text-sm disabled:opacity-60">
             {ocupado ? 'Salvando...' : 'Salvar nova senha'}
           </button>
@@ -83,7 +90,12 @@ export default function AlterarSenhaModal({ onClose }: { onClose: () => void }) 
       <form id="form-alterar-senha" onSubmit={salvar} className="space-y-4" noValidate>
         {/* Ajuda os gerenciadores de senha a associar a conta */}
         <input type="email" name="email" autoComplete="username" value={user?.email ?? ''} readOnly hidden />
-        <Campo rotulo="Senha atual" obrigatorio>
+        {obrigatoria && (
+          <p className="text-sm text-slate-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            Primeiro acesso: troque a senha temporária que recebeu por uma senha só sua para continuar.
+          </p>
+        )}
+        <Campo rotulo={obrigatoria ? 'Senha temporária' : 'Senha atual'} obrigatorio>
           <input type={tipo} autoComplete="current-password" value={atual} onChange={(e) => setAtual(e.target.value)} className={inputCls} autoFocus />
         </Campo>
         <Campo rotulo="Nova senha" obrigatorio dica={`Pelo menos ${SENHA_MIN} caracteres. Uma frase longa é fácil de lembrar e difícil de adivinhar.`}>

@@ -417,3 +417,11 @@ aside nav a[href] { position: relative; }
   :is(button, a[href], [role="button"], [role="menuitem"], [data-tarefa], .cursor-pointer):hover { transform: none !important; }
   :is(button, a[href])::after { display: none; }
 }
+
+/* Impressão / "Salvar como PDF" (relatórios): papel branco, sem vidro nem sombras. */
+@media print {
+  html, body { background: #fff !important; color: #0f172a !important; }
+  html.dark body { background: #fff !important; }
+  * { box-shadow: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  @page { margin: 12mm; }
+}

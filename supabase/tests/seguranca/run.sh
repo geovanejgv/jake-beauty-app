@@ -12,4 +12,12 @@ for m in "$DIR"/../../migrations/*.sql; do
   psql -d "$DB" -q -v ON_ERROR_STOP=1 -f "$m"
 done
 psql -d "$DB" -q -At -v ON_ERROR_STOP=1 -f "$DIR/seguranca.test.sql"
+# Banco novo para os testes da gestão do salão (independentes dos anteriores).
+psql -qc "drop database if exists ${DB}_gestao" -c "create database ${DB}_gestao"
+psql -d "${DB}_gestao" -q -v ON_ERROR_STOP=1 -f "$DIR/../kanban/00_supabase_stub.sql"
+psql -d "${DB}_gestao" -q -v ON_ERROR_STOP=1 -f "$DIR/00_tabelas_stub.sql"
+for m in "$DIR"/../../migrations/*.sql; do
+  psql -d "${DB}_gestao" -q -v ON_ERROR_STOP=1 -f "$m"
+done
+psql -d "${DB}_gestao" -q -At -v ON_ERROR_STOP=1 -f "$DIR/gestao.test.sql"
 echo "Testes de segurança do banco: OK"

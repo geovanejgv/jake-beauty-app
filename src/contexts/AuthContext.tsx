@@ -3,9 +3,10 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { registrarAuditoria } from '../lib/seguranca/auditoria';
 import { mensagemDeErro } from '../lib/seguranca/erros';
+import { normalizarPreferencias, type Papel, type PreferenciasUi } from '../features/acesso/modulos';
 
 /** Perfil do app (public.users). Papel e status vêm do banco, nunca da tela (AUZ-06). */
-export type Perfil = { id: string; name: string; role: 'admin' | 'professional' };
+export type Perfil = { id: string; name: string; role: Papel; preferencias_ui: PreferenciasUi };
 
 /**
  * liberado: tem perfil ativo; negado: logou, mas não tem perfil ativo (acesso ainda não
@@ -20,25 +21,29 @@ interface AuthContextType {
   acesso: SituacaoAcesso;
   erroAcesso: string | null;
   recarregarPerfil: () => void;
+  /** Grava as preferências de interface do próprio usuário (menu e rotas). */
+  salvarPreferencias: (prefs: PreferenciasUi) => Promise<void>;
   signOut: () => Promise<void>;
   loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
   session: null, user: null, perfil: null, acesso: 'carregando', erroAcesso: null,
-  recarregarPerfil: () => {}, signOut: async () => {}, loading: true,
+  recarregarPerfil: () => {}, salvarPreferencias: async () => {}, signOut: async () => {}, loading: true,
 });
 
 /** Busca o perfil ATIVO do usuário logado. null = sem perfil ativo. */
 export async function buscarPerfilAtivo(authId: string): Promise<Perfil | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('id, name, role')
+    .select('id, name, role, preferencias_ui')
     .eq('auth_id', authId)
     .eq('active', true)
     .maybeSingle();
   if (error) throw error;
-  return (data as Perfil | null) ?? null;
+  if (!data) return null;
+  const linha = data as { id: string; name: string; role: Papel; preferencias_ui?: unknown };
+  return { id: linha.id, name: linha.name, role: linha.role, preferencias_ui: normalizarPreferencias(linha.preferencias_ui) };
 }
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -93,6 +98,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const recarregarPerfil = useCallback(() => setTentativa((n) => n + 1), []);
 
+  const salvarPreferencias = useCallback(async (prefs: PreferenciasUi) => {
+    const limpas = normalizarPreferencias(prefs);
+    const { error } = await supabase.rpc('salvar_preferencias_ui', { p_preferencias: limpas });
+    if (error) throw error;
+    setPerfil((atual) => (atual ? { ...atual, preferencias_ui: limpas } : atual));
+  }, []);
+
   const signOut = async () => {
     await registrarAuditoria('logout');
     // Revoga a sessão no servidor de autenticação (SES-04); 'local' encerra só este aparelho.
@@ -100,7 +112,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, perfil, acesso, erroAcesso, recarregarPerfil, signOut, loading }}>
+    <AuthContext.Provider value={{ session, user, perfil, acesso, erroAcesso, recarregarPerfil, salvarPreferencias, signOut, loading }}>
       {!loading && children}
     </AuthContext.Provider>
   );
