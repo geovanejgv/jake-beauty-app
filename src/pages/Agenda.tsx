@@ -1,10 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus, Users, BadgeCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { useNetworkState } from 'react-use';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { equipeKeys, listarAtivos } from '../features/equipe/api';
+import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '../features/catalogo/api';
+import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
+import { mensagemAgenda } from '../features/agenda/logic';
+import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
+import { brl, lerValor, valorParaCampo } from '../lib/formatos';
+
+/** Erro de agenda: conflito de horário vem com mensagem própria; o resto, genérica com código. */
+const erroAgenda = (e: unknown, padrao: string, origem: string) => mensagemAgenda(e) ?? mensagemDeErro(e, padrao, origem);
 
 export default function Agenda() {
   const { online } = useNetworkState();
@@ -24,9 +34,23 @@ export default function Agenda() {
   const [showReminders, setShowReminders] = useState(true);
 
   // Celular e tablet (abaixo de 1024px) abrem na visão semanal; computador abre na mensal
-  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>(
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'equipe'>(
     window.innerWidth < 1024 ? 'week' : 'month'
   );
+
+  // Papel vem do banco (AUZ-06). A profissional só recebe a própria agenda (RLS).
+  const { perfil } = useAuth();
+  const ehAdmin = perfil?.role === 'admin';
+  // Filtro da administradora: '' = todos, 'sem' = sem profissional, ou o id.
+  const [filtroProf, setFiltroProf] = useState('');
+  const [novoProf, setNovoProf] = useState('');
+  const [novoServico, setNovoServico] = useState('');
+  const [novoValor, setNovoValor] = useState('');
+  const [novaDuracao, setNovaDuracao] = useState('45');
+  const [novoConfirmado, setNovoConfirmado] = useState(false);
+  const [blockProf, setBlockProf] = useState('');
+  const [editProf, setEditProf] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const todayStr = new Date().toISOString().split('T')[0];
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -58,7 +82,7 @@ export default function Agenda() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('appointments')
-        .select(`id, start_time, end_time, status, is_block, block_reason, whatsapp_sent_at, return_reminder_date, return_reminder_sent, return_reminder_sent_at, is_manual_reminder, is_recurring, recurring_group_id, clients ( id, name, phone ), services ( id, name, price, commission_rate )`)
+        .select(`id, start_time, end_time, status, is_block, block_reason, whatsapp_sent_at, return_reminder_date, return_reminder_sent, return_reminder_sent_at, is_manual_reminder, is_recurring, recurring_group_id, professional_id, client_id, servico_id, valor_cobrado, notes, services ( id, name, price, commission_rate ), servicos ( id, nome, categoria_id )`)
         .order('start_time', { ascending: true });
       if (error) throw error;
       return data || [];
@@ -68,18 +92,56 @@ export default function Agenda() {
   const { data: clientsList = [] } = useQuery({
     queryKey: ['clients-list-agenda'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('clients').select('id, name, phone').order('name');
+      // Profissional vê nome e telefone mascarado (view clientes_visiveis); a administradora vê tudo.
+      const { data, error } = await supabase.from('clientes_visiveis').select('id, name, phone, contato_visivel').order('name');
       if (error) throw error;
       return data || [];
     }
   });
 
+  const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos });
+  const { data: categorias = [] } = useQuery({ queryKey: catalogoKeys.categorias, queryFn: listarCategorias });
+  const { data: servicosCatalogo = [] } = useQuery({ queryKey: catalogoKeys.servicos, queryFn: listarServicos });
+  const { data: vinculos = [] } = useQuery({ queryKey: catalogoKeys.vinculos(), queryFn: () => listarVinculos() });
+  const nomeProf = (id: string | null | undefined) => (id ? equipe.find((p) => p.id === id)?.name ?? 'Profissional' : 'Sem profissional');
+  const corCategoria = (categoriaId?: string | null) => categorias.find((c) => c.id === categoriaId)?.cor;
+
+  // Cliente (pela view) e serviço (catálogo novo, registro antigo ou nome do lembrete) normalizados.
+  const mapaClientes = new Map((clientsList as any[]).map((c) => [c.id, c]));
+  const agendamentos = (appointments as any[]).map((a) => ({
+    ...a,
+    clients: a.client_id ? mapaClientes.get(a.client_id) ?? null : null,
+    services: {
+      id: a.services?.id,
+      name: a.servicos?.nome ?? a.services?.name ?? a.notes ?? 'Procedimento',
+      price: a.valor_cobrado ?? a.services?.price ?? null,
+    },
+  }))
+    .filter((a) => !ehAdmin || !filtroProf || (filtroProf === 'sem' ? !a.professional_id : a.professional_id === filtroProf));
+
+  // Serviços que o profissional escolhido oferece, com preço e tempo dele.
+  const profAgendamento = ehAdmin ? novoProf : perfil?.id ?? '';
+  const ofertas = servicosCatalogo
+    .map((s) => ({ s, c: condicoesEfetivas(s, vinculos.find((v) => v.user_id === profAgendamento && v.servico_id === s.id), null) }))
+    .filter((x) => x.c.oferece);
+  const ofertaEscolhida = ofertas.find((x) => x.s.id === novoServico);
+
+  // Atalho do botão "+ Novo > Agendamento" (/agenda?novo=agendamento)
+  useEffect(() => {
+    if (searchParams.get('novo') !== 'agendamento') return;
+    openAddModalForType('appointment', todayStr);
+    searchParams.delete('novo');
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   // Cadastra a cliente na hora e já a seleciona no agendamento
   const addClientMutation = useMutation({
     mutationFn: async (client: { name: string; phone: string }) => {
-      const { data, error } = await supabase.from('clients').insert([client]).select('id, name, phone').single();
+      // Função do banco: cadastra sem dar à profissional leitura da base de clientes.
+      const { data, error } = await supabase.rpc('cadastrar_cliente_rapido', { p_nome: client.name, p_telefone: client.phone });
       if (error) throw error;
-      return data;
+      return { id: data as string, name: client.name, phone: client.phone, contato_visivel: ehAdmin };
     },
     onSuccess: (client: any) => {
       queryClient.invalidateQueries({ queryKey: ['clients-list-agenda'] });
@@ -93,34 +155,47 @@ export default function Agenda() {
 
   const addAppointmentMutation = useMutation({
     mutationFn: async (newApt: any) => {
-      const formattedPrice = parseFloat(String(newApt.service_price).replace(',', '.'));
-      const { data: service, error: sError } = await supabase.from('services').insert([{ name: newApt.service_name, price: formattedPrice, commission_rate: 40.0, duration_minutes: 45 }]).select().single();
-      if (sError) throw sError;
-      
-      const inserts = [];
-      const groupId = newApt.is_recurring ? crypto.randomUUID() : null;
-      const loopCount = newApt.is_recurring ? 24 : 1;
-
-      for (let i = 0; i < loopCount; i++) {
-        const start = new Date(`${newApt.date}T${newApt.time}:00`);
-        start.setMonth(start.getMonth() + i);
-        const end = new Date(start.getTime() + 45 * 60000);
-        
-        inserts.push({ 
-          client_id: newApt.client_id, 
-          service_id: service.id, 
-          start_time: start.toISOString(), 
-          end_time: end.toISOString(), 
-          status: 'scheduled', 
-          is_block: false,
-          is_manual_reminder: newApt.type === 'reminder',
-          is_recurring: newApt.is_recurring,
-          recurring_group_id: groupId
-        });
+      const inicio = new Date(`${newApt.date}T${newApt.time}:00`);
+      if (newApt.type === 'reminder') {
+        // Lembrete manual não ocupa a agenda; o nome do procedimento fica nas observações.
+        const inserts = [];
+        const groupId = newApt.is_recurring ? crypto.randomUUID() : null;
+        const loopCount = newApt.is_recurring ? 24 : 1;
+        for (let i = 0; i < loopCount; i++) {
+          const start = new Date(inicio);
+          start.setMonth(start.getMonth() + i);
+          const end = new Date(start.getTime() + 45 * 60000);
+          inserts.push({
+            client_id: newApt.client_id,
+            professional_id: newApt.professional_id || null,
+            servico_id: newApt.servico_id || null,
+            notes: newApt.service_name || null,
+            start_time: start.toISOString(),
+            end_time: end.toISOString(),
+            status: 'scheduled',
+            is_block: false,
+            is_manual_reminder: true,
+            is_recurring: newApt.is_recurring,
+            recurring_group_id: groupId
+          });
+        }
+        const { error } = await supabase.from('appointments').insert(inserts);
+        if (error) throw error;
+        return;
       }
-
-      const { error: aError } = await supabase.from('appointments').insert(inserts);
-      if (aError) throw aError;
+      // Atendimento: função do banco com trava contra conflito e valores do catálogo.
+      const { error } = await supabase.rpc('agendar_atendimento', {
+        p_cliente: newApt.client_id,
+        p_profissional: newApt.professional_id,
+        p_servico: newApt.servico_id || null,
+        p_inicio: inicio.toISOString(),
+        p_servico_avulso: newApt.servico_id ? null : newApt.service_name,
+        p_valor: newApt.valor,
+        p_duracao_minutos: newApt.duracao,
+        p_status: newApt.confirmado ? 'confirmed' : 'scheduled',
+        p_observacao: null,
+      });
+      if (error) throw error;
     },
     onSuccess: () => { 
       queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); 
@@ -130,17 +205,22 @@ export default function Agenda() {
       setServiceName(''); 
       setServicePrice('65,00'); 
       setIsRecurring(false);
-    }
+      setNovoServico('');
+      setNovoValor('');
+      setNovoConfirmado(false);
+    },
+    onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível agendar.', 'agenda.agendar'))
   });
 
   const addBlockMutation = useMutation({
     mutationFn: async (block: any) => {
       const start = new Date(`${block.date}T${block.startTime}:00`);
       const end = new Date(`${block.date}T${block.endTime}:00`);
-      const { error } = await supabase.from('appointments').insert([{ is_block: true, block_reason: block.reason, start_time: start.toISOString(), end_time: end.toISOString(), status: 'scheduled' }]);
+      const { error } = await supabase.from('appointments').insert([{ is_block: true, block_reason: block.reason, start_time: start.toISOString(), end_time: end.toISOString(), status: 'scheduled', professional_id: block.professional_id || null }]);
       if (error) throw error;
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); closeBlockModal(); }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); closeBlockModal(); },
+    onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível bloquear o horário.', 'agenda.bloqueio'))
   });
 
   const updateBlockMutation = useMutation({
@@ -150,26 +230,41 @@ export default function Agenda() {
       const { error } = await supabase.from('appointments').update({ 
         start_time: start.toISOString(), 
         end_time: end.toISOString(), 
-        block_reason: blockData.reason 
+        block_reason: blockData.reason,
+        ...(ehAdmin ? { professional_id: blockData.professional_id || null } : {})
       }).eq('id', blockData.id);
       if (error) throw error;
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); closeBlockModal(); }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); closeBlockModal(); },
+    onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível atualizar o bloqueio.', 'agenda.bloqueio'))
   });
 
   const updateAppointmentMutation = useMutation({
     mutationFn: async (updatedData: any) => {
-      const start = new Date(`${updatedData.date}T${updatedData.time}:00`);
-      const end = new Date(start.getTime() + 45 * 60000);
-      const { error: aError } = await supabase.from('appointments').update({ start_time: start.toISOString(), end_time: end.toISOString() }).eq('id', updatedData.id);
-      if (aError) throw aError;
-      const formattedPrice = parseFloat(String(updatedData.price).replace(',', '.'));
-      if (updatedData.serviceId) {
-        const { error: sError } = await supabase.from('services').update({ name: updatedData.serviceName, price: formattedPrice }).eq('id', updatedData.serviceId);
-        if (sError) throw sError;
+      const apt = editingAppointment;
+      const inicio = new Date(`${updatedData.date}T${updatedData.time}:00`);
+      const trocouHorario = inicio.getTime() !== new Date(apt.start_time).getTime();
+      const trocouProf = ehAdmin && (updatedData.professional_id || null) !== (apt.professional_id || null);
+      if (trocouHorario || trocouProf) {
+        // Remarcação passa pela trava de conflito do banco.
+        const { error } = await supabase.rpc('remarcar_atendimento', { p_id: apt.id, p_inicio: inicio.toISOString(), p_profissional: trocouProf ? updatedData.professional_id || null : null });
+        if (error) throw error;
+      }
+      if (ehAdmin) {
+        const valor = lerValor(String(updatedData.price));
+        if (valor !== null && valor !== Number(apt.valor_cobrado ?? apt.services?.price ?? -1)) {
+          const { error } = await supabase.from('appointments').update({ valor_cobrado: valor }).eq('id', apt.id);
+          if (error) throw error;
+        }
+        // Procedimento avulso antigo: nome editável no registro avulso.
+        if (updatedData.serviceId && !apt.servico_id && updatedData.serviceName && updatedData.serviceName !== apt.services?.name) {
+          const { error } = await supabase.from('services').update({ name: updatedData.serviceName }).eq('id', updatedData.serviceId);
+          if (error) throw error;
+        }
       }
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); setEditingAppointment(null); }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); setEditingAppointment(null); },
+    onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível atualizar o agendamento.', 'agenda.editar'))
   });
 
   const updateStatusMutation = useMutation({
@@ -177,7 +272,8 @@ export default function Agenda() {
       const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); setEditingAppointment(null); }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); setEditingAppointment(null); },
+    onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível mudar o status.', 'agenda.status'))
   });
 
   const deleteAppointmentMutation = useMutation({
@@ -252,9 +348,14 @@ export default function Agenda() {
     addClientMutation.mutate({ name, phone: newClientPhone });
   };
 
-  const openAddModalForType = (type: 'appointment' | 'reminder', dateStr?: string) => {
+  const openAddModalForType = (type: 'appointment' | 'reminder', dateStr?: string, prof?: string | null, hora?: string) => {
     closeNewClientForm();
     setAppointmentType(type);
+    setNovoProf(prof ?? (filtroProf && filtroProf !== 'sem' ? filtroProf : ''));
+    setNovoServico('');
+    setNovoValor('');
+    setNovoConfirmado(false);
+    if (hora) setAppointmentTime(hora);
     setIsRecurring(false);
     if (dateStr) setAppointmentDate(dateStr);
     setActionMenuDate(null);
@@ -265,6 +366,7 @@ export default function Agenda() {
     if (dateStr) setBlockDate(dateStr);
     setActionMenuDate(null);
     setEditingBlock(null);
+    setBlockProf(filtroProf && filtroProf !== 'sem' ? filtroProf : '');
     setBlockStartTime('12:00');
     setBlockEndTime('13:00');
     setBlockReason('Almoço');
@@ -279,16 +381,31 @@ export default function Agenda() {
     setBlockStartTime(start.toTimeString().slice(0, 5));
     setBlockEndTime(end.toTimeString().slice(0, 5));
     setBlockReason(block.block_reason || '');
+    setBlockProf(block.professional_id || '');
     setShowBlockModal(true);
   };
 
   const handleAddSubmit = (e: React.FormEvent) => { 
     e.preventDefault(); 
     if (!selectedClient) return alert("Selecione uma cliente."); 
+    const professional_id = ehAdmin ? novoProf : perfil?.id ?? '';
+    if (appointmentType === 'appointment') {
+      if (!professional_id) return alert('Escolha o profissional.');
+      if (!novoServico) return alert('Escolha o serviço.');
+    }
+    const avulso = novoServico === 'avulso' || appointmentType === 'reminder';
+    const valor = avulso ? lerValor(servicePrice) : (ehAdmin && novoValor.trim() ? lerValor(novoValor) : null);
+    if (appointmentType === 'appointment' && avulso && valor === null) return alert('Valor inválido.');
+    const duracao = avulso ? Number(novaDuracao) : null;
+    if (appointmentType === 'appointment' && avulso && (!duracao || duracao < 5 || duracao > 600)) return alert('Duração entre 5 e 600 minutos.');
     addAppointmentMutation.mutate({ 
       client_id: selectedClient.id, 
-      service_name: serviceName, 
-      service_price: servicePrice, 
+      professional_id: professional_id || null,
+      servico_id: avulso ? (appointmentType === 'reminder' && novoServico && novoServico !== 'avulso' ? novoServico : null) : novoServico,
+      service_name: appointmentType === 'reminder' && novoServico && novoServico !== 'avulso' ? servicosCatalogo.find((x) => x.id === novoServico)?.nome : serviceName, 
+      valor,
+      duracao,
+      confirmado: novoConfirmado,
       date: appointmentDate, 
       time: appointmentTime, 
       type: appointmentType,
@@ -300,22 +417,23 @@ export default function Agenda() {
     e.preventDefault(); 
     if (blockEndTime <= blockStartTime) return alert("O horário final deve ser maior que o inicial."); 
     if (editingBlock) {
-      updateBlockMutation.mutate({ id: editingBlock.id, date: blockDate, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason });
+      updateBlockMutation.mutate({ id: editingBlock.id, date: blockDate, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason, professional_id: blockProf });
     } else {
-      addBlockMutation.mutate({ date: blockDate, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason }); 
+      addBlockMutation.mutate({ date: blockDate, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason, professional_id: ehAdmin ? blockProf : perfil?.id }); 
     }
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => { e.preventDefault(); if (!editingAppointment) return; updateAppointmentMutation.mutate({ id: editingAppointment.id, serviceId: editingAppointment.services?.id, serviceName: editServiceName, price: editServicePrice, date: editDate, time: editTime }); };
+  const handleEditSubmit = (e: React.FormEvent) => { e.preventDefault(); if (!editingAppointment) return; updateAppointmentMutation.mutate({ id: editingAppointment.id, serviceId: editingAppointment.services?.id, serviceName: editServiceName, price: editServicePrice, date: editDate, time: editTime, professional_id: editProf }); };
 
   const openEditModal = (apt: any) => {
-    setEditingAppointment(apt); setEditServiceName(apt.services?.name || ''); setEditServicePrice(apt.services?.price ? String(apt.services.price).replace('.', ',') : '');
+    setEditingAppointment(apt); setEditServiceName(apt.services?.name || ''); setEditServicePrice(apt.services?.price != null ? valorParaCampo(apt.services.price) : ''); setEditProf(apt.professional_id || '');
     const aptDate = new Date(apt.start_time); setEditDate(aptDate.toISOString().split('T')[0]); setEditTime(aptDate.toTimeString().slice(0, 5));
   };
 
   const handleSendToCheckout = (apt: any) => { setEditingAppointment(null); navigate('/pdv', { state: { appointment: apt } }); };
 
   const handleSendWhatsApp = (apt: any) => {
+    if (!apt.clients?.contato_visivel) return alert('O contato da cliente fica com a administração do salão.');
     const phone = apt.clients?.phone;
     const cName = apt.clients?.name.split(' ')[0] || 'Cliente'; 
     if (!phone) return alert(`O cadastro de ${cName} está sem número de WhatsApp.`);
@@ -328,6 +446,7 @@ export default function Agenda() {
   };
 
   const handleSendReminderWhatsApp = (apt: any) => {
+    if (!apt.clients?.contato_visivel) return alert('O contato da cliente fica com a administração do salão.');
     const phone = apt.clients?.phone;
     const cName = apt.clients?.name.split(' ')[0] || 'Cliente'; 
     if (!phone) return alert(`O cadastro de ${cName} está sem número de WhatsApp.`);
@@ -342,6 +461,7 @@ export default function Agenda() {
     const currentDate = new Date(selectedDate + 'T12:00:00');
     const modifier = direction === 'next' ? 1 : -1;
     if (viewMode === 'month') currentDate.setMonth(currentDate.getMonth() + modifier);
+    else if (viewMode === 'equipe') currentDate.setDate(currentDate.getDate() + modifier);
     else if (viewMode === 'week') currentDate.setDate(currentDate.getDate() + (7 * modifier));
     else currentDate.setDate(currentDate.getDate() + modifier);
     setSelectedDate(currentDate.toISOString().split('T')[0]);
@@ -373,7 +493,7 @@ export default function Agenda() {
   const monthDays = getMonthDates(selectedDate);
 
   const allEvents: any[] = [];
-  appointments.forEach((apt: any) => {
+  agendamentos.forEach((apt: any) => {
     if (showAppointments && !apt.is_manual_reminder) {
       allEvents.push({ ...apt, is_reminder_event: false, event_date: new Date(apt.start_time).toISOString().split('T')[0] });
     }
@@ -389,6 +509,7 @@ export default function Agenda() {
     if (viewMode === 'day') return ev.event_date === selectedDate;
     if (viewMode === 'week') return weekDates.includes(ev.event_date);
     if (viewMode === 'month') return ev.event_date >= monthDays[0].dateStr && ev.event_date <= monthDays[monthDays.length - 1].dateStr;
+    if (viewMode === 'equipe') return ev.event_date === selectedDate;
     return false;
   });
 
@@ -438,10 +559,10 @@ export default function Agenda() {
             </div>
           </div>
           <div className="flex items-center space-x-1.5 flex-wrap gap-y-2">
-             <button onClick={(e) => { e.stopPropagation(); handleSendReminderWhatsApp(ev); }} className="px-3 py-1.5 border border-emerald-200 text-emerald-700 bg-emerald-100 hover:bg-emerald-200 font-bold rounded-lg transition-colors text-xs flex items-center gap-1.5 shadow-sm">
+             {ev.clients?.contato_visivel && <button onClick={(e) => { e.stopPropagation(); handleSendReminderWhatsApp(ev); }} className="px-3 py-1.5 border border-emerald-200 text-emerald-700 bg-emerald-100 hover:bg-emerald-200 font-bold rounded-lg transition-colors text-xs flex items-center gap-1.5 shadow-sm">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
                 Chamar Cliente
-             </button>
+             </button>}
              <button onClick={(e) => { e.stopPropagation(); setAppointmentToDelete(ev); }} className="p-1.5 border border-red-100 text-red-500 hover:bg-red-50 hover:text-red-700 rounded-lg transition-colors" title="Excluir Lembrete"><Trash2 size={14} /></button>
           </div>
         </div>
@@ -463,19 +584,20 @@ export default function Agenda() {
           <div>
             <h4 className={`font-bold flex items-center space-x-1 text-sm ${nameClass}`}>
               <User size={14} className={isInactive ? 'text-slate-300' : 'text-slate-400'} /> <span>{cName}</span>
+              {ev.status === 'confirmed' && <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded ml-2 uppercase font-bold flex items-center gap-0.5"><BadgeCheck size={10} /> Confirmado</span>}
               {isCancelled && <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded ml-2 uppercase font-bold">Cancelou</span>}
               {isNoShow && <span className="text-[9px] bg-amber-200 text-amber-700 px-1.5 py-0.5 rounded ml-2 uppercase font-bold">Faltou</span>}
             </h4>
-            <p className="text-xs text-slate-500">{sName} {sPrice && `• R$ ${parseFloat(sPrice).toFixed(2).replace('.', ',')}`}</p>
+            <p className="text-xs text-slate-500">{sName} {sPrice != null && `• ${brl(sPrice)}`}{ehAdmin && !filtroProf && <span className="ml-1 text-slate-400">• {nomeProf(ev.professional_id)}</span>}</p>
           </div>
         </div>
         <div className="flex items-center space-x-1.5 flex-wrap gap-y-2">
           {!isInactive && (
              <div className="flex items-center space-x-1.5 md:mr-2">
-               <div className="flex items-center space-x-1">
+               {ev.clients?.contato_visivel && <div className="flex items-center space-x-1">
                  {ev.whatsapp_sent_at && (<span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-1 rounded flex items-center gap-1 border border-emerald-100"><CheckCircle size={10} /> {new Date(ev.whatsapp_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</span>)}
                  <button onClick={(e) => { e.stopPropagation(); handleSendWhatsApp(ev); }} className="p-1.5 border border-emerald-100 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 rounded-lg transition-colors flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></button>
-               </div>
+               </div>}
                <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({id: ev.id, status: 'no_show'}) }} className="px-2.5 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold rounded-lg transition-colors text-xs border border-amber-100 hidden sm:block">Faltou</button>
                <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({id: ev.id, status: 'cancelled'}) }} className="px-2.5 py-1.5 bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold rounded-lg transition-colors text-xs border border-slate-200 hidden sm:block">Cancelou</button>
              </div>
@@ -488,8 +610,10 @@ export default function Agenda() {
               <span className="px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg bg-slate-100">Concluído</span>
               <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({id: ev.id, status: 'scheduled'}); }} className="px-2.5 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 font-bold rounded-lg transition-colors text-xs" title="Desfazer Checkout">↩️ Desfazer</button>
             </div>
-          ) : !isInactive ? (
+          ) : !isInactive && ehAdmin ? (
             <button onClick={(e) => { e.stopPropagation(); handleSendToCheckout(ev); }} className="px-3 py-1.5 bg-rose-100 text-rose-700 hover:bg-rose-200 font-bold rounded-lg transition-colors text-xs md:ml-1">Checkout</button>
+          ) : !isInactive ? (
+            <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({ id: ev.id, status: 'completed' }); }} className="px-3 py-1.5 bg-rose-100 text-rose-700 hover:bg-rose-200 font-bold rounded-lg transition-colors text-xs md:ml-1">Concluir</button>
           ) : (isCancelled || isNoShow) ? (
             <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({id: ev.id, status: 'scheduled'}); }} className="px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold rounded-lg transition-colors text-xs md:ml-1">↩️ Restaurar</button>
           ) : null}
@@ -507,14 +631,24 @@ export default function Agenda() {
   return (
     <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 shrink-0">
-        <div className="hidden md:block"><h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Agenda Conectada</h2></div>
+        <div className="hidden md:block"><h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Agenda Conectada</h2>{!ehAdmin && perfil && <p className="text-xs text-slate-500 mt-1">Sua agenda, {perfil.name.split(' ')[0]}</p>}</div>
         
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <div className="bg-slate-200 p-0.5 rounded-lg flex items-center space-x-0.5">
             <button onClick={() => setViewMode('day')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'day' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><LayoutList size={12} /> <span>Dia</span></button>
             <button onClick={() => setViewMode('week')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'week' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><Columns size={12} /> <span>Semana</span></button>
             <button onClick={() => setViewMode('month')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'month' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><Grid size={12} /> <span>Mês</span></button>
+            {ehAdmin && <button onClick={() => setViewMode('equipe')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'equipe' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`} title="Linha do tempo por profissional"><Users size={12} /> <span>Equipe</span></button>}
           </div>
+
+          {ehAdmin && (
+            <select value={filtroProf} onChange={(e) => setFiltroProf(e.target.value)} aria-label="Filtrar por profissional"
+              className="h-8 bg-white border border-slate-300 rounded-lg px-2 text-[11px] font-bold text-slate-700 shadow-sm max-w-[180px]">
+              <option value="">Todos os profissionais</option>
+              {equipe.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <option value="sem">Sem profissional</option>
+            </select>
+          )}
 
           <div className="bg-slate-200 p-0.5 rounded-lg flex items-center space-x-0.5 h-8">
             <button onClick={() => setShowAppointments(!showAppointments)} className={`flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold transition-all h-full ${showAppointments ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><span>Agendamentos</span></button>
@@ -543,11 +677,28 @@ export default function Agenda() {
               {viewMode === 'day' && `${formattedWeekDay}, ${selectedDate.split('-').reverse().join('/')}`} 
               {viewMode === 'week' && `Calendário Semanal`} 
               {viewMode === 'month' && `Calendário Mensal (${new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })})`}
+              {viewMode === 'equipe' && `Equipe: ${formattedWeekDay}, ${selectedDate.split('-').reverse().join('/')}`}
             </span>
           </div>
         </div>
         {isLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-400"><Loader2 className="animate-spin mb-2 text-rose-500" size={32} /></div>
+        ) : viewMode === 'equipe' ? (
+          <LinhaDoTempo
+            eventos={filteredEvents.filter((ev: any) => !ev.is_reminder_event).map((ev: any) => ({
+              id: ev.id, start_time: ev.start_time, end_time: ev.end_time, status: ev.status, professional_id: ev.professional_id,
+              is_block: ev.is_block, block_reason: ev.block_reason, cliente: ev.clients?.name || 'Cliente', servico: ev.services?.name || 'Procedimento',
+              cor: corCategoria(ev.servicos?.categoria_id),
+            }))}
+            profissionais={equipe.filter((p) => !filtroProf || p.id === filtroProf)}
+            mostrarSemProfissional={(!filtroProf || filtroProf === 'sem') && filteredEvents.some((ev: any) => !ev.is_reminder_event && !ev.professional_id)}
+            onNovo={(prof, hora) => { openAddModalForType('appointment', selectedDate, prof ?? '', hora); }}
+            onAbrir={(id) => {
+              const ev = filteredEvents.find((x: any) => x.id === id && !x.is_reminder_event);
+              if (!ev) return;
+              if (ev.is_block) openEditBlockModal(ev); else openEditModal(ev);
+            }}
+          />
         ) : viewMode === 'day' ? (
           <div className="flex-1 overflow-y-auto min-h-0 p-3">
              {filteredEvents.length === 0 ? <div className="text-center text-slate-400 py-12">Livre.</div> : filteredEvents.map((ev: any) => renderEventRow(ev))}
@@ -707,6 +858,14 @@ export default function Agenda() {
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Início</label><input type="time" required value={blockStartTime} onChange={(e) => setBlockStartTime(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Fim</label><input type="time" required value={blockEndTime} onChange={(e) => setBlockEndTime(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500" /></div>
               </div>
+              {ehAdmin && (
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">Profissional</label>
+                  <select value={blockProf} onChange={(e) => setBlockProf(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500 text-sm bg-white">
+                    <option value="">Salão (sem profissional)</option>
+                    {equipe.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+              )}
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Motivo / Descrição</label><input type="text" required value={blockReason} onChange={(e) => setBlockReason(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500" placeholder="Ex: Almoço, Limpeza, Médico..." /></div>
               <div className="flex space-x-3 pt-2">
                 {editingBlock && (
@@ -787,12 +946,46 @@ export default function Agenda() {
                   </>
                 )}
               </div>
-              <div><label className="block text-xs font-bold text-slate-500 mb-1">Procedimento *</label><input type="text" required value={serviceName} onChange={(e) => setServiceName(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
-              
+              {ehAdmin && (
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">Profissional {appointmentType === 'appointment' && '*'}</label>
+                  <select value={novoProf} onChange={(e) => { setNovoProf(e.target.value); setNovoServico(''); }} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
+                    <option value="">{appointmentType === 'reminder' ? 'Sem profissional' : 'Selecione'}</option>
+                    {equipe.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div><label className="block text-xs font-bold text-slate-500 mb-1">Serviço {appointmentType === 'appointment' && '*'}</label>
+                <select value={novoServico} onChange={(e) => { setNovoServico(e.target.value); setNovoValor(''); }} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
+                  <option value="">{appointmentType === 'appointment' && ehAdmin && !novoProf ? 'Escolha o profissional primeiro' : 'Selecione'}</option>
+                  {categorias.map((c) => {
+                    const daCategoria = ofertas.filter((x) => x.s.categoria_id === c.id);
+                    if (!daCategoria.length) return null;
+                    return <optgroup key={c.id} label={c.nome}>{daCategoria.map(({ s: sv, c: cond }) => <option key={sv.id} value={sv.id}>{sv.nome} · {brl(cond.valor)} · {duracaoTexto(cond.minutos)}</option>)}</optgroup>;
+                  })}
+                  <option value="avulso">Outro procedimento (avulso)</option>
+                </select>
+                {appointmentType === 'appointment' && profAgendamento && ofertas.length === 0 && <p className="text-[11px] text-amber-700 mt-1">Este profissional ainda não tem serviços habilitados (Serviços &gt; Serviços por profissional).</p>}
+              </div>
+              {(novoServico === 'avulso' || (appointmentType === 'reminder' && !novoServico)) && (
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">Procedimento *</label><input type="text" required maxLength={120} value={serviceName} onChange={(e) => setServiceName(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
+              )}
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$) *</label><input type="text" required value={servicePrice} onChange={(e) => setServicePrice(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
+                {appointmentType === 'appointment' && novoServico === 'avulso' ? (
+                  <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$) *</label><input type="text" inputMode="decimal" required value={servicePrice} onChange={(e) => setServicePrice(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
+                ) : appointmentType === 'appointment' && ofertaEscolhida ? (
+                  ehAdmin
+                    ? <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input type="text" inputMode="decimal" value={novoValor} placeholder={valorParaCampo(ofertaEscolhida.c.valor)} onChange={(e) => setNovoValor(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
+                    : <div><span className="block text-xs font-bold text-slate-500 mb-1">Valor</span><p className="p-2.5 text-sm font-bold text-slate-700">{brl(ofertaEscolhida.c.valor)}</p></div>
+                ) : <div />}
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Data *</label><input type="date" required value={appointmentDate} onChange={(e) => setAppointmentDate(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm" /></div>
               </div>
+              {appointmentType === 'appointment' && novoServico === 'avulso' && (
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">Duração (min) *</label><input type="text" inputMode="numeric" value={novaDuracao} onChange={(e) => setNovaDuracao(e.target.value.replace(/\D/g, ''))} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
+              )}
+              {appointmentType === 'appointment' && ofertaEscolhida && <p className="text-[11px] text-slate-500 -mt-2">Duração: {duracaoTexto(ofertaEscolhida.c.minutos)}. O horário final é calculado e o sistema recusa conflito com outro atendimento ou bloqueio.</p>}
+              {appointmentType === 'appointment' && (
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-600"><input type="checkbox" checked={novoConfirmado} onChange={(e) => setNovoConfirmado(e.target.checked)} className="w-4 h-4 accent-emerald-600" /> Já confirmado com a cliente</label>
+              )}
               
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Horário *</label><input type="time" required value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
               
@@ -819,6 +1012,8 @@ export default function Agenda() {
               <div>
                 <h3 className="text-xl font-bold text-slate-800">Editar Agendamento</h3>
                 {editingAppointment.status === 'completed' && <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Concluído</span>}
+                {editingAppointment.status === 'confirmed' && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Confirmado</span>}
+                {ehAdmin && <span className="text-[10px] text-slate-500 ml-2">{nomeProf(editingAppointment.professional_id)}</span>}
                 {editingAppointment.status === 'cancelled' && <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Cancelou</span>}
                 {editingAppointment.status === 'no_show' && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Faltou</span>}
               </div>
@@ -830,9 +1025,17 @@ export default function Agenda() {
 
             <form onSubmit={handleEditSubmit} className="space-y-4">
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Cliente (Somente Leitura)</label><input type="text" disabled value={editingAppointment.clients?.name || ''} className="w-full border bg-slate-100 p-2.5 rounded-lg text-slate-500 cursor-not-allowed font-medium" /></div>
-              <div><label className="block text-xs font-bold text-slate-500 mb-1">Procedimento</label><input type="text" required value={editServiceName} onChange={(e) => setEditServiceName(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
+              {ehAdmin && (
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">Profissional</label>
+                  <select value={editProf} onChange={(e) => setEditProf(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
+                    <option value="">Sem profissional</option>
+                    {equipe.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div><label className="block text-xs font-bold text-slate-500 mb-1">Procedimento</label><input type="text" required value={editServiceName} disabled={!ehAdmin || !!editingAppointment.servico_id || !editingAppointment.services?.id} onChange={(e) => setEditServiceName(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input type="text" required value={editServicePrice} onChange={(e) => setEditServicePrice(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input type="text" inputMode="decimal" required value={editServicePrice} disabled={!ehAdmin} onChange={(e) => setEditServicePrice(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Data</label><input type="date" required value={editDate} onChange={(e) => setEditDate(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm" /></div>
               </div>
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Horário</label><input type="time" required value={editTime} onChange={(e) => setEditTime(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
@@ -844,9 +1047,12 @@ export default function Agenda() {
 
             <div className="pt-4 mt-4 border-t border-slate-100 flex flex-col gap-2">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center mb-1">Ações Rápidas</p>
-              {editingAppointment.status === 'scheduled' && (
+              {(editingAppointment.status === 'scheduled' || editingAppointment.status === 'confirmed') && (
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => handleSendToCheckout(editingAppointment)} className="flex-1 bg-emerald-50 text-emerald-700 py-2 rounded-lg font-bold text-xs hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1 shadow-sm">🛒 Checkout</button>
+                  {editingAppointment.status === 'scheduled' && <button type="button" onClick={() => updateStatusMutation.mutate({id: editingAppointment.id, status: 'confirmed'})} className="flex-1 bg-emerald-50 text-emerald-700 py-2 rounded-lg font-bold text-xs hover:bg-emerald-100 transition-colors shadow-sm">Confirmar</button>}
+                  {ehAdmin
+                    ? <button type="button" onClick={() => handleSendToCheckout(editingAppointment)} className="flex-1 bg-emerald-50 text-emerald-700 py-2 rounded-lg font-bold text-xs hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1 shadow-sm">🛒 Checkout</button>
+                    : <button type="button" onClick={() => updateStatusMutation.mutate({id: editingAppointment.id, status: 'completed'})} className="flex-1 bg-emerald-50 text-emerald-700 py-2 rounded-lg font-bold text-xs hover:bg-emerald-100 transition-colors shadow-sm">Concluir</button>}
                   <button type="button" onClick={() => updateStatusMutation.mutate({id: editingAppointment.id, status: 'no_show'})} className="flex-1 bg-amber-50 text-amber-700 py-2 rounded-lg font-bold text-xs hover:bg-amber-100 transition-colors shadow-sm">❌ Faltou</button>
                   <button type="button" onClick={() => updateStatusMutation.mutate({id: editingAppointment.id, status: 'cancelled'})} className="flex-1 bg-slate-50 text-slate-600 border border-slate-200 py-2 rounded-lg font-bold text-xs hover:bg-slate-100 transition-colors shadow-sm">🚫 Cancelou</button>
                 </div>

@@ -1,11 +1,70 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { brl, dataHoraBR } from '../lib/formatos';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
-import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock } from 'lucide-react';
+
+const TIPOS_HISTORICO: Record<string, string> = { tecnico: 'Técnico', alergia: 'Alergia', preferencia: 'Preferência', observacao: 'Observação' };
+
+/** Histórico técnico da cliente (fórmulas, alergias, preferências): visível à equipe, autor gravado pelo banco. */
+function HistoricoTecnico({ clienteId }: { clienteId: string }) {
+  const queryClient = useQueryClient();
+  const [tipo, setTipo] = useState('tecnico');
+  const [texto, setTexto] = useState('');
+  const { data: itens = [], isLoading } = useQuery({
+    queryKey: ['cliente-historico', clienteId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cliente_historico').select('id, tipo, texto, created_at, autor_id').eq('cliente_id', clienteId).order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    }
+  });
+  const { data: pessoas = [] } = useQuery({
+    queryKey: ['equipe', 'ativos'],
+    queryFn: async () => { const { data, error } = await supabase.from('users').select('id, name').eq('active', true); if (error) throw error; return data || []; }
+  });
+  const salvar = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('cliente_historico').insert([{ cliente_id: clienteId, tipo, texto: texto.trim() }]);
+      if (error) throw error;
+    },
+    onSuccess: () => { setTexto(''); queryClient.invalidateQueries({ queryKey: ['cliente-historico', clienteId] }); },
+    onError: (error: unknown) => alert(mensagemDeErro(error, 'Não foi possível salvar o registro.', 'clientes.historico'))
+  });
+  return (
+    <div className="space-y-3">
+      <form onSubmit={(e) => { e.preventDefault(); if (texto.trim()) salvar.mutate(); }} className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+        <div className="flex gap-2">
+          <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-2 text-sm" aria-label="Tipo de registro">
+            {Object.entries(TIPOS_HISTORICO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <input value={texto} onChange={(e) => setTexto(e.target.value)} maxLength={2000} placeholder="Ex.: Coloração 7.1 + 20 vol; alergia a amônia" className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-rose-500" aria-label="Registro técnico" />
+          <button type="submit" disabled={!texto.trim() || salvar.isPending} className="px-3 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold disabled:opacity-40">Adicionar</button>
+        </div>
+      </form>
+      {isLoading ? null : itens.length === 0 ? <p className="text-sm text-slate-400 text-center py-2">Sem registros técnicos.</p> : itens.map((h: any) => (
+        <div key={h.id} className={`border rounded-xl p-3 text-sm ${h.tipo === 'alergia' ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
+          <div className="flex justify-between gap-2 text-[11px] text-slate-500 mb-1">
+            <span className="font-bold uppercase">{TIPOS_HISTORICO[h.tipo] ?? h.tipo}</span>
+            <span>{(pessoas as any[]).find((p) => p.id === h.autor_id)?.name ?? 'Equipe'} · {dataHoraBR(h.created_at)}</span>
+          </div>
+          <p className="text-slate-700 whitespace-pre-wrap">{h.texto}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function Clientes() {
   const queryClient = useQueryClient();
+  const { perfil } = useAuth();
+  // Profissional: só nome e contato mascarado (view clientes_visiveis), sem editar (risco de fuga de base).
+  const ehAdmin = perfil?.role === 'admin';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [abaHistorico, setAbaHistorico] = useState<'atendimentos' | 'tecnico'>('atendimentos');
   const [searchTerm, setSearchTerm] = useState('');
   
   const [showAddModal, setShowAddModal] = useState(false);
@@ -18,11 +77,25 @@ export default function Clientes() {
   const [phone, setPhone] = useState('');
   const [birthday, setBirthday] = useState('');
   const [notes, setNotes] = useState('');
+  const [email, setEmail] = useState('');
+  const [lgpd, setLgpd] = useState(false);
+
+  // Atalho "+ Novo > Cliente" (/clientes?nova=cliente)
+  useEffect(() => {
+    if (searchParams.get('nova') !== 'cliente' || !ehAdmin) return;
+    resetForm();
+    setShowAddModal(true);
+    searchParams.delete('nova');
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, ehAdmin]);
 
   const { data: clients = [], isLoading } = useQuery({
-    queryKey: ['clients'],
+    queryKey: ['clients', ehAdmin],
     queryFn: async () => {
-      const { data, error } = await supabase.from('clients').select('*').order('name');
+      const { data, error } = ehAdmin
+        ? await supabase.from('clients').select('*').order('name')
+        : await supabase.from('clientes_visiveis').select('id, name, phone, email, contato_visivel').order('name');
       if (error) throw error;
       return data || [];
     }
@@ -34,7 +107,7 @@ export default function Clientes() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('appointments')
-        .select('*, services(name, price)')
+        .select('*, services(name, price), servicos(nome)')
         .eq('client_id', selectedHistoryClient.id)
         .order('start_time', { ascending: false });
       if (error) throw error;
@@ -88,7 +161,7 @@ export default function Clientes() {
   });
 
   const resetForm = () => {
-    setName(''); setPhone(''); setBirthday(''); setNotes('');
+    setName(''); setPhone(''); setBirthday(''); setNotes(''); setEmail(''); setLgpd(false);
   };
 
   // Máscara inteligente para o WhatsApp
@@ -108,13 +181,13 @@ export default function Clientes() {
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    addMutation.mutate({ name, phone, birthday: birthday || null, notes });
+    addMutation.mutate({ name, phone, birthday: birthday || null, notes, email: email.trim() || null, lgpd_consent: lgpd });
   };
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingClient) return;
-    updateMutation.mutate({ id: editingClient.id, data: { name, phone, birthday: birthday || null, notes } });
+    updateMutation.mutate({ id: editingClient.id, data: { name, phone, birthday: birthday || null, notes, email: email.trim() || null, lgpd_consent: lgpd } });
   };
 
   const openEditModal = (client: any) => {
@@ -132,6 +205,8 @@ export default function Clientes() {
     setPhone(formattedPhone);
     setBirthday(client.birthday || '');
     setNotes(client.notes || '');
+    setEmail(client.email || '');
+    setLgpd(!!client.lgpd_consent);
   };
 
   const formatDisplayPhone = (val: string) => {
@@ -153,6 +228,7 @@ export default function Clientes() {
       case 'completed': return <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase block mt-1 w-max ml-auto">Concluído</span>;
       case 'cancelled': return <span className="bg-slate-200 text-slate-500 px-2 py-0.5 rounded text-[10px] font-bold uppercase block mt-1 w-max ml-auto">Cancelou</span>;
       case 'no_show': return <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase block mt-1 w-max ml-auto">Faltou</span>;
+      case 'confirmed': return <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase block mt-1 w-max ml-auto">Confirmado</span>;
       case 'scheduled': default: return <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase block mt-1 w-max ml-auto">Agendado</span>;
     }
   };
@@ -162,7 +238,7 @@ export default function Clientes() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
         <div>
           <h2 className="text-3xl font-black text-slate-800">Clientes</h2>
-          <p className="text-sm text-slate-500 mt-1">Gestão de contatos e histórico de atendimentos</p>
+          <p className="text-sm text-slate-500 mt-1">{ehAdmin ? 'Gestão de contatos e histórico de atendimentos' : 'Nome e histórico técnico. O contato das clientes fica com a administração do salão.'}</p>
         </div>
         <div className="flex w-full md:w-auto space-x-3">
           <div className="relative flex-1 md:w-64">
@@ -175,9 +251,9 @@ export default function Clientes() {
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm shadow-sm"
             />
           </div>
-          <button onClick={() => { resetForm(); setShowAddModal(true); }} className="bg-rose-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-rose-700 transition-colors flex items-center space-x-2 shadow-sm whitespace-nowrap">
+          {ehAdmin && <button onClick={() => { resetForm(); setShowAddModal(true); }} className="bg-rose-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-rose-700 transition-colors flex items-center space-x-2 shadow-sm whitespace-nowrap">
             <Plus size={18} /> <span className="hidden sm:inline">Nova Cliente</span>
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -188,7 +264,7 @@ export default function Clientes() {
               <tr>
                 <th className="px-6 py-4">Nome</th>
                 <th className="px-6 py-4">WhatsApp</th>
-                <th className="px-6 py-4 hidden md:table-cell">Aniversário</th>
+                {ehAdmin && <th className="px-6 py-4 hidden md:table-cell">Aniversário</th>}
                 <th className="px-6 py-4 text-center">Histórico</th>
                 <th className="px-6 py-4 text-right">Ações</th>
               </tr>
@@ -205,18 +281,18 @@ export default function Clientes() {
                       <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
                       {client.name}
                     </td>
-                    <td className="px-6 py-4 text-slate-600 font-medium">{formatDisplayPhone(client.phone)}</td>
-                    <td className="px-6 py-4 text-slate-500 hidden md:table-cell">{client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-'}</td>
+                    <td className="px-6 py-4 text-slate-600 font-medium">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</td>
+                    {ehAdmin && <td className="px-6 py-4 text-slate-500 hidden md:table-cell">{client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-'}</td>}
                     <td className="px-6 py-4 text-center">
-                      <button onClick={() => setSelectedHistoryClient(client)} className="text-slate-400 hover:text-rose-600 p-2 rounded-lg hover:bg-rose-50 transition-colors" title="Ver Histórico">
+                      <button onClick={() => { setAbaHistorico('atendimentos'); setSelectedHistoryClient(client); }} className="text-slate-400 hover:text-rose-600 p-2 rounded-lg hover:bg-rose-50 transition-colors" title="Ver Histórico">
                         <History size={18} />
                       </button>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {ehAdmin && <div className="flex items-center justify-end space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={() => openEditModal(client)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
                         <button onClick={() => setClientToDelete(client)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
-                      </div>
+                      </div>}
                     </td>
                   </tr>
                 ))
@@ -233,18 +309,22 @@ export default function Clientes() {
             <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-start">
               <div>
                 <h3 className="text-xl font-black text-slate-800 uppercase">{selectedHistoryClient.name}</h3>
-                <p className="text-sm text-slate-500 mt-0.5">Histórico completo de atendimentos</p>
+                <p className="text-sm text-slate-500 mt-0.5">{ehAdmin ? 'Histórico completo de atendimentos' : 'Seus atendimentos com esta cliente e o histórico técnico'}</p>
               </div>
               <button onClick={() => setSelectedHistoryClient(null)} className="text-slate-400 hover:text-rose-600 p-1"><X size={24} /></button>
             </div>
+            <div className="flex border-b border-slate-100 px-6" role="tablist">
+              <button type="button" role="tab" aria-selected={abaHistorico === 'atendimentos'} onClick={() => setAbaHistorico('atendimentos')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'atendimentos' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><Scissors size={14} /> Atendimentos</button>
+              <button type="button" role="tab" aria-selected={abaHistorico === 'tecnico'} onClick={() => setAbaHistorico('tecnico')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'tecnico' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><NotebookPen size={14} /> Histórico técnico</button>
+            </div>
             
             <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
-              {clientAppointments.length === 0 ? (
+              {abaHistorico === 'tecnico' ? <HistoricoTecnico clienteId={selectedHistoryClient.id} /> : clientAppointments.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">Nenhum atendimento registrado.</div>
               ) : (
                 clientAppointments.map((apt: any) => {
-                  const sName = Array.isArray(apt.services) ? apt.services[0]?.name : apt.services?.name;
-                  const sPrice = Array.isArray(apt.services) ? apt.services[0]?.price : apt.services?.price;
+                  const sName = apt.servicos?.nome ?? (Array.isArray(apt.services) ? apt.services[0]?.name : apt.services?.name) ?? apt.notes;
+                  const sPrice = apt.valor_cobrado ?? (Array.isArray(apt.services) ? apt.services[0]?.price : apt.services?.price);
                   
                   return (
                     <div key={apt.id} className="bg-white border border-slate-200 rounded-xl p-4 flex justify-between items-center shadow-sm">
@@ -256,7 +336,7 @@ export default function Clientes() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-black text-rose-600">R$ {parseFloat(sPrice || 0).toFixed(2).replace('.', ',')}</p>
+                        <p className="font-black text-rose-600">{brl(sPrice || 0)}</p>
                         {getStatusBadge(apt.status)}
                       </div>
                     </div>
@@ -286,6 +366,8 @@ export default function Clientes() {
                 </div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Aniversário</label><input type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm" /></div>
               </div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1">E-mail</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={254} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500" /></div>
+              <label className="flex items-start gap-2 text-xs text-slate-600"><input type="checkbox" checked={lgpd} onChange={(e) => setLgpd(e.target.checked)} className="w-4 h-4 mt-0.5 accent-rose-600" /><span><ShieldCheck size={12} className="inline text-emerald-600" /> A cliente autorizou o uso dos dados para agendamento e contato (LGPD).</span></label>
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Observações (Alergias, preferências...)</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm resize-none" /></div>
               <div className="flex space-x-3 pt-2">
                 <button type="button" onClick={() => { setShowAddModal(false); resetForm(); }} className="w-1/2 border p-2.5 rounded-xl text-slate-500 font-medium">Cancelar</button>
@@ -310,6 +392,8 @@ export default function Clientes() {
                 </div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Aniversário</label><input type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm" /></div>
               </div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1">E-mail</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={254} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500" /></div>
+              <label className="flex items-start gap-2 text-xs text-slate-600"><input type="checkbox" checked={lgpd} onChange={(e) => setLgpd(e.target.checked)} className="w-4 h-4 mt-0.5 accent-rose-600" /><span><ShieldCheck size={12} className="inline text-emerald-600" /> A cliente autorizou o uso dos dados para agendamento e contato (LGPD).</span></label>
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Observações</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm resize-none" /></div>
               <div className="flex space-x-3 pt-2">
                 <button type="button" onClick={() => setEditingClient(null)} className="w-1/2 border p-2.5 rounded-xl text-slate-500 font-medium">Cancelar</button>

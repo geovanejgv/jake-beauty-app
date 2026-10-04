@@ -1,23 +1,45 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, ShoppingCart, Users, LogOut, DollarSign, Menu, X, ChevronLeft, ChevronRight, Moon, Sun, SquareKanban, Plus, SquareCheckBig, KeyRound } from 'lucide-react';
+import { LogOut, Menu, X, ChevronLeft, ChevronRight, ChevronDown, Moon, Sun, SquareKanban, Plus, SquareCheckBig, KeyRound, CalendarPlus, UserPlus } from 'lucide-react';
 import AlterarSenhaModal from '../components/AlterarSenhaModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
+import { GRUPOS, ROTULO_PAPEL, moduloDaRota, modulosVisiveis, type IdGrupo, type Modulo } from '../features/acesso/modulos';
+
+const CHAVE_GRUPOS = 'jb-menu-grupos';
 
 export default function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, perfil, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
   const themeLabel = isDark ? 'Modo Claro' : 'Modo Escuro';
   const ThemeIcon = isDark ? Sun : Moon;
-  
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [senhaAberta, setSenhaAberta] = useState(false);
   // Estado que controla se o menu do PC está largo ou apenas com os ícones
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // Primeiro acesso com senha temporária: a troca é obrigatória antes de usar o portal.
+  const trocaObrigatoria = user?.user_metadata?.trocar_senha === true;
+
+  const papel = perfil?.role ?? 'professional';
+  const modulos = useMemo(() => modulosVisiveis(papel, perfil?.preferencias_ui ?? { ocultar: [] }), [papel, perfil?.preferencias_ui]);
+  const moduloAtual = moduloDaRota(location.pathname);
+
+  // Grupos abertos/fechados (lembrado no navegador; o grupo da tela atual sempre abre).
+  const [gruposFechados, setGruposFechados] = useState<IdGrupo[]>(() => {
+    try { return JSON.parse(localStorage.getItem(CHAVE_GRUPOS) || '[]') as IdGrupo[]; } catch { return []; }
+  });
+  const alternarGrupo = (id: IdGrupo) => {
+    setGruposFechados((atual) => {
+      const novo = atual.includes(id) ? atual.filter((g) => g !== id) : [...atual, id];
+      try { localStorage.setItem(CHAVE_GRUPOS, JSON.stringify(novo)); } catch { /* preferência de tela; pode falhar */ }
+      return novo;
+    });
+  };
 
   const handleLogout = async () => {
     await signOut();
@@ -37,23 +59,17 @@ export default function MainLayout() {
     return () => window.removeEventListener('keydown', onKey);
   }, [isMobileMenuOpen]);
 
-  const navItems = [
-    { path: '/dashboard', label: 'Resumo Diário', icon: LayoutDashboard },
-    { path: '/agenda', label: 'Agenda', icon: CalendarDays },
-    { path: '/tarefas', label: 'Tarefas', icon: SquareKanban },
-    { path: '/clientes', label: 'Clientes', icon: Users },
-    { path: '/financas', label: 'Finanças', icon: DollarSign },
-    { path: '/pdv', label: 'Checkout PDV', icon: ShoppingCart },
-  ];
-
-  const currentPage = navItems.find((item) => item.path === location.pathname);
-
   // Botão + global: atalhos de criação (abre a tela já com a janela aberta)
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   useEffect(() => { setIsQuickAddOpen(false); }, [location.pathname, location.search]);
+  const visivel = (id: Modulo['id']) => modulos.some((m) => m.id === id);
   const quickAddItems = [
-    { label: 'Tarefa', icon: SquareCheckBig, to: '/tarefas?nova=tarefa' },
-    { label: 'Novo quadro', icon: SquareKanban, to: '/tarefas?nova=quadro' },
+    ...(visivel('agenda') ? [{ label: 'Agendamento', icon: CalendarPlus, to: '/agenda?novo=agendamento' }] : []),
+    ...(visivel('clientes') && papel === 'admin' ? [{ label: 'Cliente', icon: UserPlus, to: '/clientes?nova=cliente' }] : []),
+    ...(visivel('tarefas') ? [
+      { label: 'Tarefa', icon: SquareCheckBig, to: '/tarefas?nova=tarefa' },
+      { label: 'Novo quadro', icon: SquareKanban, to: '/tarefas?nova=quadro' },
+    ] : []),
   ];
   const quickAddMenu = (alignClass: string) => isQuickAddOpen && (
     <>
@@ -69,88 +85,134 @@ export default function MainLayout() {
     </>
   );
 
+  const ativo = (m: Modulo) => moduloAtual?.id === m.id;
+
+  /** Itens do menu agrupados como no sistema de referência (Meu Estabelecimento, Financeiro, Relatórios). */
+  const renderNav = (modo: 'lateral' | 'gaveta') => {
+    const compacto = modo === 'lateral' && isCollapsed;
+    const link = (m: Modulo, recuado: boolean) => {
+      const Icon = m.icone;
+      const isActive = ativo(m);
+      return (
+        <Link
+          key={m.id}
+          to={m.caminho}
+          title={compacto ? m.rotulo : ''}
+          aria-current={isActive ? 'page' : undefined}
+          onClick={() => setIsMobileMenuOpen(false)}
+          className={`flex items-center rounded-xl transition-all duration-200 group ${
+            isActive ? 'bg-rose-50 text-rose-600 font-bold' : `${modo === 'gaveta' ? 'text-slate-700 font-medium' : 'text-slate-500'} hover:bg-slate-50 hover:text-rose-500`
+          } ${compacto ? 'justify-center py-3' : `${recuado ? 'pl-9 pr-3' : 'px-4'} py-2.5 space-x-3`}`}
+        >
+          <Icon size={recuado ? 18 : 22} className={`shrink-0 ${isActive ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
+          {!compacto && <span className={`text-sm leading-tight ${recuado ? 'min-w-0' : 'whitespace-nowrap'}`}>{m.rotulo}</span>}
+        </Link>
+      );
+    };
+
+    return GRUPOS.map((g) => {
+      const itens = modulos.filter((m) => m.grupo === g.id);
+      if (!itens.length) return null;
+      if (!g.rotulo || compacto) {
+        return <div key={g.id} className="space-y-1">{itens.map((m) => link(m, false))}</div>;
+      }
+      const temAtivo = itens.some(ativo);
+      const aberto = temAtivo || !gruposFechados.includes(g.id);
+      const GIcon = g.icone!;
+      return (
+        <div key={g.id} className="space-y-1">
+          <button
+            type="button"
+            onClick={() => alternarGrupo(g.id)}
+            aria-expanded={aberto}
+            className={`w-full flex items-center px-4 py-2.5 rounded-xl text-sm space-x-3 transition-colors ${temAtivo ? 'text-rose-600 font-bold' : 'text-slate-600 font-semibold hover:bg-slate-50'}`}
+          >
+            <GIcon size={22} className={`shrink-0 ${temAtivo ? 'text-rose-600' : 'text-slate-400'}`} />
+            <span className="flex-1 text-left whitespace-nowrap">{g.rotulo}</span>
+            <ChevronDown size={16} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+          </button>
+          {aberto && <div className="space-y-1">{itens.map((m) => link(m, true))}</div>}
+        </div>
+      );
+    });
+  };
+
+  const identificacao = perfil && (
+    <div className="min-w-0">
+      <p className="text-sm font-bold text-slate-800 truncate">{perfil.name}</p>
+      <p className="text-[11px] font-semibold text-rose-600 truncate">{ROTULO_PAPEL[perfil.role]}</p>
+    </div>
+  );
+
   return (
     <div className="app-shell flex h-screen font-sans overflow-hidden">
-      
+
       {/* MENU LATERAL DESKTOP (Esconde no celular e tablet, exibe no PC a partir de 1024px) */}
-      <aside 
+      <aside
         className={`glass hidden lg:flex flex-col bg-white border-r border-slate-200 shadow-sm transition-all duration-300 ease-in-out z-20 ${isCollapsed ? 'w-20' : 'w-64'}`}
       >
         {/* Topo / Logo */}
-        <div className="h-20 flex items-center justify-center border-b border-slate-100 shrink-0">
+        <div className="h-20 flex flex-col items-center justify-center border-b border-slate-100 shrink-0 px-3">
           <h1 className={`font-black text-rose-600 transition-all duration-300 ${isCollapsed ? 'text-xl' : 'text-2xl'}`}>
             {isCollapsed ? 'JB' : 'Jake Beauty'}
           </h1>
-        </div>
-        
-        {/* Botão + global (atalhos de criação) */}
-        <div className="relative px-3 pt-4">
-          <button
-            type="button"
-            onClick={() => setIsQuickAddOpen(!isQuickAddOpen)}
-            title={isCollapsed ? 'Novo' : ''}
-            aria-haspopup="menu"
-            aria-expanded={isQuickAddOpen}
-            className={`flex items-center w-full bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-sm transition-colors font-bold ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
-          >
-            <Plus size={22} className="shrink-0" />
-            {!isCollapsed && <span className="whitespace-nowrap">Novo</span>}
-          </button>
-          {quickAddMenu('left-3')}
+          {!isCollapsed && perfil && <p className="text-[11px] text-slate-500 truncate max-w-full">{perfil.name} · {ROTULO_PAPEL[perfil.role]}</p>}
         </div>
 
+        {/* Botão + global (atalhos de criação) */}
+        {quickAddItems.length > 0 && (
+          <div className="relative px-3 pt-4">
+            <button
+              type="button"
+              onClick={() => setIsQuickAddOpen(!isQuickAddOpen)}
+              title={isCollapsed ? 'Novo' : ''}
+              aria-haspopup="menu"
+              aria-expanded={isQuickAddOpen}
+              className={`flex items-center w-full bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-sm transition-colors font-bold ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
+            >
+              <Plus size={22} className="shrink-0" />
+              {!isCollapsed && <span className="whitespace-nowrap">Novo</span>}
+            </button>
+            {quickAddMenu('left-3')}
+          </div>
+        )}
+
         {/* Links de Navegação */}
-        <nav className="flex-1 px-3 py-6 space-y-3 overflow-y-auto overflow-x-hidden custom-scrollbar">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.path;
-            return (
-              <Link 
-                key={item.path} 
-                to={item.path} 
-                title={isCollapsed ? item.label : ''} // Exibe o nome ao passar o mouse se estiver encolhido
-                className={`flex items-center rounded-xl transition-all duration-200 group ${
-                  isActive ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50 hover:text-rose-500'
-                } ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
-              >
-                <Icon size={22} className={`shrink-0 ${isActive ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} /> 
-                {!isCollapsed && <span className="whitespace-nowrap">{item.label}</span>}
-              </Link>
-            );
-          })}
+        <nav aria-label="Menu principal" className="flex-1 px-3 py-5 space-y-2 overflow-y-auto overflow-x-hidden custom-scrollbar">
+          {renderNav('lateral')}
         </nav>
 
         {/* Rodapé: Botões de Sair e Recolher */}
         <div className="p-4 border-t border-slate-100 space-y-2 shrink-0">
-          <button 
-            onClick={toggleTheme} 
+          <button
+            onClick={toggleTheme}
             title={isCollapsed ? themeLabel : ""}
             className={`flex items-center w-full text-slate-500 hover:bg-slate-100 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
           >
-            <ThemeIcon size={22} className="shrink-0" /> 
+            <ThemeIcon size={22} className="shrink-0" />
             {!isCollapsed && <span className="whitespace-nowrap font-medium">{themeLabel}</span>}
           </button>
 
-          <button 
-            onClick={() => setSenhaAberta(true)} 
+          <button
+            onClick={() => setSenhaAberta(true)}
             title={isCollapsed ? "Alterar senha" : ""}
             className={`flex items-center w-full text-slate-500 hover:bg-slate-100 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
           >
-            <KeyRound size={22} className="shrink-0" /> 
+            <KeyRound size={22} className="shrink-0" />
             {!isCollapsed && <span className="whitespace-nowrap font-medium">Alterar senha</span>}
           </button>
 
-          <button 
-            onClick={handleLogout} 
+          <button
+            onClick={handleLogout}
             title={isCollapsed ? "Sair do Sistema" : ""}
             className={`flex items-center w-full text-red-500 hover:bg-red-50 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
           >
-            <LogOut size={22} className="shrink-0" /> 
+            <LogOut size={22} className="shrink-0" />
             {!isCollapsed && <span className="whitespace-nowrap font-medium">Sair do Sistema</span>}
           </button>
 
-          <button 
-            onClick={() => setIsCollapsed(!isCollapsed)} 
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
             className={`flex items-center w-full text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
             title={isCollapsed ? "Expandir Menu" : "Recolher Menu"}
           >
@@ -162,7 +224,7 @@ export default function MainLayout() {
 
       {/* CABEÇALHO MOBILE E ÁREA PRINCIPAL */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-        
+
         {/* Cabeçalho que aparece no celular e no tablet */}
         <header className="glass bg-white px-2 sm:px-4 h-16 flex items-center justify-between border-b border-slate-200 shadow-sm lg:hidden shrink-0 z-30">
           <div className="flex items-center min-w-0">
@@ -176,16 +238,18 @@ export default function MainLayout() {
             </button>
             <div className="ml-2 min-w-0">
               <h1 className="text-lg font-black text-rose-600 leading-tight">Jake Beauty</h1>
-              {currentPage && <p className="text-xs text-slate-500 truncate leading-tight">{currentPage.label}</p>}
+              {moduloAtual && <p className="text-xs text-slate-500 truncate leading-tight">{moduloAtual.rotulo}</p>}
             </div>
           </div>
           <div className="relative flex items-center">
             <button onClick={toggleTheme} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg" title={themeLabel} aria-label={themeLabel}>
               <ThemeIcon size={22} />
             </button>
-            <button onClick={() => setIsQuickAddOpen(!isQuickAddOpen)} className="ml-1 p-2 bg-rose-600 text-white rounded-lg" aria-label="Novo" aria-haspopup="menu" aria-expanded={isQuickAddOpen}>
-              <Plus size={22} />
-            </button>
+            {quickAddItems.length > 0 && (
+              <button onClick={() => setIsQuickAddOpen(!isQuickAddOpen)} className="ml-1 p-2 bg-rose-600 text-white rounded-lg" aria-label="Novo" aria-haspopup="menu" aria-expanded={isQuickAddOpen}>
+                <Plus size={22} />
+              </button>
+            )}
             {quickAddMenu('right-0')}
           </div>
         </header>
@@ -201,31 +265,15 @@ export default function MainLayout() {
           <aside
             className={`glass glass-forte absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-white flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
           >
-            <div className="h-16 px-4 flex items-center justify-between border-b border-slate-100 shrink-0">
-              <h2 className="text-xl font-black text-rose-600">Jake Beauty</h2>
-              <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg" aria-label="Fechar menu">
+            <div className="h-16 px-4 flex items-center justify-between border-b border-slate-100 shrink-0 gap-2">
+              {identificacao ?? <h2 className="text-xl font-black text-rose-600">Jake Beauty</h2>}
+              <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg shrink-0" aria-label="Fechar menu">
                 <X size={24} />
               </button>
             </div>
 
-            <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = location.pathname === item.path;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${
-                      isActive ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-700 font-medium hover:bg-slate-50'
-                    }`}
-                  >
-                    <Icon size={22} className={`shrink-0 ${isActive ? 'text-rose-600' : 'text-slate-400'}`} />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
+            <nav aria-label="Menu principal" className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
+              {renderNav('gaveta')}
             </nav>
 
             <div className="p-3 border-t border-slate-100 space-y-1 shrink-0">
@@ -246,7 +294,9 @@ export default function MainLayout() {
         <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 relative">
           <Outlet />
         </main>
-        {senhaAberta && <AlterarSenhaModal onClose={() => setSenhaAberta(false)} />}
+        {(senhaAberta || trocaObrigatoria) && (
+          <AlterarSenhaModal obrigatoria={trocaObrigatoria} onClose={() => setSenhaAberta(false)} />
+        )}
       </div>
     </div>
   );

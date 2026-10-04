@@ -18,7 +18,10 @@ Controlador: (razão social e CNPJ do estúdio). Encarregado: (definir, LGP-07).
 | Equipe | `users.name`, `users.role`, `users.active` | Acesso ao portal e atribuição de tarefas | Execução de contrato de trabalho (V) | Enquanto houver vínculo | Supabase |
 | Conta de login | `auth.users` (e-mail, senha com hash) | Autenticação | Execução de contrato (V) | Enquanto houver vínculo | Supabase |
 | Trilha de auditoria | `access_logs` (conta, IP, navegador) | Segurança e prova de acesso | Legítimo interesse (IX) e art. 46 | 5 anos (sugestão) | Supabase |
-| Tarefas internas | `internal_tasks.*`, `tarefa_itens.*` | Organização do trabalho (pode citar cliente) | Execução de contrato (V) | (definir) | Supabase |
+| Tarefas internas | `internal_tasks.*`, `tarefa_itens.*`, `tarefa_comentarios.*` | Organização do trabalho (pode citar cliente) | Execução de contrato (V) | (definir) | Supabase |
+| Dados do profissional | `perfis_profissionais` (CPF, CNPJ/MEI, telefone, e-mail, chave PIX, contrato) | Contrato de parceria ou de trabalho, repasse de comissões e obrigações fiscais | Execução de contrato (V) e obrigação legal (II) | Duração do contrato + prazo fiscal [Confirmar] | Supabase |
+| Histórico técnico da cliente | `cliente_historico` (fórmulas, alergias, preferências, autor) | Segurança e qualidade do atendimento | Execução de contrato (V); alergia pode ser dado de saúde (art. 11) [Confirmar] | Enquanto houver relação | Supabase |
+| Fechamentos de comissão | `fechamentos`, `fechamento_itens` (nome da cliente, serviço, valores; IP e navegador da assinatura) | Prova do acerto com o profissional | Execução de contrato (V) e exercício regular de direitos (VI) | 5 anos (sugestão) [Confirmar] | Supabase |
 
 ## Pontos para o controlador decidir
 

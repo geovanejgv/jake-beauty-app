@@ -37,11 +37,12 @@ export default function Dashboard() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('appointments')
-        .select(`id, start_time, status, payment_method, installments, notes, clients ( name ), services ( id, name, price )`)
+        .select(`id, start_time, status, payment_method, installments, notes, valor_cobrado, gorjeta, servico_id, professional_id, clients ( name ), services ( id, name, price ), servicos ( nome )`)
         .eq('status', 'completed')
         .order('start_time', { ascending: false }); 
       if (error) throw error;
-      return data || [];
+      // Valor do atendimento: o cobrado (catálogo/checkout); nos antigos, o do registro avulso.
+      return (data || []).map((a: any) => ({ ...a, services: { id: a.services?.id, name: a.servicos?.nome ?? a.services?.name ?? a.notes ?? 'Atendimento', price: a.valor_cobrado ?? a.services?.price ?? 0 } }));
     }
   });
 
@@ -51,10 +52,10 @@ export default function Dashboard() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('appointments')
-        .select('id, start_time, is_block, services ( price )')
-        .eq('status', 'scheduled');
+        .select('id, start_time, is_block, is_manual_reminder, valor_cobrado, services ( price )')
+        .in('status', ['scheduled', 'confirmed']);
       if (error) throw error;
-      return (data || []).filter((a: any) => !a.is_block);
+      return (data || []).filter((a: any) => !a.is_block && !a.is_manual_reminder).map((a: any) => ({ ...a, services: { price: a.valor_cobrado ?? a.services?.price ?? 0 } }));
     }
   });
 
@@ -170,7 +171,7 @@ export default function Dashboard() {
   const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
   const translatePaymentMethod = (method: string) => {
-    const map: Record<string, string> = { 'pix': 'PIX', 'debit': 'Débito', 'credit_cash': 'Crédito à vista', 'credit_installments': 'Crédito parcelado', 'cash': 'Dinheiro' };
+    const map: Record<string, string> = { 'pix': 'PIX', 'debito': 'Débito', 'credito': 'Crédito', 'dinheiro': 'Dinheiro', 'cartao': 'Cartão', 'outro': 'Outro', 'debit': 'Débito', 'credit_cash': 'Crédito à vista', 'credit_installments': 'Crédito parcelado', 'cash': 'Dinheiro' };
     return map[method] || method || 'Não informado';
   };
 
@@ -182,11 +183,16 @@ export default function Dashboard() {
 
   const updateRecordMutation = useMutation({
     mutationFn: async (data: any) => {
-      await supabase.from('appointments').update({
-        payment_method: data.paymentMethod, installments: data.paymentMethod === 'credit_installments' ? data.installments : 1, notes: data.notes || null
-      }).eq('id', data.id);
       const formattedPrice = parseFloat(String(data.price).replace(',', '.'));
-      if (data.serviceId) await supabase.from('services').update({ name: data.serviceName, price: formattedPrice }).eq('id', data.serviceId);
+      const { error } = await supabase.from('appointments').update({
+        payment_method: data.paymentMethod, installments: data.paymentMethod === 'credito' ? data.installments : 1, notes: data.notes || null,
+        ...(Number.isFinite(formattedPrice) ? { valor_cobrado: formattedPrice } : {})
+      }).eq('id', data.id);
+      if (error) throw error;
+      if (data.serviceId) {
+        const { error: e2 } = await supabase.from('services').update({ name: data.serviceName }).eq('id', data.serviceId);
+        if (e2) throw e2;
+      }
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['dashboard-financials'] }); setEditingRecord(null); }
   });
@@ -570,7 +576,7 @@ export default function Dashboard() {
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Procedimento</label><input type="text" required value={editServiceName} onChange={(e) => setEditServiceName(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input type="text" required value={editServicePrice} onChange={(e) => setEditServicePrice(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
-                <div><label className="block text-xs font-bold text-slate-500 mb-1">Pagamento</label><select value={editPaymentMethod} onChange={(e) => setEditPaymentMethod(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500"><option value="pix">PIX</option><option value="cash">Dinheiro</option><option value="credit_cash">Crédito</option></select></div>
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">Pagamento</label><select value={editPaymentMethod} onChange={(e) => setEditPaymentMethod(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500"><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="debito">Débito</option><option value="credito">Crédito</option><option value="outro">Outro</option></select></div>
               </div>
               <div className="flex space-x-3 pt-2"><button type="button" onClick={() => setEditingRecord(null)} className="w-1/2 border p-2.5 rounded-lg text-slate-500 font-medium">Cancelar</button><button type="submit" disabled={updateRecordMutation.isPending} className="w-1/2 bg-rose-600 text-white p-2.5 rounded-lg font-bold">Salvar Alteração</button></div>
             </form>

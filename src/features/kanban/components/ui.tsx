@@ -36,12 +36,15 @@ export function Modal({
   children,
   rodape,
   largura = 'md:max-w-[640px]',
+  semFechar = false,
 }: {
   titulo: string;
   onClose: () => void;
   children: React.ReactNode;
   rodape?: React.ReactNode;
   largura?: string;
+  /** Esconde o X (janela que só fecha pela ação do rodapé). */
+  semFechar?: boolean;
 }) {
   useEsc(true, onClose);
   return createPortal(
@@ -50,7 +53,7 @@ export function Modal({
         <div className="hidden md:block absolute inset-y-0 left-0 w-1.5 bg-rose-600" aria-hidden />
         <div className="flex items-center justify-between px-4 md:px-6 h-14 md:h-16 border-b border-slate-100 shrink-0">
           <h3 className="text-lg font-bold text-slate-800 truncate">{titulo}</h3>
-          <button type="button" onClick={onClose} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 rounded-lg" aria-label="Fechar"><X size={20} /></button>
+          {!semFechar && <button type="button" onClick={onClose} className="p-2 -mr-2 text-slate-400 hover:text-slate-600 rounded-lg" aria-label="Fechar"><X size={20} /></button>}
         </div>
         <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4">{children}</div>
         {rodape && <div className="px-4 md:px-6 py-3 border-t border-slate-100 shrink-0 bg-white">{rodape}</div>}

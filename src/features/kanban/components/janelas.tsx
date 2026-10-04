@@ -6,6 +6,7 @@ import {
 } from '../logic';
 import { Checklist, ClientePicker, ResponsavelEnvolvidos } from './campos';
 import { Campo, Modal, inputCls, useToque } from './ui';
+import { Comentarios } from './Comentarios';
 import { mensagemErro } from '../api';
 
 type Cliente = { id: string; name: string; phone: string };
@@ -199,6 +200,10 @@ export function EditarTarefaModal({ tarefa, colunas, pessoas, clientes, hoje, on
           <p className="text-xs font-bold text-slate-500 mb-2">Sub-itens <span className="font-normal text-slate-400">(salvos na hora)</span></p>
           <Checklist itens={t.tarefa_itens || []} sempreVisivel onAlternar={onAlternarItem} onRemover={onRemoverItem} onAdicionar={onAdicionarItem} />
         </div>
+        <div className="border-t border-slate-100 pt-4">
+          <Comentarios taskId={t.id} pessoas={pessoas} />
+        </div>
+        <p className="text-[11px] text-slate-400">Quadro de tarefas (to-do): sem controle de horário ou ponto. Prazos são apenas referência de organização.</p>
       </div>
     </Modal>
   );

@@ -11,6 +11,7 @@ export const kanbanKeys = {
   resumo: ['kanban', 'resumo'] as const,
   tarefas: (quadroId: string) => ['kanban', 'tarefas', quadroId] as const,
   pessoas: ['kanban', 'pessoas'] as const,
+  comentarios: (taskId: string) => ['kanban', 'comentarios', taskId] as const,
   eu: ['kanban', 'eu'] as const,
   clientes: ['kanban', 'clientes'] as const,
 };
@@ -54,12 +55,12 @@ export async function listarTarefas(colunaIds: string[]): Promise<Tarefa[]> {
   const dados = (await rodar(
     supabase
       .from('internal_tasks')
-      .select('*, clients(id, name, phone), tarefa_itens(*)')
+      .select('*, tarefa_itens(*)')
       .in('coluna_id', colunaIds)
       .order('ordem')
       .order('created_at'),
   )) as Tarefa[];
-  return dados.map((t) => ({
+  return (await anexarClientes(dados)).map((t) => ({
     ...t,
     tarefa_itens: [...(t.tarefa_itens || [])].sort((a, b) => a.ordem - b.ordem || a.created_at.localeCompare(b.created_at)),
   }));
@@ -69,14 +70,45 @@ export async function listarPessoas(): Promise<Pessoa[]> {
   return (await rodar(supabase.from('users').select('id, name, auth_id, active').order('name'))) as Pessoa[];
 }
 
+// Clientes pela view clientes_visiveis: profissionais veem nome e contato mascarado (risco de fuga de base).
 export async function listarClientes(): Promise<{ id: string; name: string; phone: string }[]> {
-  return (await rodar(supabase.from('clients').select('id, name, phone').order('name'))) as { id: string; name: string; phone: string }[];
+  return (await rodar(supabase.from('clientes_visiveis').select('id, name, phone').order('name'))) as { id: string; name: string; phone: string }[];
+}
+
+/** Junta o nome da cliente em cada cartão (sem expor contato completo a quem não é administradora). */
+async function anexarClientes(tarefas: Tarefa[]): Promise<Tarefa[]> {
+  const ids = [...new Set(tarefas.map((t) => t.client_id).filter(Boolean))] as string[];
+  if (!ids.length) return tarefas.map((t) => ({ ...t, clients: null }));
+  const lista = (await rodar(supabase.from('clientes_visiveis').select('id, name, phone').in('id', ids))) as { id: string; name: string; phone: string }[];
+  const mapa = new Map(lista.map((c) => [c.id, c]));
+  return tarefas.map((t) => ({ ...t, clients: t.client_id ? mapa.get(t.client_id) ?? null : null }));
+}
+
+// ---------------------------------------------------------------- comentários (thread do cartão)
+
+export type Comentario = { id: string; task_id: string; autor_id: string | null; texto: string; created_at: string; editado_em: string | null };
+
+export async function listarComentarios(taskId: string): Promise<Comentario[]> {
+  return (await rodar(supabase.from('tarefa_comentarios').select('id, task_id, autor_id, texto, created_at, editado_em').eq('task_id', taskId).order('created_at'))) as Comentario[];
+}
+
+export async function comentar(taskId: string, texto: string): Promise<void> {
+  await rodar(supabase.from('tarefa_comentarios').insert([{ task_id: taskId, texto: texto.trim() }]));
+}
+
+export async function editarComentario(id: string, texto: string): Promise<void> {
+  await rodar(supabase.from('tarefa_comentarios').update({ texto: texto.trim() }).eq('id', id));
+}
+
+export async function excluirComentario(id: string): Promise<void> {
+  await rodar(supabase.from('tarefa_comentarios').delete().eq('id', id));
 }
 
 // ---------------------------------------------------------------- cartões
 
 export async function criarTarefa(dados: NovaTarefa): Promise<Tarefa> {
-  return (await rodar(supabase.from('internal_tasks').insert([dados]).select('*, clients(id, name, phone), tarefa_itens(*)').single())) as Tarefa;
+  const criada = (await rodar(supabase.from('internal_tasks').insert([dados]).select('*, tarefa_itens(*)').single())) as Tarefa;
+  return (await anexarClientes([criada]))[0];
 }
 
 export async function editarTarefa(id: string, campos: Record<string, unknown>): Promise<void> {

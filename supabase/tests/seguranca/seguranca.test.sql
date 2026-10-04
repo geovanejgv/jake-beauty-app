@@ -58,10 +58,9 @@ select pg_temp.ok(not (select active from public.users where id = 'd0000000-0000
 set role authenticated;
 select set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', false);
 select public.registrar_auditoria('login');
-select pg_temp.ok((select count(*) from public.clients) = 1, 'profissional lê clientes');
-insert into public.clients (id, name, phone) values ('c0000000-0000-0000-0000-000000000002', 'Nova', '2');
-update public.clients set name = 'Nova Cliente' where id = 'c0000000-0000-0000-0000-000000000002';
-delete from public.clients where id = 'c0000000-0000-0000-0000-000000000002';
+select pg_temp.ok((select count(*) from public.clients) = 0, 'profissional não lê a tabela de clientes');
+select pg_temp.ok((select count(*) from public.clientes_visiveis) = 1, 'profissional vê clientes pela view');
+select pg_temp.ok(public.cadastrar_cliente_rapido('Cliente da Prof', '11999990000') is not null, 'profissional cadastra cliente rápido');
 select pg_temp.ok((select count(*) from public.users) = 3, 'profissional lê a equipe');
 select pg_temp.ok((select count(*) from public.personal_finances) = 0, 'profissional não lê finanças pessoais');
 select pg_temp.espera_erro('insert into public.personal_finances (description, amount, finance_date) values (''x'', 1, current_date)', 'row-level security');
@@ -80,6 +79,9 @@ select pg_temp.ok((select role::text from public.users where id = 'b0000000-0000
 -- 5) Administradora (A)
 set role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-1111-1111-111111111111', false);
+insert into public.clients (id, name, phone) values ('c0000000-0000-0000-0000-000000000002', 'Nova', '2');
+update public.clients set name = 'Nova Cliente' where id = 'c0000000-0000-0000-0000-000000000002';
+delete from public.clients where id = 'c0000000-0000-0000-0000-000000000002';
 select pg_temp.ok((select count(*) from public.personal_finances) = 1, 'admin lê finanças pessoais');
 insert into public.personal_finances (description, amount, finance_date) values ('luz', 100, '2026-10-05');
 insert into public.users (id, name, role) values ('e0000000-0000-0000-0000-00000000000e', 'Nova Profissional', 'professional');
@@ -112,7 +114,7 @@ select pg_temp.ok((select count(*) from public.access_logs where acao = 'login' 
 select pg_temp.ok((select ip from public.access_logs where acao = 'login') = '203.0.113.7', 'IP do primeiro x-forwarded-for');
 select pg_temp.ok((select user_agent from public.access_logs where acao = 'login') = 'teste/1.0', 'user agent registrado');
 select pg_temp.ok((select count(*) from public.access_logs where acao = 'alterou' and entidade = 'clients' and entidade_id = 'c0000000-0000-0000-0000-000000000002') = 1, 'alteração de cliente registrada');
-select pg_temp.ok((select count(*) from public.access_logs where acao = 'excluiu' and entidade = 'clients' and entidade_id = 'c0000000-0000-0000-0000-000000000002' and user_id = 'b0000000-0000-0000-0000-00000000000b') = 1, 'exclusão registrada com autor');
+select pg_temp.ok((select count(*) from public.access_logs where acao = 'excluiu' and entidade = 'clients' and entidade_id = 'c0000000-0000-0000-0000-000000000002' and user_id = 'a0000000-0000-0000-0000-00000000000a') = 1, 'exclusão registrada com autor');
 select pg_temp.ok((select count(*) from public.access_logs where acao = 'usuario_criado' and entidade_id = 'e0000000-0000-0000-0000-00000000000e') = 1, 'usuário criado registrado');
 select pg_temp.ok((select count(*) from public.access_logs where acao = 'permissao_alterada' and entidade_id = 'e0000000-0000-0000-0000-00000000000e') = 0, 'troca de nome não é permissão');
 select pg_temp.ok((select detalhes ->> 'ativo_depois' from public.access_logs where acao = 'permissao_alterada' and entidade_id = 'b0000000-0000-0000-0000-00000000000b') = 'false', 'desativação registrada');

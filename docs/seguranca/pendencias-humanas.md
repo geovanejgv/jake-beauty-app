@@ -64,3 +64,16 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
     - **Finanças pessoais (`personal_finances`) só para a administradora**;
     - equipe (`public.users`) só alterada pela administradora;
     - exclusões, alterações de clientes e finanças, logins e logouts passam a ser auditados.
+
+## Gestão do salão (papéis, catálogo, agenda, comissões)
+
+19. **Migração `20261012120000_gestao_salao.sql` (DEV-02).** **APLICADA em 2026-10-04** com "autorizo" do usuário; conferências OK (RLS ligado nas 10 tabelas novas, nenhuma política `using (true)`, nenhuma função executável por `anon`, 7 categorias criadas, 123 dos 181 agendamentos com valor do serviço copiado). Avisos esperados do Supabase Advisor: view `clientes_visiveis` com security definer (intencional, é ela que mascara o contato) e funções security definer executáveis por usuário logado (intencional, cada uma confere o papel). Efeitos visíveis:
+    - profissional só vê a própria agenda, os próprios fechamentos e as tarefas em que é responsável, envolvida ou criadora;
+    - profissional vê clientes pela view `clientes_visiveis`: nome e histórico técnico, com telefone e e-mail mascarados;
+    - finanças do negócio (despesas, receitas avulsas, transações) passam a ser só da administradora;
+    - agenda passa a recusar dois atendimentos sobrepostos do mesmo profissional (os 181 agendamentos atuais não têm profissional e não são afetados);
+    - formas de pagamento aceitas: pix, dinheiro, débito, crédito, cartão (antigos) e outro.
+20. **Deploy da Edge Function `admin-usuarios` (DEV-02).** **PUBLICADA em 2026-10-04** (versão 1, verificação de JWT ligada) com "autorizo" do usuário. Necessária para "Criar acesso", "Redefinir senha" e "Desativar/Reativar" com bloqueio de login. Usa a chave de serviço que o próprio Supabase injeta na função (ninguém precisa copiá-la). Opcional: segredo `ORIGENS_PERMITIDAS` com um domínio próprio, se houver. Sem o deploy, o cadastro de profissionais funciona, mas sem login.
+21. **Agendamentos antigos sem profissional.** Decidir se os 181 atendimentos existentes devem ser atribuídos a alguém (ex.: à administradora). Hoje aparecem como "Sem profissional" e não entram em fechamento de comissão.
+22. **Contrato de parceria (Lei 13.352/2016) [Confirmar].** O sistema guarda CPF, CNPJ/MEI, modelo e início do contrato e avisa quando falta CNPJ/MEI; a redação, a homologação e a guarda do contrato assinado são fora do sistema.
+23. **Com profissionais entrando no sistema, os itens 2 a 5 ficam mais urgentes**: mínimo de 12 caracteres e senhas vazadas no Supabase Auth, cadastro público desligado e MFA para a administradora.
