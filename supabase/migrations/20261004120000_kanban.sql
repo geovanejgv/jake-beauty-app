@@ -465,4 +465,12 @@ grant execute on function
   public.kanban_reordenar(uuid, uuid[])
 to authenticated;
 
+-- Funções de gatilho não são chamadas pela API (só rodam dentro dos gatilhos)
+revoke all on function
+  public.internal_tasks_defaults(),
+  public.internal_tasks_envolvidos_validos(),
+  public.internal_tasks_status_da_coluna(),
+  public.kanban_quadros_protege_unico()
+from public, anon, authenticated;
+
 commit;
