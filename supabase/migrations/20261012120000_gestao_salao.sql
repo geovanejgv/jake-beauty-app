@@ -2,7 +2,7 @@
 -- Gestão do salão: acesso por papel, catálogo, agenda sem conflito, comissões
 -- com fechamento assinado, comentários no Kanban e preferências de interface.
 --
--- NÃO APLICADA. Só aplicar em produção com aprovação explícita (DEV-02).
+-- APLICADA em produção em 2026-10-04 com aprovação explícita do usuário (DEV-02).
 --
 -- Adaptações ao banco que já existe (nada é apagado):
 --  - "Usuarios" = public.users (papel no enum user_role: admin = Administrador,
