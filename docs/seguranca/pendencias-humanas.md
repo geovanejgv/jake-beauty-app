@@ -7,6 +7,7 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
 ## Antes de publicar esta entrega
 
 1. **Variáveis de ambiente na Vercel (SEG-01, SEG-04, SEG-07, CRI-01).** Sem elas o build falha de propósito.
+   - **FEITO em 2026-10-04** pelo agente, com autorização do usuário, no projeto Vercel `studio-labeli-app` (Production e Preview): `VITE_SUPABASE_PUBLISHABLE_KEY` criada e `VITE_SUPABASE_URL` regravada com a URL do projeto. Falta: excluir a variável antiga `VITE_SUPABASE_ANON_KEY` (não é mais usada) e decidir valores próprios para Preview quando houver homologação (SEG-04).
    - Vercel, projeto do portal, Settings, Environment Variables.
    - Criar `VITE_SUPABASE_URL` (URL do projeto, Supabase, Project Settings, API) e `VITE_SUPABASE_PUBLISHABLE_KEY` (a chave **publishable**, nunca a secret/service role), marcando Production e Preview.
    - Conferir em Settings, Domains que o domínio usa HTTPS (padrão da Vercel).

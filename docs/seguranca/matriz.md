@@ -24,7 +24,7 @@ Resumo: 38 atende, 36 não se aplica, 29 aguarda humano, 20 parcial, 9 pendente 
 
 | ID | Prioridade | Situação | Evidência |
 | --- | --- | --- | --- |
-| SEG-01 | C | atende | `src/lib/env.ts:30` (único leitor, valida e falha listando só nomes); `vite.config.ts:8` (build falha sem variável); `tests/seguranca/varreduras.test.ts` "SEG-01"; `tests/seguranca/config-logs-erros.test.ts`; job "Build falha sem variáveis" em `.github/workflows/seguranca.yml`. Valores reais no painel da Vercel: ver pendencias-humanas.md item 1. |
+| SEG-01 | C | atende | `src/lib/env.ts:30` (único leitor, valida e falha listando só nomes); `vite.config.ts:8` (build falha sem variável); `tests/seguranca/varreduras.test.ts` "SEG-01"; `tests/seguranca/config-logs-erros.test.ts`; job "Build falha sem variáveis" em `.github/workflows/seguranca.yml`. Valores cadastrados na Vercel (Production e Preview) em 2026-10-04 com autorização do usuário. |
 | SEG-02 | C | atende | `.gitignore` (`.env`, `.env.local`, `.env.*.local`); `tests/seguranca/varreduras.test.ts` "SEG-02" (`git check-ignore` e `git ls-files`). |
 | SEG-03 | C | atende | `.env.example` marca [PÚBLICA]/[PRIVADA]; só existem variáveis públicas (SPA); `tests/seguranca/varreduras.test.ts` "SEG-03"; busca no bundle em `.github/workflows/seguranca.yml`. |
 | SEG-04 | I | aguarda humano | pendencias-humanas.md item 1 (Production e Preview com valores próprios; hoje há um único projeto Supabase). |
