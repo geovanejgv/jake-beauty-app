@@ -7,7 +7,7 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
 ## Antes de publicar esta entrega
 
 1. **Variáveis de ambiente na Vercel (SEG-01, SEG-04, SEG-07, CRI-01).** Sem elas o build falha de propósito.
-   - **FEITO em 2026-10-04** pelo agente, com autorização do usuário, no projeto Vercel `studio-labeli-app` (Production e Preview): `VITE_SUPABASE_PUBLISHABLE_KEY` criada e `VITE_SUPABASE_URL` regravada com a URL do projeto. Falta: excluir a variável antiga `VITE_SUPABASE_ANON_KEY` (não é mais usada) e decidir valores próprios para Preview quando houver homologação (SEG-04).
+   - **FEITO em 2026-10-04** pelo agente, com autorização do usuário, no projeto Vercel `studio-labeli-app` (Production e Preview): `VITE_SUPABASE_PUBLISHABLE_KEY` criada e `VITE_SUPABASE_URL` regravada com a URL do projeto. Falta: excluir no painel a variável antiga `VITE_SUPABASE_ANON_KEY` (não é mais usada; o conector não tem ação de exclusão) e decidir valores próprios para Preview quando houver homologação (SEG-04).
    - Vercel, projeto do portal, Settings, Environment Variables.
    - Criar `VITE_SUPABASE_URL` (URL do projeto, Supabase, Project Settings, API) e `VITE_SUPABASE_PUBLISHABLE_KEY` (a chave **publishable**, nunca a secret/service role), marcando Production e Preview.
    - Conferir em Settings, Domains que o domínio usa HTTPS (padrão da Vercel).
@@ -58,9 +58,8 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
 
 ## Aplicação da migração de segurança
 
-18. **Migração `20261011120000_seguranca_endurecimento.sql` (DEV-02).** Só aplicar com "autorizo" explícito. Efeitos visíveis:
+18. **Migração `20261011120000_seguranca_endurecimento.sql` (DEV-02).** **APLICADA em 2026-10-04** com "autorizo" do usuário; conferências OK. Efeitos visíveis:
     - conta sem perfil ativo em `public.users` passa a ver "Acesso ainda não liberado" (o Kanban não cria mais perfil sozinho);
     - **Finanças pessoais (`personal_finances`) só para a administradora**;
     - equipe (`public.users`) só alterada pela administradora;
     - exclusões, alterações de clientes e finanças, logins e logouts passam a ser auditados.
-    Depois de aplicar: rodar as consultas de conferência do fim da migração e registrar "APLICADA em (data) com aprovação" no cabeçalho dela e na matriz.

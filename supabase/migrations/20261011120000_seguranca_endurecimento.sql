@@ -1,7 +1,9 @@
 -- =============================================================================
 -- Segurança: endurecimento do banco (docs/seguranca/requisitos.md)
 --
--- NÃO APLICADA. Só aplicar em produção com aprovação explícita (DEV-02).
+-- APLICADA em produção em 2026-10-04 com aprovação explícita do usuário (DEV-02),
+-- depois de o SQL completo ser mostrado na conversa. Conferências do fim do
+-- arquivo: 0 tabelas sem RLS, 0 políticas abertas, 0 funções executáveis por anon.
 --
 -- O que muda:
 --  1. Funções de contexto: usuario_ativo() e usuario_admin(). Perfil inativo

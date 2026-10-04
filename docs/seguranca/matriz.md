@@ -4,7 +4,7 @@ Situação de cada requisito de `docs/seguranca/requisitos.md` neste projeto (SP
 
 Situações: `atende`, `parcial`, `aguarda humano`, `não se aplica`, `pendente`.
 
-Última atualização: 2026-10-04 (entrega da especificação de segurança). A migração `20261011120000_seguranca_endurecimento.sql` ainda **não foi aplicada** em produção; os itens que dependem dela estão como `parcial` até a aplicação.
+Última atualização: 2026-10-04 (entrega da especificação de segurança). A migração `20261011120000_seguranca_endurecimento.sql` foi **aplicada em produção em 2026-10-04** com aprovação do usuário; conferência: 0 tabelas sem RLS, 0 políticas `using (true)`, 0 funções executáveis por anon.
 
 Resumo: 38 atende, 36 não se aplica, 29 aguarda humano, 20 parcial, 9 pendente (total 132).
 
@@ -90,7 +90,7 @@ Resumo: 38 atende, 36 não se aplica, 29 aguarda humano, 20 parcial, 9 pendente 
 | LOG-02 | C | atende | `vite.config.ts:13` `sourcemap: false`; job "Sem source maps públicos" em `.github/workflows/seguranca.yml`; `tests/seguranca/varreduras.test.ts` "LOG-02". |
 | LOG-03 | I | pendente | Sem ferramenta de monitoramento (Sentry). Exige dependência nova (DEP-01): pendencias-humanas.md item 11. |
 | LOG-04 | C | atende | `src/lib/seguranca/logger.ts:12` (mascaramento); `console.*` só no logger (`tests/seguranca/varreduras.test.ts`); `tests/seguranca/config-logs-erros.test.ts` "LOG-04". |
-| LOG-05 | I | parcial | Tabela `access_logs` + gatilhos (exclusões, alterações de clientes e finanças, permissões) e `registrar_auditoria` para login, login negado e logout (`supabase/migrations/20261011120000_seguranca_endurecimento.sql`:121-290); `supabase/tests/seguranca/seguranca.test.sql` seção 8. Falha de login não é gravada pelo app (sem sessão): fica nos logs do Supabase Auth. Aguarda aplicação em produção. |
+| LOG-05 | I | parcial | Tabela `access_logs` + gatilhos (exclusões, alterações de clientes e finanças, permissões) e `registrar_auditoria` para login, login negado e logout (`supabase/migrations/20261011120000_seguranca_endurecimento.sql`:121-290); `supabase/tests/seguranca/seguranca.test.sql` seção 8. Falha de login não é gravada pelo app (sem sessão): fica nos logs do Supabase Auth. |
 | LOG-06 | I | parcial | Somente inserção por gatilho e permissões (`supabase/migrations/20261011120000_seguranca_endurecimento.sql`:144-163); `supabase/tests/seguranca/seguranca.test.sql` seção 7. Prazo de retenção a definir: pendencias-humanas.md item 14. |
 | LOG-07 | I | aguarda humano | pendencias-humanas.md item 10. |
 | LOG-08 | I | não se aplica | Sem ferramenta de gravação de sessão. |
@@ -128,7 +128,7 @@ Resumo: 38 atende, 36 não se aplica, 29 aguarda humano, 20 parcial, 9 pendente 
 | TST-05 | I | aguarda humano | Decisão sobre teste de invasão: pendencias-humanas.md item 16. |
 | TST-06 | R | atende | Esta matriz, atualizada nesta entrega. |
 | DEV-01 | C | aguarda humano | O agente tem conector do Supabase com escrita em PRODUÇÃO (não há projeto de homologação). Usado só para leitura nesta entrega; escrita só com aprovação (DEV-02). pendencias-humanas.md item 8. |
-| DEV-02 | C | atende | Migração escrita no repositório e NÃO aplicada; SQL mostrado ao usuário para aprovação. |
+| DEV-02 | C | atende | SQL completo mostrado na conversa e aplicado só depois de "autorizo" (2026-10-04); registro no cabeçalho da migração. |
 | DEV-03 | I | atende | Trabalho na branch `claude/gracious-curie-vpzebg`, entrega por pull request. |
 | DEV-04 | I | atende | Relatório de IDs no fim da entrega e esta matriz. |
 | DEV-05 | I | aguarda humano | Conectores com escopo amplo (Supabase com escrita, Vercel, GitHub): pendencias-humanas.md item 8. |
