@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24 # mesma versão do projeto na Vercel (npm 11)
           cache: npm
       # Instalação reproduzível pelo lockfile, sem scripts de pacote (DEP-02, DEP-06)
       - run: npm ci --ignore-scripts
@@ -83,7 +83,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24 # mesma versão do projeto na Vercel (npm 11)
       # Bloqueia vulnerabilidade alta/crítica no que vai para o navegador.
       - name: Dependências de produção (bloqueia)
         run: npm audit --omit=dev --audit-level=high
