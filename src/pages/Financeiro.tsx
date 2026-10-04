@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { datasMensais, mesAno, MESES_RECORRENCIA } from '../lib/recorrencia';
 import { ArrowUpCircle, ArrowDownCircle, Trash2, Repeat, CheckCircle, Clock, Edit2, X, AlertTriangle, Calendar, Wallet, TrendingUp, TrendingDown, PieChart, ChevronLeft, ChevronRight, LayoutList, Columns, Grid, Plus, Loader2, Camera, Upload, ScanBarcode, Copy, Briefcase, User, Layers } from 'lucide-react';
 
 type Escopo = 'negocio' | 'pessoal';
@@ -62,7 +63,10 @@ export default function Financeiro() {
   const [amount, setAmount] = useState('');
   const [financeDate, setFinanceDate] = useState(todayStr);
   const [category, setCategory] = useState('Geral');
-  const [isRecurring, setIsRecurring] = useState(false);
+  // Lançamento novo é mensal por padrão; marcar "Lançamento único" para não repetir
+  const [isSingle, setIsSingle] = useState(false);
+  // Exclusão/edição de lançamento recorrente: só este ou este e os próximos da série
+  const [applyToFollowing, setApplyToFollowing] = useState(false);
   const [notes, setNotes] = useState('');
   const [receiver, setReceiver] = useState('');
   const [barcode, setBarcode] = useState('');
@@ -167,16 +171,28 @@ export default function Financeiro() {
 
   const addMutation = useMutation({
     mutationFn: async (payload?: any) => {
-      const dataToSave = payload || {
-        description: desc, amount: parseFloat(String(amount).replace(',', '.')), 
-        finance_date: financeDate, type: financeType, category, is_recurring: isRecurring, 
-        is_completed: false, notes: notes || null, receiver_name: receiver || null, barcode: barcode || null,
-        escopo
-      };
-
-      const { error } = await supabase.from('personal_finances').insert([dataToSave]);
+      let rows: any[];
+      if (payload) {
+        rows = [payload];
+      } else {
+        const base = {
+          description: desc, amount: parseFloat(String(amount).replace(',', '.')),
+          type: financeType, category, is_completed: false,
+          notes: notes || null, receiver_name: receiver || null, barcode: barcode || null,
+          escopo
+        };
+        if (isSingle) {
+          rows = [{ ...base, finance_date: financeDate, is_recurring: false, recurring_group_id: null }];
+        } else {
+          // Recorrente: cria os próximos meses de uma vez, ligados pela mesma série
+          const groupId = crypto.randomUUID();
+          rows = datasMensais(financeDate).map((d) => ({ ...base, finance_date: d, is_recurring: true, recurring_group_id: groupId }));
+        }
+      }
+      const { error } = await supabase.from('personal_finances').insert(rows);
       if (error) throw error;
     },
+    onError: (error: any) => alert(`Não foi possível salvar o lançamento: ${error.message}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['personal-finances'] });
       setShowAddModal(false); 
@@ -186,16 +202,24 @@ export default function Financeiro() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: any) => {
+    mutationFn: async ({ id, data, item, following }: any) => {
       const formattedAmount = parseFloat(String(data.amount).replace(',', '.'));
-      const { error } = await supabase.from('personal_finances').update({
-        description: data.desc, amount: formattedAmount, finance_date: data.date, category: data.category, 
+      const shared = {
+        description: data.desc, amount: formattedAmount, category: data.category,
         notes: data.notes || null, receiver_name: data.receiver || null, barcode: data.barcode || null,
         escopo: data.escopo
-      }).eq('id', id);
+      };
+      const { error } = await supabase.from('personal_finances').update({ ...shared, finance_date: data.date }).eq('id', id);
       if (error) throw error;
+      // Série recorrente: replica os dados (menos a data e a baixa) nos meses seguintes
+      if (following && item?.recurring_group_id) {
+        const { error: e2 } = await supabase.from('personal_finances').update(shared)
+          .eq('recurring_group_id', item.recurring_group_id).gt('finance_date', item.finance_date);
+        if (e2) throw e2;
+      }
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['personal-finances'] }); setEditingItem(null); }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['personal-finances'] }); setEditingItem(null); },
+    onError: (error: any) => alert(`Não foi possível atualizar: ${error.message}`)
   });
 
   const toggleStatusMutation = useMutation({
@@ -207,19 +231,26 @@ export default function Financeiro() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('personal_finances').delete().eq('id', id);
+    mutationFn: async ({ item, following }: { item: any; following: boolean }) => {
+      const query = supabase.from('personal_finances').delete();
+      const { error } = following && item.recurring_group_id
+        ? await query.eq('recurring_group_id', item.recurring_group_id).gte('finance_date', item.finance_date)
+        : await query.eq('id', item.id);
       if (error) throw error;
     },
+    onError: (error: any) => alert(`Não foi possível excluir: ${error.message}`),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['personal-finances'] }); setItemToDelete(null); setEditingItem(null); }
   });
 
-  const resetForm = () => { setDesc(''); setAmount(''); setNotes(''); setIsRecurring(false); setCategory('Geral'); setReceiver(''); setBarcode(''); };
+  useEffect(() => { setApplyToFollowing(false); }, [editingItem?.id, itemToDelete?.id]);
+
+  const resetForm = () => { setDesc(''); setAmount(''); setNotes(''); setIsSingle(false); setCategory('Geral'); setReceiver(''); setBarcode(''); };
 
   const openAddModalForType = (type: 'income' | 'expense', dateStr?: string) => {
     setFinanceType(type);
     setCategory(type === 'income' ? 'Clientes' : 'Fixas');
     setEscopo(escopoPadrao);
+    setIsSingle(false);
     if (dateStr) setFinanceDate(dateStr);
     setActionMenuDate(null);
     setShowAddModal(true);
@@ -299,6 +330,7 @@ export default function Financeiro() {
             <h4 className={`font-bold flex items-center space-x-2 text-sm ${textClass}`}>
               <span className="truncate">{item.description}</span>
               <span className="text-[9px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded uppercase font-bold no-underline shrink-0">{rotuloCategoria(item.type, item.category)}</span>
+              {item.is_recurring && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded uppercase font-bold no-underline shrink-0 flex items-center gap-0.5"><Repeat size={9} /> Mensal</span>}
               {escopoView === 'todos' && (
                 <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold no-underline shrink-0 ${escopoDo(item) === 'negocio' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}`}>
                   {escopoDo(item) === 'negocio' ? 'Negócio' : 'Pessoal'}
@@ -542,6 +574,19 @@ export default function Financeiro() {
                 </div>
               </div>
               <div><label className="block text-xs font-bold text-slate-500 mb-1">{financeType === 'income' ? 'Origem' : 'Tipo de custo'}</label><select value={category} onChange={e => setCategory(e.target.value)} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm bg-white font-medium">{categoriasDo(financeType).map((c) => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}</select></div>
+              {/* Recorrência: mensal por padrão; marcar para lançar uma única vez */}
+              <div className="rounded-xl border border-slate-200 p-3 space-y-1.5">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+                  <input type="checkbox" checked={isSingle} onChange={(e) => setIsSingle(e.target.checked)} className="w-4 h-4 accent-rose-600" />
+                  Lançamento único (não repetir)
+                </label>
+                <p className={`text-[11px] flex items-center gap-1 ${isSingle ? 'text-slate-400' : 'text-indigo-700 font-semibold'}`}>
+                  <Repeat size={12} className="shrink-0" />
+                  {isSingle
+                    ? 'Será lançado apenas nesta data.'
+                    : `Repete todo mês: ${MESES_RECORRENCIA} lançamentos, de ${mesAno(financeDate || todayStr)} a ${mesAno(datasMensais(financeDate || todayStr).slice(-1)[0])}.`}
+                </p>
+              </div>
               <div className="flex space-x-3 pt-2">
                 <button type="button" onClick={() => setShowAddModal(false)} className="w-1/2 border p-2.5 rounded-xl text-slate-500 font-medium text-sm">Cancelar</button>
                 <button type="submit" disabled={addMutation.isPending} className={`w-1/2 text-white p-2.5 rounded-xl font-bold text-sm shadow-sm ${financeType === 'income' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>Salvar</button>
@@ -566,11 +611,12 @@ export default function Financeiro() {
                 date: (form.elements.namedItem('editDate') as HTMLInputElement).value,
                 category: (form.elements.namedItem('editCategory') as HTMLSelectElement).value,
                 escopo: (form.elements.namedItem('editEscopo') as HTMLSelectElement).value,
-                receiver: (form.elements.namedItem('editReceiver') as HTMLInputElement).value,
-                barcode: (form.elements.namedItem('editBarcode') as HTMLInputElement).value,
+                // Recebedor e código de barras só aparecem quando existem: sem o campo, mantém o valor atual
+                receiver: (form.elements.namedItem('editReceiver') as HTMLInputElement | null)?.value ?? editingItem.receiver_name,
+                barcode: (form.elements.namedItem('editBarcode') as HTMLInputElement | null)?.value ?? editingItem.barcode,
                 notes: (form.elements.namedItem('editNotes') as HTMLInputElement).value
               };
-              updateMutation.mutate({ id: editingItem.id, data });
+              updateMutation.mutate({ id: editingItem.id, data, item: editingItem, following: applyToFollowing });
             }} className="space-y-4">
               {editingItem.receiver_name && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Recebedor</label><input name="editReceiver" defaultValue={editingItem.receiver_name} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm font-medium bg-slate-50 text-slate-600" /></div>
@@ -595,6 +641,12 @@ export default function Financeiro() {
               )}
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Observações</label><textarea name="editNotes" defaultValue={editingItem.notes || ''} rows={2} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-xs resize-none" /></div>
               <div className="pt-2"><button type="button" onClick={() => toggleStatusMutation.mutate({ id: editingItem.id, currentStatus: editingItem.is_completed })} className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors ${editingItem.is_completed ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : editingItem.type === 'income' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-rose-100 text-rose-700 hover:bg-rose-200'}`}>{editingItem.is_completed ? <><X size={18}/> Desfazer Baixa</> : <><CheckCircle size={18}/> Marcar como {editingItem.type === 'income' ? 'Recebido' : 'Pago'}</>}</button></div>
+              {editingItem.recurring_group_id && (
+                <label className="flex items-start gap-2 text-xs text-slate-600 bg-indigo-50 border border-indigo-100 rounded-xl p-3 cursor-pointer">
+                  <input type="checkbox" checked={applyToFollowing} onChange={(e) => setApplyToFollowing(e.target.checked)} className="mt-0.5 w-4 h-4 accent-rose-600" />
+                  <span><strong className="text-indigo-700 flex items-center gap-1"><Repeat size={12} /> Lançamento mensal</strong>Aplicar descrição, valor, controle e tipo também aos próximos meses (datas e baixas não mudam).</span>
+                </label>
+              )}
               <div className="flex space-x-3 pt-2"><button type="button" onClick={() => setEditingItem(null)} className="w-1/2 border p-2.5 rounded-xl text-slate-500 font-medium text-sm">Cancelar</button><button type="submit" disabled={updateMutation.isPending} className="w-1/2 bg-slate-800 hover:bg-slate-900 text-white p-2.5 rounded-xl font-bold text-sm shadow-sm">Atualizar Conta</button></div>
             </form>
           </div>
@@ -605,7 +657,16 @@ export default function Financeiro() {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center space-y-4">
             <div className="flex justify-center text-red-500 mb-2"><AlertTriangle size={48} /></div><h3 className="text-xl font-bold text-slate-800">Excluir Conta?</h3><p className="text-sm text-slate-500">Tem certeza que deseja remover <strong>{itemToDelete.description}</strong> permanentemente?</p>
-            <div className="flex space-x-3 pt-4"><button onClick={() => setItemToDelete(null)} className="w-1/2 border border-slate-200 bg-slate-50 text-slate-600 p-2.5 rounded-xl font-medium text-sm">Cancelar</button><button onClick={() => deleteMutation.mutate(itemToDelete.id)} disabled={deleteMutation.isPending} className="w-1/2 bg-red-600 hover:bg-red-700 text-white p-2.5 rounded-xl font-bold text-sm shadow-sm">Sim, Excluir</button></div>
+            {itemToDelete.recurring_group_id ? (
+              <div className="space-y-2 pt-4">
+                <p className="text-xs text-indigo-700 font-semibold flex items-center justify-center gap-1"><Repeat size={12} /> Este lançamento se repete todo mês.</p>
+                <button onClick={() => deleteMutation.mutate({ item: itemToDelete, following: false })} disabled={deleteMutation.isPending} className="w-full border border-red-200 text-red-600 hover:bg-red-50 p-2.5 rounded-xl font-bold text-sm">Excluir só este mês</button>
+                <button onClick={() => deleteMutation.mutate({ item: itemToDelete, following: true })} disabled={deleteMutation.isPending} className="w-full bg-red-600 hover:bg-red-700 text-white p-2.5 rounded-xl font-bold text-sm shadow-sm">Excluir este e os próximos</button>
+                <button onClick={() => setItemToDelete(null)} className="w-full border border-slate-200 bg-slate-50 text-slate-600 p-2.5 rounded-xl font-medium text-sm">Cancelar</button>
+              </div>
+            ) : (
+              <div className="flex space-x-3 pt-4"><button onClick={() => setItemToDelete(null)} className="w-1/2 border border-slate-200 bg-slate-50 text-slate-600 p-2.5 rounded-xl font-medium text-sm">Cancelar</button><button onClick={() => deleteMutation.mutate({ item: itemToDelete, following: false })} disabled={deleteMutation.isPending} className="w-1/2 bg-red-600 hover:bg-red-700 text-white p-2.5 rounded-xl font-bold text-sm shadow-sm">Sim, Excluir</button></div>
+            )}
           </div>
         </div>
       )}
