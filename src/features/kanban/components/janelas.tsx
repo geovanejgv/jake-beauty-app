@@ -6,6 +6,7 @@ import {
 } from '../logic';
 import { Checklist, ClientePicker, ResponsavelEnvolvidos } from './campos';
 import { Campo, Modal, inputCls, useToque } from './ui';
+import { mensagemErro } from '../api';
 
 type Cliente = { id: string; name: string; phone: string };
 
@@ -61,7 +62,7 @@ export function NovaTarefaModal({ quadros, colunas, pessoas, clientes, eu, hoje,
     const r = validarNovaTarefa({ titulo, responsible_id: responsavel, data_limite: data, criticidade, client_id: cliente, coluna_id: coluna, envolvidos });
     if (r.ok === false) { setErro(r.erro); return; }
     setOcupado(true); setErro(null);
-    try { await onSalvar(r.dados); onClose(); } catch (e) { setErro((e as Error).message); } finally { setOcupado(false); }
+    try { await onSalvar(r.dados); onClose(); } catch (e) { setErro(mensagemErro(e)); } finally { setOcupado(false); }
   };
 
   return (
@@ -128,7 +129,7 @@ export function EditarTarefaModal({ tarefa, colunas, pessoas, clientes, hoje, on
     const r = validarEdicaoTarefa(campos);
     if (r.ok === false) { setErro(r.erro); return; }
     setOcupado(true); setErro(null);
-    try { await onSalvar(edicaoParaBanco(r.dados)); if (fechar) onClose(); } catch (e) { setErro((e as Error).message); } finally { setOcupado(false); }
+    try { await onSalvar(edicaoParaBanco(r.dados)); if (fechar) onClose(); } catch (e) { setErro(mensagemErro(e)); } finally { setOcupado(false); }
   };
 
   const salvar = () => {
@@ -236,7 +237,7 @@ export function QuadroModal({ quadro, colunas, onClose, onSalvar }: {
     const e = validarQuadro(nome, cols);
     if (e) { setErro(e); return; }
     setOcupado(true); setErro(null);
-    try { await onSalvar(nome, cols); onClose(); } catch (err) { setErro((err as Error).message); } finally { setOcupado(false); }
+    try { await onSalvar(nome, cols); onClose(); } catch (err) { setErro(mensagemErro(err)); } finally { setOcupado(false); }
   };
 
   return (
@@ -311,7 +312,7 @@ export function EquipeModal({ pessoas, onClose, onSalvar }: {
   const executar = async (p: { id?: string; name: string; active?: boolean }): Promise<boolean> => {
     if (!p.name.trim()) { setErro('Informe o nome.'); return false; }
     setOcupado(true); setErro(null);
-    try { await onSalvar(p); return true; } catch (e) { setErro((e as Error).message); return false; } finally { setOcupado(false); }
+    try { await onSalvar(p); return true; } catch (e) { setErro(mensagemErro(e)); return false; } finally { setOcupado(false); }
   };
   const adicionar = async () => { if (await executar({ name: novo })) setNovo(''); };
   return (

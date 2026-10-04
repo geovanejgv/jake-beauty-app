@@ -1,6 +1,7 @@
 // Acesso ao Supabase do Kanban. Quadros e colunas mudam só pelas funções kanban_*
 // (ver supabase/migrations/20261004120000_kanban.sql); cartões e sub-itens são gravados direto.
 import { supabase } from '../../lib/supabase';
+import { ErroPublico, mensagemDeErro } from '../../lib/seguranca/erros';
 import type { Coluna, ColunaEdicao, ItemTarefa, NovaTarefa, Pessoa, Quadro, Tarefa } from './logic';
 
 export const kanbanKeys = {
@@ -14,20 +15,9 @@ export const kanbanKeys = {
   clientes: ['kanban', 'clientes'] as const,
 };
 
-// Mensagens do banco que já são escritas para o usuário (lançadas pelas funções kanban_*)
-const MENSAGENS_AMIGAVEIS = [
-  'Sessão expirada', 'Este é o único quadro', 'O nome do quadro', 'O quadro deve ter', 'O nome de cada coluna',
-  'Coluna inválida', 'Coluna do kanban inválida', 'A primeira e a última coluna', 'Quadro não encontrado',
-  'Lista de cartões inválida', 'Tarefa inválida', 'Envolvido inválido',
-];
-
-/** Converte o erro do Supabase numa mensagem curta para a tela (sem detalhes técnicos). */
+/** Converte o erro do Supabase numa mensagem curta para a tela (sem detalhes técnicos, LOG-01). */
 export function mensagemErro(e: unknown, padrao = 'Não foi possível salvar. Tente novamente.'): string {
-  const msg = (e as { message?: string })?.message || '';
-  if (MENSAGENS_AMIGAVEIS.some((m) => msg.startsWith(m))) return msg;
-  if (/JWT|not authenticated|permission denied/i.test(msg)) return 'Sessão expirada. Entre novamente.';
-  if (/Failed to fetch|NetworkError/i.test(msg)) return 'Sem conexão. Verifique a internet e tente de novo.';
-  return padrao;
+  return mensagemDeErro(e, padrao, 'kanban');
 }
 
 async function rodar<T>(p: PromiseLike<{ data: T; error: unknown }>): Promise<T> {
@@ -91,7 +81,7 @@ export async function criarTarefa(dados: NovaTarefa): Promise<Tarefa> {
 
 export async function editarTarefa(id: string, campos: Record<string, unknown>): Promise<void> {
   const linhas = (await rodar(supabase.from('internal_tasks').update(campos).eq('id', id).select('id'))) as unknown[];
-  if (!linhas.length) throw new Error('Tarefa inválida.');
+  if (!linhas.length) throw new ErroPublico('Tarefa inválida.');
 }
 
 export async function excluirTarefa(id: string): Promise<void> {

@@ -1,2 +1,10 @@
 node_modules/
 dist/
+# Variáveis de ambiente (SEG-02): só .env.example é versionado
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+*.map
+*.tsbuildinfo

@@ -18,15 +18,8 @@
 
     <title>Jake Beauty</title>
 
-    <!-- Aplica o tema salvo antes de renderizar, evitando o "piscar" do modo claro -->
-    <script>
-      try {
-        var t = localStorage.getItem('jb-theme');
-        if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-          document.documentElement.classList.add('dark');
-        }
-      } catch (e) {}
-    </script>
+    <!-- Aplica o tema salvo antes de renderizar (arquivo externo por causa da CSP) -->
+    <script src="/tema.js"></script>
   </head>
   <body>
     <div id="root"></div>

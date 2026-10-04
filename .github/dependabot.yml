@@ -1,0 +1,24 @@
+# Dependabot (DEP-04): SOMENTE atualizações de segurança.
+#
+# open-pull-requests-limit: 0 desliga os PRs de atualização de versão comum;
+# os PRs de SEGURANÇA continuam sendo abertos (eles não contam nesse limite)
+# desde que "Dependabot security updates" esteja ativo no GitHub.
+# Saltos de versão principal (ex.: Vite 5 -> 6) são feitos manualmente,
+# um por vez, com teste.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      seguranca:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0

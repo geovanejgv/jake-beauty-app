@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { mensagemDeErro } from '../lib/seguranca/erros';
 import { datasMensais, mesAno, MESES_RECORRENCIA } from '../lib/recorrencia';
 import { ArrowUpCircle, ArrowDownCircle, Trash2, Repeat, CheckCircle, Clock, Edit2, X, AlertTriangle, Calendar, Wallet, TrendingUp, TrendingDown, PieChart, ChevronLeft, ChevronRight, LayoutList, Columns, Grid, Plus, Loader2, Camera, Upload, ScanBarcode, Copy, Briefcase, User, Layers } from 'lucide-react';
 
@@ -192,7 +193,7 @@ export default function Financeiro() {
       const { error } = await supabase.from('personal_finances').insert(rows);
       if (error) throw error;
     },
-    onError: (error: any) => alert(`Não foi possível salvar o lançamento: ${error.message}`),
+    onError: (error: unknown) => alert(mensagemDeErro(error, 'Não foi possível salvar o lançamento.', 'financas.salvar')),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['personal-finances'] });
       setShowAddModal(false); 
@@ -219,7 +220,7 @@ export default function Financeiro() {
       }
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['personal-finances'] }); setEditingItem(null); },
-    onError: (error: any) => alert(`Não foi possível atualizar: ${error.message}`)
+    onError: (error: unknown) => alert(mensagemDeErro(error, 'Não foi possível atualizar.', 'financas.atualizar'))
   });
 
   const toggleStatusMutation = useMutation({
@@ -238,7 +239,7 @@ export default function Financeiro() {
         : await query.eq('id', item.id);
       if (error) throw error;
     },
-    onError: (error: any) => alert(`Não foi possível excluir: ${error.message}`),
+    onError: (error: unknown) => alert(mensagemDeErro(error, 'Não foi possível excluir.', 'financas.excluir')),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['personal-finances'] }); setItemToDelete(null); setEditingItem(null); }
   });
 
@@ -336,7 +337,7 @@ export default function Financeiro() {
                   {escopoDo(item) === 'negocio' ? 'Negócio' : 'Pessoal'}
                 </span>
               )}
-              {item.barcode && <ScanBarcode size={14} className="text-slate-400 shrink-0" title="Contém Código de Barras/Pix"/>}
+              {item.barcode && <ScanBarcode size={14} className="text-slate-400 shrink-0"><title>Contém Código de Barras/Pix</title></ScanBarcode>}
             </h4>
             <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
               <Calendar size={12} /> {isComp ? 'Baixado' : 'Vencimento'}: {new Date(item.finance_date + 'T00:00:00').toLocaleDateString('pt-BR')}

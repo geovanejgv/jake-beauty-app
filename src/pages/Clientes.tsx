@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { mensagemDeErro } from '../lib/seguranca/erros';
 import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors } from 'lucide-react';
 
 export default function Clientes() {
@@ -53,8 +54,7 @@ export default function Clientes() {
       resetForm();
     },
     onError: (error: any) => {
-      alert(`Ops! Não foi possível salvar: ${error.message}`);
-      console.error(error);
+      alert(mensagemDeErro(error, 'Ops! Não foi possível salvar.', 'clientes.salvar'));
     }
   });
 
@@ -69,7 +69,7 @@ export default function Clientes() {
       resetForm();
     },
     onError: (error: any) => {
-      alert(`Ops! Não foi possível atualizar: ${error.message}`);
+      alert(mensagemDeErro(error, 'Ops! Não foi possível atualizar.', 'clientes.atualizar'));
     }
   });
 
@@ -83,7 +83,7 @@ export default function Clientes() {
       setClientToDelete(null);
     },
     onError: (error: any) => {
-      alert(`Ops! Não foi possível excluir: ${error.message}`);
+      alert(mensagemDeErro(error, 'Ops! Não foi possível excluir.', 'clientes.excluir'));
     }
   });
 
