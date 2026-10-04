@@ -6,7 +6,7 @@ Situações: `atende`, `parcial`, `aguarda humano`, `não se aplica`, `pendente`
 
 Última atualização: 2026-10-04 (entrega da especificação de segurança). A migração `20261011120000_seguranca_endurecimento.sql` foi **aplicada em produção em 2026-10-04** com aprovação do usuário; conferência: 0 tabelas sem RLS, 0 políticas `using (true)`, 0 funções executáveis por anon.
 
-Resumo: 38 atende, 36 não se aplica, 29 aguarda humano, 20 parcial, 9 pendente (total 132).
+Resumo: 38 atende, 35 não se aplica, 28 aguarda humano, 22 parcial, 9 pendente (total 132).
 
 ## Adaptação da especificação a este projeto
 
@@ -34,16 +34,16 @@ Resumo: 38 atende, 36 não se aplica, 29 aguarda humano, 20 parcial, 9 pendente 
 | SEG-08 | R | parcial | `docs/seguranca/rotacao-segredos.md`. Periodicidade a confirmar pelo usuário. |
 | AUT-01 | C | atende | Supabase Auth (`signInWithPassword`, `src/pages/Login.tsx`); `tests/seguranca/varreduras.test.ts` "SES-06 e AUT-01". |
 | AUT-02 | C | atende | Hash pelo Supabase Auth (bcrypt). Nenhuma coluna de senha nas tabelas do app (`public.users` só tem nome, papel e status). |
-| AUT-03 | I | aguarda humano | Não há cadastro pelo app (contas criadas no painel). Mínimo de 12 caracteres e senhas vazadas são configuração do Supabase Auth: pendencias-humanas.md itens 2 e 3. |
+| AUT-03 | I | parcial | Tela "Alterar senha" (`src/components/AlterarSenhaModal.tsx`) exige 12 caracteres sem regra de composição (`src/lib/seguranca/senha.ts`); `tests/seguranca/senha.test.ts` "recusa senha de 11 caracteres". Falta repetir o mínimo e ativar senhas vazadas no Supabase Auth: pendencias-humanas.md itens 2 e 3. |
 | AUT-04 | C | pendente | Sem rotas administrativas separadas nem MFA. A ação de administradora (equipe, finanças pessoais, auditoria) é barrada pelo RLS (`supabase/migrations/20261011120000_seguranca_endurecimento.sql`:88-92). MFA TOTP exige fluxo novo de tela: pendencias-humanas.md item 4. |
 | AUT-05 | C | aguarda humano | Sem gerador próprio de token (busca sem resultado). Expiração do link no Supabase Auth: pendencias-humanas.md item 3. |
 | AUT-06 | I | atende | `src/pages/Login.tsx:23` mesma mensagem para conta inexistente e senha errada. Não há cadastro nem redefinição pelo app. |
-| AUT-07 | I | não se aplica | O app não oferece troca de senha, e-mail ou MFA; é feita pelo painel do Supabase. |
+| AUT-07 | I | parcial | Troca de senha exige a senha atual (reautenticação no Supabase Auth) antes de `updateUser` (`src/components/AlterarSenhaModal.tsx`). Aviso por e-mail da troca depende do Supabase Auth ("Password changed" nas notificações de segurança): pendencias-humanas.md item 3. Troca de e-mail e MFA não existem no app. |
 | AUT-08 | C | atende | Nenhuma conta ou senha embutida; `tests/seguranca/varreduras.test.ts` "AUT-08". Não há seed. |
 | SES-01 | C | não se aplica | SPA sem servidor próprio: o Supabase não usa cookie de sessão neste app. Ver exceção em SES-02. |
 | SES-02 | I | parcial | Exceção registrada: o supabase-js guarda a sessão no `localStorage` (não há backend para cookie HttpOnly). Mitigação: CAB-01 tratado como crítico (CSP sem script inline, `script-src 'self'`, `vercel.json`); `tests/seguranca/varreduras.test.ts` "SES-02" garante que o app não grava token em outro lugar. |
 | SES-03 | I | aguarda humano | pendencias-humanas.md item 3 (JWT expiry de até 3600 s, rotação e detecção de reuso de refresh token). |
-| SES-04 | C | parcial | `src/contexts/AuthContext.tsx:99` `signOut({ scope: 'local' })` revoga a sessão (refresh token) no Supabase Auth. O access token já emitido vale até expirar (limite do Supabase); por isso SES-03 pede validade curta. |
+| SES-04 | C | parcial | Logout revoga a sessão no Supabase Auth (`src/contexts/AuthContext.tsx`, `signOut({ scope: 'local' })`); troca de senha encerra as demais sessões (`signOut({ scope: 'others' })` em `src/components/AlterarSenhaModal.tsx`). O access token já emitido vale até expirar (limite do Supabase); por isso SES-03 pede validade curta. |
 | SES-05 | C | não se aplica | Autenticação por cabeçalho Authorization (Bearer), não por cookie: não há CSRF. Nenhuma rota GET grava dados (PostgREST). |
 | SES-06 | C | atende | JWT validado pelo próprio Supabase (PostgREST/Auth) a cada requisição; o app não decide acesso por token decodificado; `tests/seguranca/varreduras.test.ts`. |
 | SES-07 | R | pendente | Sem expiração por inatividade. Depende de "Inactivity timeout" no Supabase Auth (plano Pro): pendencias-humanas.md item 3. |

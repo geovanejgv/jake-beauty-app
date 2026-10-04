@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, ShoppingCart, Users, LogOut, DollarSign, Menu, X, ChevronLeft, ChevronRight, Moon, Sun, SquareKanban, Plus, SquareCheckBig } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, ShoppingCart, Users, LogOut, DollarSign, Menu, X, ChevronLeft, ChevronRight, Moon, Sun, SquareKanban, Plus, SquareCheckBig, KeyRound } from 'lucide-react';
+import AlterarSenhaModal from '../components/AlterarSenhaModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 
@@ -14,6 +15,7 @@ export default function MainLayout() {
   const ThemeIcon = isDark ? Sun : Moon;
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [senhaAberta, setSenhaAberta] = useState(false);
   // Estado que controla se o menu do PC está largo ou apenas com os ícones
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -130,6 +132,15 @@ export default function MainLayout() {
           </button>
 
           <button 
+            onClick={() => setSenhaAberta(true)} 
+            title={isCollapsed ? "Alterar senha" : ""}
+            className={`flex items-center w-full text-slate-500 hover:bg-slate-100 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
+          >
+            <KeyRound size={22} className="shrink-0" /> 
+            {!isCollapsed && <span className="whitespace-nowrap font-medium">Alterar senha</span>}
+          </button>
+
+          <button 
             onClick={handleLogout} 
             title={isCollapsed ? "Sair do Sistema" : ""}
             className={`flex items-center w-full text-red-500 hover:bg-red-50 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
@@ -221,6 +232,9 @@ export default function MainLayout() {
               <button onClick={toggleTheme} className="flex items-center space-x-3 px-4 py-3 w-full text-left text-slate-600 font-medium hover:bg-slate-100 rounded-xl">
                 <ThemeIcon size={22} className="shrink-0" /> <span>{themeLabel}</span>
               </button>
+              <button onClick={() => { setIsMobileMenuOpen(false); setSenhaAberta(true); }} className="flex items-center space-x-3 px-4 py-3 w-full text-left text-slate-600 font-medium hover:bg-slate-100 rounded-xl">
+                <KeyRound size={22} className="shrink-0" /> <span>Alterar senha</span>
+              </button>
               <button onClick={handleLogout} className="flex items-center space-x-3 px-4 py-3 w-full text-left text-red-500 font-medium hover:bg-red-50 rounded-xl">
                 <LogOut size={22} className="shrink-0" /> <span>Sair do Sistema</span>
               </button>
@@ -232,6 +246,7 @@ export default function MainLayout() {
         <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 relative">
           <Outlet />
         </main>
+        {senhaAberta && <AlterarSenhaModal onClose={() => setSenhaAberta(false)} />}
       </div>
     </div>
   );
