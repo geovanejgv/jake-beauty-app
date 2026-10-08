@@ -1,18 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, ChevronDown, ChevronLeft, EllipsisVertical, Eye, Loader2, Pencil, Plus, RefreshCw, Share2, SquareKanban, Trash2, UserRound, Users } from 'lucide-react';
+import { Building2, Check, ChevronDown, ChevronLeft, EllipsisVertical, Eye, Folder, FolderInput, FolderPlus, Layers, Loader2, Pencil, Plus, RefreshCw, Share2, SquareKanban, Trash2, UserRound, Users } from 'lucide-react';
 import * as api from '../features/kanban/api';
 import { kanbanKeys, mensagemErro } from '../features/kanban/api';
 import { ErroPublico } from '../lib/seguranca/erros';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  idsDaColuna, lerFiltros, passaNoFiltro, podeEditarQuadro, quadrosDaVisao, reordenar, statusDaPosicao, urlFiltros, hojeISO,
-  type Coluna, type EscopoQuadro, type ColunaEdicao, type Filtros, type ItemTarefa, type NovaTarefa, type Pessoa, type Quadro, type Tarefa,
+  agruparQuadros, idsDaColuna, lerFiltros, passaNoFiltro, podeEditarQuadro, quadrosDaVisao, reordenar, statusDaPosicao, urlFiltros, hojeISO, visaoDoQuadro,
+  type Coluna, type EscopoQuadro, type ColunaEdicao, type Filtros, type Grupo, type ItemTarefa, type NovaTarefa, type Pessoa, type Quadro, type SecaoQuadros, type Tarefa,
 } from '../features/kanban/logic';
 import { TaskCard } from '../features/kanban/components/TaskCard';
 import { FilterBar } from '../features/kanban/components/FilterBar';
-import { EditarTarefaModal, EquipeModal, NovaTarefaModal, QuadroModal } from '../features/kanban/components/janelas';
+import { EditarTarefaModal, EquipeModal, NovaTarefaModal, QuadroModal, type ExtrasQuadro } from '../features/kanban/components/janelas';
+import { GrupoDoQuadroModal, GrupoModal } from '../features/kanban/components/Grupos';
 import { Aviso, Confirmar, Painel, useToque } from '../features/kanban/components/ui';
 import { CompartilharModal } from '../features/kanban/components/Compartilhar';
 
@@ -53,12 +54,44 @@ export default function Tarefas() {
   const colunas = useQuery({ queryKey: kanbanKeys.colunas, queryFn: api.listarColunas, enabled: pronto });
   const pessoas = useQuery({ queryKey: kanbanKeys.pessoas, queryFn: api.listarPessoas, enabled: pronto });
   const clientes = useQuery({ queryKey: kanbanKeys.clientes, queryFn: api.listarClientes, enabled: pronto });
+  const gruposQ = useQuery({ queryKey: kanbanKeys.grupos, queryFn: api.listarGrupos, enabled: pronto });
+  const ehAdmin = useAuth().perfil?.role === 'admin';
 
   const listaQuadros = quadros.data || [];
   const todasColunas = colunas.data || [];
   const quadroAtual = listaQuadros.find((q) => q.id === quadroId) || null;
   const [quadroCompartilharId, setQuadroCompartilharId] = useState<string | null>(null);
   const quadroCompartilhar = listaQuadros.find((q) => q.id === quadroCompartilharId) || null;
+
+  // Grupos: organização pessoal da tela inicial
+  const grupos = gruposQ.data?.grupos ?? [];
+  const vinculos = gruposQ.data?.vinculos ?? [];
+  const grupoDe = (quadroId: string) => vinculos.find((v) => v.quadro_id === quadroId)?.grupo_id ?? null;
+  const [grupoModal, setGrupoModal] = useState<null | 'novo' | Grupo>(null);
+  const [grupoExcluir, setGrupoExcluir] = useState<Grupo | null>(null);
+  const [excluindoGrupo, setExcluindoGrupo] = useState(false);
+  const [grupoDoQuadroId, setGrupoDoQuadroId] = useState<string | null>(null);
+  const grupoDoQuadro = listaQuadros.find((q) => q.id === grupoDoQuadroId) || null;
+  const atualizarGrupos = () => qc.invalidateQueries({ queryKey: kanbanKeys.grupos });
+  const salvarGrupo = async (nome: string) => {
+    try {
+      if (grupoModal && grupoModal !== 'novo') await api.renomearGrupo(grupoModal.id, nome);
+      else await api.criarGrupo(nome);
+      await atualizarGrupos();
+    } catch (e) { throw new ErroPublico(mensagemErro(e, 'Não foi possível salvar o grupo.')); }
+  };
+  const confirmarExclusaoGrupo = async () => {
+    if (!grupoExcluir) return;
+    setExcluindoGrupo(true);
+    try { await api.excluirGrupo(grupoExcluir.id); await atualizarGrupos(); }
+    catch (e) { setAviso(mensagemErro(e, 'Não foi possível excluir o grupo.')); }
+    finally { setExcluindoGrupo(false); setGrupoExcluir(null); }
+  };
+  const mudarGrupo = async (quadroId: string, grupoId: string | null) => {
+    if (grupoId === grupoDe(quadroId)) return;
+    await api.definirGrupo(init.data!, quadroId, grupoId);
+    await atualizarGrupos();
+  };
 
   // ?nova=tarefa sem quadro abre o primeiro quadro com a janela já aberta
   useEffect(() => {
@@ -113,13 +146,17 @@ export default function Tarefas() {
     else if (nova === 'quadro') limparNova();
   };
 
-  const criarQuadro = async (nome: string, cols: ColunaEdicao[]) => {
+  const criarQuadro = async (nome: string, cols: ColunaEdicao[], extras: ExtrasQuadro) => {
     try {
-      // Novo quadro nasce no tipo da visão (ou do quadro aberto).
-      quadroCriado.current = await api.criarQuadro(nome, cols, quadroAtual?.escopo ?? visao);
-      await Promise.all([qc.invalidateQueries({ queryKey: kanbanKeys.quadros }), qc.invalidateQueries({ queryKey: kanbanKeys.colunas })]);
+      const id = await api.criarQuadro(nome, cols, extras.visao === 'pessoal' ? 'pessoal' : 'negocio');
+      quadroCriado.current = id;
+      if (extras.visao === 'ambos') await api.definirVisao({ id, nome, created_at: '', escopo: 'negocio', dono_id: null }, 'ambos');
+      if (extras.grupoId) await api.definirGrupo(init.data!, id, extras.grupoId);
+      await qc.invalidateQueries({ queryKey: kanbanKeys.base });
     } catch (e) { throw new ErroPublico(mensagemErro(e)); }
   };
+  // Visão sugerida para o quadro novo: a da tela (ou a do quadro aberto).
+  const visaoNovoQuadro = quadroAtual ? visaoDoQuadro(quadroAtual) : visao;
 
   if (init.isError || quadros.isError || colunas.isError) {
     const erro = init.error || quadros.error || colunas.error;
@@ -157,26 +194,50 @@ export default function Tarefas() {
           onAviso={setAviso}
         />
       ) : (
-        <TelaInicial quadros={quadrosDaVisao(listaQuadros, visao)} colunas={todasColunas} visao={visao}
+        <TelaInicial secoes={agruparQuadros(quadrosDaVisao(listaQuadros, visao), grupos, vinculos)} todos={listaQuadros} colunas={todasColunas} visao={visao}
+          temGrupos={grupos.length > 0}
           onVisao={(v) => setParams(v === 'pessoal' ? { visao: 'pessoal' } : {})}
-          onNovoQuadro={abrirNovoQuadro} onEditar={setQuadroEditandoId} onExcluir={pedirExclusao} onCompartilhar={setQuadroCompartilharId} />
+          onNovoQuadro={abrirNovoQuadro} onEditar={setQuadroEditandoId} onExcluir={pedirExclusao} onCompartilhar={setQuadroCompartilharId}
+          onNovoGrupo={() => setGrupoModal('novo')} onRenomearGrupo={setGrupoModal} onExcluirGrupo={setGrupoExcluir} onGrupoDoQuadro={setGrupoDoQuadroId} />
       )}
       {quadroCompartilhar && <CompartilharModal quadro={quadroCompartilhar} pessoas={pessoas.data || []} eu={init.data!} onClose={() => setQuadroCompartilharId(null)} />}
 
-      {(quadroModal === 'novo' || nova === 'quadro') && <QuadroModal onClose={fecharQuadroModal} onSalvar={criarQuadro} />}
+      {(quadroModal === 'novo' || nova === 'quadro') && (
+        <QuadroModal visaoInicial={visaoNovoQuadro} grupos={grupos} onClose={fecharQuadroModal} onSalvar={criarQuadro} />
+      )}
       {quadroEditando && (
         <QuadroModal
           key={quadroEditando.id}
           quadro={quadroEditando}
           colunas={todasColunas.filter((c) => c.quadro_id === quadroEditando.id).sort((a, b) => a.posicao - b.posicao)}
+          visaoInicial={visaoDoQuadro(quadroEditando)}
+          mudarVisao={!!quadroEditando.gerencia}
+          soNegocioBloqueado={!ehAdmin}
+          grupos={grupos}
+          grupoInicial={grupoDe(quadroEditando.id)}
           onClose={fecharQuadroModal}
-          onSalvar={async (nome, cols) => {
+          onSalvar={async (nome, cols, extras) => {
             try {
               await api.salvarQuadro(quadroEditando.id, nome, cols);
+              if (quadroEditando.gerencia && extras.visao !== visaoDoQuadro(quadroEditando)) await api.definirVisao(quadroEditando, extras.visao);
+              await mudarGrupo(quadroEditando.id, extras.grupoId);
               await qc.invalidateQueries({ queryKey: kanbanKeys.base });
             } catch (e) { throw new ErroPublico(mensagemErro(e)); }
           }}
         />
+      )}
+      {grupoDoQuadro && (
+        <GrupoDoQuadroModal key={grupoDoQuadro.id} quadro={grupoDoQuadro} grupos={grupos} grupoAtual={grupoDe(grupoDoQuadro.id)}
+          onClose={() => setGrupoDoQuadroId(null)} onNovoGrupo={() => setGrupoModal('novo')}
+          onSalvar={async (g) => { try { await mudarGrupo(grupoDoQuadro.id, g); } catch (e) { throw new ErroPublico(mensagemErro(e, 'Não foi possível mudar o grupo.')); } }} />
+      )}
+      {grupoModal && (
+        <GrupoModal key={grupoModal === 'novo' ? 'novo' : grupoModal.id} grupo={grupoModal === 'novo' ? undefined : grupoModal} grupos={grupos}
+          onClose={() => setGrupoModal(null)} onSalvar={salvarGrupo} />
+      )}
+      {grupoExcluir && (
+        <Confirmar titulo="Excluir grupo" texto={`O grupo "${grupoExcluir.nome}" será excluído. Os quadros dele voltam para "Sem grupo"; nenhum quadro é apagado.`}
+          botao="Excluir grupo" ocupado={excluindoGrupo} onConfirmar={confirmarExclusaoGrupo} onCancelar={() => setGrupoExcluir(null)} />
       )}
       {quadroExcluir && (
         <Confirmar titulo="Excluir quadro" texto={`O quadro "${quadroExcluir.nome}", as colunas e todos os cartões dele serão apagados. Esta ação não pode ser desfeita.`}
@@ -190,17 +251,100 @@ export default function Tarefas() {
 // =============================================================================
 // Tela inicial: só os quadros
 // =============================================================================
-function TelaInicial({ quadros, colunas, visao, onVisao, onNovoQuadro, onEditar, onExcluir, onCompartilhar }: {
-  quadros: Quadro[]; colunas: Coluna[]; visao: EscopoQuadro; onVisao: (v: EscopoQuadro) => void;
+function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovoQuadro, onEditar, onExcluir, onCompartilhar, onNovoGrupo, onRenomearGrupo, onExcluirGrupo, onGrupoDoQuadro }: {
+  secoes: SecaoQuadros[]; todos: Quadro[]; colunas: Coluna[]; visao: EscopoQuadro; temGrupos: boolean; onVisao: (v: EscopoQuadro) => void;
   onNovoQuadro: () => void; onEditar: (id: string) => void; onExcluir: (q: Quadro) => void; onCompartilhar: (id: string) => void;
+  onNovoGrupo: () => void; onRenomearGrupo: (g: Grupo) => void; onExcluirGrupo: (g: Grupo) => void; onGrupoDoQuadro: (id: string) => void;
 }) {
   const resumo = useQuery({ queryKey: kanbanKeys.resumo, queryFn: api.listarResumo });
   const [menuAberto, setMenuAberto] = useState<string | null>(null);
+  const [recolhidos, setRecolhidos] = useState<Set<string>>(() => new Set());
   const porColuna = useMemo(() => {
     const m = new Map<string, number>();
     for (const t of resumo.data || []) m.set(t.coluna_id, (m.get(t.coluna_id) || 0) + 1);
     return m;
   }, [resumo.data]);
+  // Cor estável: pela posição do quadro na lista completa (não muda ao trocar de grupo ou de visão)
+  const corDe = (id: string) => CORES_QUADRO[Math.max(0, todos.findIndex((q) => q.id === id)) % CORES_QUADRO.length];
+  const alternar = (id: string) => setRecolhidos((r) => { const n = new Set(r); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  const cartao = (q: Quadro) => {
+    const cols = colunas.filter((c) => c.quadro_id === q.id).sort((a, b) => a.posicao - b.posicao);
+    const contagens = cols.map((c) => porColuna.get(c.id) || 0);
+    const afazer = contagens[0] || 0;
+    const concluido = contagens.length > 1 ? contagens[contagens.length - 1] : 0;
+    const fazendo = contagens.slice(1, -1).reduce((a, b) => a + b, 0);
+    const total = afazer + fazendo + concluido;
+    // 'Ambos' de que sou dono: aparece nas minhas duas visões
+    const meuAmbos = visaoDoQuadro(q) === 'ambos' && !!q.no_pessoal && !!q.gerencia;
+    return (
+      <div key={q.id} className="relative group/quadro">
+        <Link to={`/tarefas?quadro=${q.id}`} style={{ backgroundImage: corDe(q.id) }}
+          className="h-32 rounded-2xl p-4 flex flex-col justify-between text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all">
+          <div className="pr-8 space-y-1">
+            <p className="text-lg font-black leading-tight break-words line-clamp-2">{q.nome}</p>
+            <div className="flex flex-wrap gap-1 text-[10px] font-bold">
+              {meuAmbos && <span className="bg-white/20 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Layers size={10} /> Negócio e pessoal</span>}
+              {q.escopo === 'pessoal' && visao === 'negocio' && <span className="bg-white/20 rounded px-1.5 py-0.5">Pessoal de {q.dono_nome ?? 'alguém'}</span>}
+              {q.escopo === 'negocio' && visao === 'pessoal' && !meuAmbos && <span className="bg-white/20 rounded px-1.5 py-0.5">Do negócio</span>}
+              {q.escopo === 'pessoal' && visao === 'pessoal' && !q.gerencia && <span className="bg-white/20 rounded px-1.5 py-0.5">De {q.dono_nome ?? 'alguém'}</span>}
+              {q.permissao === 'ver' && <span className="bg-white/20 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Eye size={10} /> Só visualizar</span>}
+              {q.compartilhado && q.gerencia && <span className="bg-white/20 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Share2 size={10} /> Compartilhado</span>}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <div className="h-1.5 rounded-full bg-white/20 overflow-hidden flex" aria-hidden>
+              {total > 0 && <>
+                <div className="bg-white" style={{ width: `${(afazer / total) * 100}%` }} />
+                <div className="bg-amber-300" style={{ width: `${(fazendo / total) * 100}%` }} />
+                <div className="bg-emerald-400" style={{ width: `${(concluido / total) * 100}%` }} />
+              </>}
+            </div>
+            <p className="text-xs text-white/85">
+              {resumo.isLoading ? '…' : total === 0 ? 'Nenhuma atividade' : `${afazer} a fazer · ${fazendo} fazendo · ${concluido} concluído`}
+            </p>
+          </div>
+        </Link>
+        {/* Menu do quadro: editar, grupo, compartilhar e excluir */}
+        <button
+          type="button"
+          onClick={() => setMenuAberto(menuAberto === q.id ? null : q.id)}
+          className="absolute top-2.5 right-2.5 p-1.5 rounded-lg text-white/90 bg-white/10 hover:bg-white/25 backdrop-blur-sm"
+          aria-label={`Opções do quadro ${q.nome}`}
+          aria-haspopup="menu"
+          aria-expanded={menuAberto === q.id}
+        >
+          <EllipsisVertical size={16} />
+        </button>
+        {menuAberto === q.id && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setMenuAberto(null)} />
+            <div role="menu" className="absolute z-50 top-11 right-2.5 w-52 bg-white border border-slate-200 rounded-xl shadow-xl p-1">
+              {podeEditarQuadro(q) && (
+                <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onEditar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                  <Pencil size={14} /> Editar quadro
+                </button>
+              )}
+              <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onGrupoDoQuadro(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                <FolderInput size={14} /> Mover para grupo
+              </button>
+              {q.gerencia && (
+                <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onCompartilhar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                  <Share2 size={14} /> Compartilhar
+                </button>
+              )}
+              {q.gerencia && (
+                <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onExcluir(q); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50">
+                  <Trash2 size={14} /> Excluir quadro
+                </button>
+              )}
+              {!podeEditarQuadro(q) && !q.gerencia && <p className="px-3 py-2 text-xs text-slate-500">Compartilhado com você só para visualizar.</p>}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -211,92 +355,62 @@ function TelaInicial({ quadros, colunas, visao, onVisao, onNovoQuadro, onEditar,
             {visao === 'negocio' ? 'Quadros do negócio e quadros pessoais compartilhados com ele.' : 'Seus quadros pessoais (só você vê) e os compartilhados com você.'}
           </p>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-xl self-start" role="tablist" aria-label="Visão do Kanban">
-          {([['negocio', 'Negócio', Building2], ['pessoal', 'Pessoal', UserRound]] as const).map(([v, rotulo, Icone]) => (
-            <button key={v} type="button" role="tab" aria-selected={visao === v} onClick={() => onVisao(v)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold ${visao === v ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              <Icone size={16} /> {rotulo}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          <button type="button" onClick={onNovoGrupo}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:border-rose-300 hover:text-rose-600">
+            <FolderPlus size={16} /> Novo grupo
+          </button>
+          <div className="flex bg-slate-100 p-1 rounded-xl" role="tablist" aria-label="Visão do Kanban">
+            {([['negocio', 'Negócio', Building2], ['pessoal', 'Pessoal', UserRound]] as const).map(([v, rotulo, Icone]) => (
+              <button key={v} type="button" role="tab" aria-selected={visao === v} onClick={() => onVisao(v)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold ${visao === v ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                <Icone size={16} /> {rotulo}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-      <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {quadros.map((q, i) => {
-          const cols = colunas.filter((c) => c.quadro_id === q.id).sort((a, b) => a.posicao - b.posicao);
-          const contagens = cols.map((c) => porColuna.get(c.id) || 0);
-          const afazer = contagens[0] || 0;
-          const concluido = contagens.length > 1 ? contagens[contagens.length - 1] : 0;
-          const fazendo = contagens.slice(1, -1).reduce((a, b) => a + b, 0);
-          const total = afazer + fazendo + concluido;
-          return (
-            <div key={q.id} className="relative group/quadro">
-            <Link to={`/tarefas?quadro=${q.id}`} style={{ backgroundImage: CORES_QUADRO[i % CORES_QUADRO.length] }}
-              className="h-32 rounded-2xl p-4 flex flex-col justify-between text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all">
-              <div className="pr-8 space-y-1">
-                <p className="text-lg font-black leading-tight break-words line-clamp-2">{q.nome}</p>
-                <div className="flex flex-wrap gap-1 text-[10px] font-bold">
-                  {q.escopo === 'pessoal' && visao === 'negocio' && <span className="bg-white/20 rounded px-1.5 py-0.5">Pessoal de {q.dono_nome ?? 'alguém'}</span>}
-                  {q.escopo === 'negocio' && visao === 'pessoal' && <span className="bg-white/20 rounded px-1.5 py-0.5">Do negócio</span>}
-                  {q.escopo === 'pessoal' && visao === 'pessoal' && !q.gerencia && <span className="bg-white/20 rounded px-1.5 py-0.5">De {q.dono_nome ?? 'alguém'}</span>}
-                  {q.permissao === 'ver' && <span className="bg-white/20 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Eye size={10} /> Só visualizar</span>}
-                  {q.compartilhado && q.gerencia && <span className="bg-white/20 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Share2 size={10} /> Compartilhado</span>}
-                </div>
+
+      {secoes.map(({ grupo, quadros }) => {
+        const id = grupo?.id ?? 'sem-grupo';
+        const recolhido = recolhidos.has(id);
+        const ultimo = grupo === null;
+        return (
+          <section key={id} aria-label={grupo ? `Grupo ${grupo.nome}` : 'Quadros sem grupo'} className="space-y-3">
+            {(temGrupos || grupo) && (
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                <button type="button" onClick={() => alternar(id)} aria-expanded={!recolhido}
+                  className="flex items-center gap-2 min-w-0 text-left text-slate-700 hover:text-rose-600">
+                  <ChevronDown size={16} className={`shrink-0 transition-transform ${recolhido ? '-rotate-90' : ''}`} />
+                  <Folder size={16} className="shrink-0 text-rose-500" />
+                  <span className="font-bold truncate">{grupo ? grupo.nome : 'Sem grupo'}</span>
+                  <span className="text-xs text-slate-400 shrink-0">{plural(quadros.length, 'quadro', 'quadros')}</span>
+                </button>
+                {grupo && (
+                  <div className="ml-auto flex items-center gap-1 shrink-0">
+                    <button type="button" onClick={() => onRenomearGrupo(grupo)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100" aria-label={`Renomear grupo ${grupo.nome}`}><Pencil size={14} /></button>
+                    <button type="button" onClick={() => onExcluirGrupo(grupo)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50" aria-label={`Excluir grupo ${grupo.nome}`}><Trash2 size={14} /></button>
+                  </div>
+                )}
               </div>
-              <div className="space-y-1.5">
-                <div className="h-1.5 rounded-full bg-white/20 overflow-hidden flex" aria-hidden>
-                  {total > 0 && <>
-                    <div className="bg-white" style={{ width: `${(afazer / total) * 100}%` }} />
-                    <div className="bg-amber-300" style={{ width: `${(fazendo / total) * 100}%` }} />
-                    <div className="bg-emerald-400" style={{ width: `${(concluido / total) * 100}%` }} />
-                  </>}
-                </div>
-                <p className="text-xs text-white/85">
-                  {resumo.isLoading ? '…' : total === 0 ? 'Nenhuma atividade' : `${afazer} a fazer · ${fazendo} fazendo · ${concluido} concluído`}
-                </p>
-              </div>
-            </Link>
-            {/* Menu do quadro: editar (nome e colunas) e excluir */}
-            <button
-              type="button"
-              onClick={() => setMenuAberto(menuAberto === q.id ? null : q.id)}
-              className="absolute top-2.5 right-2.5 p-1.5 rounded-lg text-white/90 bg-white/10 hover:bg-white/25 backdrop-blur-sm"
-              aria-label={`Opções do quadro ${q.nome}`}
-              aria-haspopup="menu"
-              aria-expanded={menuAberto === q.id}
-            >
-              <EllipsisVertical size={16} />
-            </button>
-            {menuAberto === q.id && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setMenuAberto(null)} />
-                <div role="menu" className="absolute z-50 top-11 right-2.5 w-48 bg-white border border-slate-200 rounded-xl shadow-xl p-1">
-                  {podeEditarQuadro(q) && (
-                    <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onEditar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
-                      <Pencil size={14} /> Editar quadro
-                    </button>
-                  )}
-                  {q.gerencia && (
-                    <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onCompartilhar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
-                      <Share2 size={14} /> Compartilhar
-                    </button>
-                  )}
-                  {q.gerencia && (
-                    <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onExcluir(q); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50">
-                      <Trash2 size={14} /> Excluir quadro
-                    </button>
-                  )}
-                  {!podeEditarQuadro(q) && !q.gerencia && <p className="px-3 py-2 text-xs text-slate-500">Compartilhado com você só para visualizar.</p>}
-                </div>
-              </>
             )}
-            </div>
-          );
-        })}
-        <button type="button" onClick={onNovoQuadro}
-          className="h-32 rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-rose-400 hover:text-rose-600 flex flex-col items-center justify-center gap-1 font-bold">
-          <Plus size={22} /> {visao === 'pessoal' ? 'Criar quadro pessoal' : 'Criar quadro do negócio'}
-        </button>
-      </div>
+            {!recolhido && (
+              <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {quadros.map(cartao)}
+                {grupo && quadros.length === 0 && (
+                  <p className="col-span-full text-sm text-slate-400">Nenhum quadro neste grupo nesta visão. Use "Mover para grupo" no menu de um quadro.</p>
+                )}
+                {ultimo && (
+                  <button type="button" onClick={onNovoQuadro}
+                    className="h-32 rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-rose-400 hover:text-rose-600 flex flex-col items-center justify-center gap-1 font-bold">
+                    <Plus size={22} /> {visao === 'pessoal' ? 'Criar quadro pessoal' : 'Criar quadro do negócio'}
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

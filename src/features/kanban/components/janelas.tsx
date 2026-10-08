@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Ban, GripVertical, Loader2, Lock, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Ban, Building2, GripVertical, Layers, Loader2, Lock, Plus, RotateCcw, Trash2, UserRound } from 'lucide-react';
 import {
   COLUNAS_PADRAO, CRITICIDADES, LIMITES, diaEmBrasilia, edicaoParaBanco, validarEdicaoTarefa, validarNovaTarefa, validarQuadro,
-  type Coluna, type ColunaEdicao, type Criticidade, type ItemTarefa, type NovaTarefa, type Pessoa, type Quadro, type Tarefa,
+  type Coluna, type ColunaEdicao, type Criticidade, type Grupo, type ItemTarefa, type NovaTarefa, type Pessoa, type Quadro, type Tarefa, type VisaoQuadro,
 } from '../logic';
 import { Checklist, ClientePicker, ResponsavelEnvolvidos } from './campos';
 import { Campo, Modal, inputCls, useToque } from './ui';
@@ -17,7 +17,7 @@ const BOTAO_CRITICIDADE: Record<Criticidade, { ativo: string; inativo: string }>
   critico: { ativo: 'bg-red-600 text-white border-red-600', inativo: 'border-red-100 text-red-600' },
 };
 
-function Rodape({ esquerda, onFechar, onSalvar, ocupado, textoFechar = 'CANCELAR', textoSalvar = 'SALVAR', erro }: {
+export function Rodape({ esquerda, onFechar, onSalvar, ocupado, textoFechar = 'CANCELAR', textoSalvar = 'SALVAR', erro }: {
   esquerda?: React.ReactNode; onFechar: () => void; onSalvar: () => void; ocupado: boolean; textoFechar?: string; textoSalvar?: string; erro?: string | null;
 }) {
   return (
@@ -215,11 +215,28 @@ export function EditarTarefaModal({ tarefa, colunas, pessoas, clientes, hoje, on
 // -----------------------------------------------------------------------------
 // Novo quadro / Editar quadro
 // -----------------------------------------------------------------------------
-export function QuadroModal({ quadro, colunas, onClose, onSalvar }: {
-  quadro?: Quadro; colunas?: Coluna[]; onClose: () => void; onSalvar: (nome: string, colunas: ColunaEdicao[]) => Promise<void>;
+const OPCOES_VISAO: { valor: VisaoQuadro; rotulo: string; Icone: typeof Building2; dica: string }[] = [
+  { valor: 'negocio', rotulo: 'Negócio', Icone: Building2, dica: 'Aparece só na visão do negócio, para a equipe.' },
+  { valor: 'pessoal', rotulo: 'Pessoal', Icone: UserRound, dica: 'Aparece só na sua visão pessoal; só você vê, salvo se compartilhar.' },
+  { valor: 'ambos', rotulo: 'Ambos', Icone: Layers, dica: 'O mesmo quadro aparece nas duas visões: o que mudar em uma muda na outra. A equipe vê pelo negócio.' },
+];
+
+export type ExtrasQuadro = { visao: VisaoQuadro; grupoId: string | null };
+
+export function QuadroModal({ quadro, colunas, visaoInicial, mudarVisao = true, soNegocioBloqueado = false, grupos = [], grupoInicial = null, onClose, onSalvar }: {
+  quadro?: Quadro; colunas?: Coluna[];
+  visaoInicial: VisaoQuadro;
+  /** Quem não gerencia o quadro não muda onde ele aparece. */
+  mudarVisao?: boolean;
+  /** Tirar o dono (deixar só no negócio) é da administradora. */
+  soNegocioBloqueado?: boolean;
+  grupos?: Grupo[]; grupoInicial?: string | null;
+  onClose: () => void; onSalvar: (nome: string, colunas: ColunaEdicao[], extras: ExtrasQuadro) => Promise<void>;
 }) {
   const toque = useToque();
   const [nome, setNome] = useState(quadro?.nome || '');
+  const [visao, setVisao] = useState<VisaoQuadro>(visaoInicial);
+  const [grupoId, setGrupoId] = useState<string | null>(grupoInicial);
   const [lista, setLista] = useState<(ColunaEdicao & { chave: string })[]>(() =>
     (colunas?.length ? colunas.map((c) => ({ id: c.id, nome: c.nome })) : COLUNAS_PADRAO).map((c, i) => ({ ...c, chave: c.id || `nova-${i}` })),
   );
@@ -245,7 +262,7 @@ export function QuadroModal({ quadro, colunas, onClose, onSalvar }: {
     const e = validarQuadro(nome, cols);
     if (e) { setErro(e); return; }
     setOcupado(true); setErro(null);
-    try { await onSalvar(nome, cols); onClose(); } catch (err) { setErro(mensagemErro(err)); } finally { setOcupado(false); }
+    try { await onSalvar(nome, cols, { visao, grupoId }); onClose(); } catch (err) { setErro(mensagemErro(err)); } finally { setOcupado(false); }
   };
 
   return (
@@ -254,6 +271,32 @@ export function QuadroModal({ quadro, colunas, onClose, onSalvar }: {
         <Campo rotulo="Nome do quadro" obrigatorio dica={`${LIMITES.nomeQuadro - nome.length} caracteres restantes`}>
           <input autoFocus type="text" maxLength={LIMITES.nomeQuadro} value={nome} onChange={(e) => setNome(e.target.value)} className={inputCls} />
         </Campo>
+        {mudarVisao && (
+          <div>
+            <span id="rotulo-visao" className="block text-xs font-bold text-slate-500 mb-2">Onde aparece</span>
+            <div role="radiogroup" aria-labelledby="rotulo-visao" className="grid grid-cols-3 gap-2">
+              {OPCOES_VISAO.map(({ valor, rotulo, Icone }) => {
+                const bloqueada = valor === 'negocio' && soNegocioBloqueado && visaoInicial !== 'negocio';
+                return (
+                  <button key={valor} type="button" role="radio" aria-checked={visao === valor} disabled={bloqueada} onClick={() => setVisao(valor)}
+                    title={bloqueada ? 'Só a administradora pode deixar um quadro apenas no negócio.' : undefined}
+                    className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg border text-xs font-bold disabled:opacity-40 ${visao === valor ? 'bg-rose-50 border-rose-500 text-rose-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                    <Icone size={14} /> {rotulo}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500">{OPCOES_VISAO.find((o) => o.valor === visao)?.dica}</p>
+          </div>
+        )}
+        {grupos.length > 0 && (
+          <Campo rotulo="Grupo" dica="Os grupos organizam só a sua tela inicial.">
+            <select value={grupoId ?? ''} onChange={(e) => setGrupoId(e.target.value || null)} className={inputCls}>
+              <option value="">Sem grupo</option>
+              {grupos.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
+            </select>
+          </Campo>
+        )}
         <div>
           <span className="block text-xs font-bold text-slate-500 mb-2">Colunas</span>
           <ol className="space-y-2">

@@ -3,6 +3,9 @@ import {
   FILTROS_PADRAO,
   podeEditarQuadro,
   quadrosDaVisao,
+  visaoDoQuadro,
+  agruparQuadros,
+  validarNomeGrupo,
   conclusaoParaTimestamp,
   edicaoParaBanco,
   estaAtrasada,
@@ -19,6 +22,7 @@ import {
   validarQuadro,
   type Filtros,
 } from './logic';
+import type { Quadro } from './logic';
 
 const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -229,5 +233,37 @@ describe('visões do Kanban (negócio e pessoal)', () => {
     expect(podeEditarQuadro({ permissao: 'ver' })).toBe(false);
     expect(podeEditarQuadro({ permissao: 'editar' })).toBe(true);
     expect(podeEditarQuadro({})).toBe(true);
+  });
+});
+
+describe('visão do quadro e grupos', () => {
+  const q = (id: string, extra: Partial<Quadro> = {}): Quadro => ({ id, nome: id, created_at: '', ...extra });
+
+  it('visaoDoQuadro: negócio, pessoal e ambos', () => {
+    expect(visaoDoQuadro({ escopo: 'negocio', dono_id: null })).toBe('negocio');
+    expect(visaoDoQuadro({ escopo: 'pessoal', dono_id: 'u1' })).toBe('pessoal');
+    expect(visaoDoQuadro({ escopo: 'negocio', dono_id: 'u1' })).toBe('ambos');
+    expect(visaoDoQuadro({})).toBe('negocio');
+  });
+
+  it('agruparQuadros: grupos por nome, vazios aparecem, sem grupo no fim', () => {
+    const grupos = [{ id: 'g2', nome: 'Salão' }, { id: 'g1', nome: 'Casa' }, { id: 'g3', nome: 'Vazio' }];
+    const vinculos = [{ quadro_id: 'a', grupo_id: 'g1' }, { quadro_id: 'b', grupo_id: 'g2' }, { quadro_id: 'x', grupo_id: 'sumiu' }];
+    const secoes = agruparQuadros([q('a'), q('b'), q('c'), q('x')], grupos, vinculos);
+    expect(secoes.map((s) => s.grupo?.nome ?? null)).toEqual(['Casa', 'Salão', 'Vazio', null]);
+    expect(secoes.map((s) => s.quadros.map((x) => x.id))).toEqual([['a'], ['b'], [], ['c', 'x']]);
+  });
+
+  it('agruparQuadros sem grupos: só a seção sem grupo', () => {
+    expect(agruparQuadros([q('a')], [], [])).toEqual([{ grupo: null, quadros: [q('a')] }]);
+  });
+
+  it('validarNomeGrupo: tamanho e repetição', () => {
+    const grupos = [{ id: 'g1', nome: 'Casa' }];
+    expect(validarNomeGrupo('  ', grupos)).toMatch(/1 a 40/);
+    expect(validarNomeGrupo('x'.repeat(41), grupos)).toMatch(/1 a 40/);
+    expect(validarNomeGrupo('casa', grupos)).toBe('Já existe um grupo com esse nome.');
+    expect(validarNomeGrupo('Casa', grupos, 'g1')).toBeNull();
+    expect(validarNomeGrupo('Rotinas', grupos)).toBeNull();
   });
 });
