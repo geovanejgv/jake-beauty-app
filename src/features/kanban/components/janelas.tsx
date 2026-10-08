@@ -105,8 +105,8 @@ export function NovaTarefaModal({ quadros, colunas, pessoas, clientes, eu, hoje,
 // -----------------------------------------------------------------------------
 // Editar tarefa
 // -----------------------------------------------------------------------------
-export function EditarTarefaModal({ tarefa, colunas, pessoas, clientes, hoje, onClose, onSalvar, onExcluir, onAlternarItem, onRemoverItem, onAdicionarItem }: {
-  tarefa: Tarefa; colunas: Coluna[]; pessoas: Pessoa[]; clientes: Cliente[]; hoje: string;
+export function EditarTarefaModal({ tarefa, colunas, pessoas, clientes, hoje, onClose, onSalvar, onExcluir, onAlternarItem, onRemoverItem, onAdicionarItem, somenteLeitura = false }: {
+  tarefa: Tarefa; colunas: Coluna[]; pessoas: Pessoa[]; clientes: Cliente[]; hoje: string; somenteLeitura?: boolean;
   onClose: () => void; onSalvar: (campos: Record<string, unknown>) => Promise<void>; onExcluir: () => void;
   onAlternarItem: (i: ItemTarefa) => void; onRemoverItem: (i: ItemTarefa) => void; onAdicionarItem: (titulo: string) => void;
 }) {
@@ -159,8 +159,11 @@ export function EditarTarefaModal({ tarefa, colunas, pessoas, clientes, hoje, on
   );
 
   return (
-    <Modal titulo="Editar tarefa" onClose={onClose} rodape={<Rodape esquerda={esquerda} onFechar={onClose} onSalvar={salvar} ocupado={ocupado} erro={erro} textoFechar="FECHAR" />}>
-      <div className="space-y-4">
+    <Modal titulo={somenteLeitura ? 'Ver tarefa' : 'Editar tarefa'} onClose={onClose}
+      rodape={somenteLeitura
+        ? <div className="flex items-center justify-between gap-2"><span className="text-xs text-slate-500">Quadro compartilhado só para visualizar.</span><button type="button" onClick={onClose} className="px-4 py-2 text-xs font-bold tracking-wide text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">FECHAR</button></div>
+        : <Rodape esquerda={esquerda} onFechar={onClose} onSalvar={salvar} ocupado={ocupado} erro={erro} textoFechar="FECHAR" />}>
+      <fieldset disabled={somenteLeitura} className="space-y-4 min-w-0">
         <Campo rotulo="Título" obrigatorio>
           <textarea rows={2} maxLength={LIMITES.tituloTarefa} value={titulo} onChange={(e) => setTitulo(e.target.value)} className={`${inputCls} resize-none`} />
         </Campo>
@@ -204,7 +207,7 @@ export function EditarTarefaModal({ tarefa, colunas, pessoas, clientes, hoje, on
           <Comentarios taskId={t.id} pessoas={pessoas} />
         </div>
         <p className="text-[11px] text-slate-400">Quadro de tarefas (to-do): sem controle de horário ou ponto. Prazos são apenas referência de organização.</p>
-      </div>
+      </fieldset>
     </Modal>
   );
 }

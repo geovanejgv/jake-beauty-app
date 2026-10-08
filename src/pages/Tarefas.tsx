@@ -1,19 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronDown, ChevronLeft, EllipsisVertical, Loader2, Pencil, Plus, RefreshCw, SquareKanban, Trash2, Users } from 'lucide-react';
+import { Building2, Check, ChevronDown, ChevronLeft, EllipsisVertical, Eye, Loader2, Pencil, Plus, RefreshCw, Share2, SquareKanban, Trash2, UserRound, Users } from 'lucide-react';
 import * as api from '../features/kanban/api';
 import { kanbanKeys, mensagemErro } from '../features/kanban/api';
 import { ErroPublico } from '../lib/seguranca/erros';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  idsDaColuna, lerFiltros, passaNoFiltro, reordenar, statusDaPosicao, urlFiltros, hojeISO,
-  type Coluna, type ColunaEdicao, type Filtros, type ItemTarefa, type NovaTarefa, type Pessoa, type Quadro, type Tarefa,
+  idsDaColuna, lerFiltros, passaNoFiltro, podeEditarQuadro, quadrosDaVisao, reordenar, statusDaPosicao, urlFiltros, hojeISO,
+  type Coluna, type EscopoQuadro, type ColunaEdicao, type Filtros, type ItemTarefa, type NovaTarefa, type Pessoa, type Quadro, type Tarefa,
 } from '../features/kanban/logic';
 import { TaskCard } from '../features/kanban/components/TaskCard';
 import { FilterBar } from '../features/kanban/components/FilterBar';
 import { EditarTarefaModal, EquipeModal, NovaTarefaModal, QuadroModal } from '../features/kanban/components/janelas';
 import { Aviso, Confirmar, Painel, useToque } from '../features/kanban/components/ui';
+import { CompartilharModal } from '../features/kanban/components/Compartilhar';
 
 // Cores dos quadros pela posição (8 opções)
 const CORES_QUADRO = [
@@ -34,6 +35,8 @@ export default function Tarefas() {
   const [params, setParams] = useSearchParams();
   const quadroId = params.get('quadro');
   const nova = params.get('nova');
+  // Visão da tela inicial: quadros do negócio ou pessoais (?visao=pessoal)
+  const visao: EscopoQuadro = params.get('visao') === 'pessoal' ? 'pessoal' : 'negocio';
   const filtros = useMemo(() => lerFiltros(params), [params]);
   const hoje = hojeISO();
   const [aviso, setAviso] = useState<string | null>(null);
@@ -54,6 +57,8 @@ export default function Tarefas() {
   const listaQuadros = quadros.data || [];
   const todasColunas = colunas.data || [];
   const quadroAtual = listaQuadros.find((q) => q.id === quadroId) || null;
+  const [quadroCompartilharId, setQuadroCompartilharId] = useState<string | null>(null);
+  const quadroCompartilhar = listaQuadros.find((q) => q.id === quadroCompartilharId) || null;
 
   // ?nova=tarefa sem quadro abre o primeiro quadro com a janela já aberta
   useEffect(() => {
@@ -81,7 +86,7 @@ export default function Tarefas() {
   const [quadroExcluir, setQuadroExcluir] = useState<Quadro | null>(null);
   const [excluindoQuadro, setExcluindoQuadro] = useState(false);
   const pedirExclusao = (q: Quadro) => {
-    if (listaQuadros.length <= 1) setAviso('Este é o único quadro. Crie outro antes de excluí-lo.');
+    if (q.escopo !== 'pessoal' && listaQuadros.filter((x) => x.escopo !== 'pessoal').length <= 1) setAviso('Este é o único quadro do negócio. Crie outro antes de excluí-lo.');
     else setQuadroExcluir(q);
   };
   const confirmarExclusaoQuadro = async () => {
@@ -110,7 +115,8 @@ export default function Tarefas() {
 
   const criarQuadro = async (nome: string, cols: ColunaEdicao[]) => {
     try {
-      quadroCriado.current = await api.criarQuadro(nome, cols);
+      // Novo quadro nasce no tipo da visão (ou do quadro aberto).
+      quadroCriado.current = await api.criarQuadro(nome, cols, quadroAtual?.escopo ?? visao);
       await Promise.all([qc.invalidateQueries({ queryKey: kanbanKeys.quadros }), qc.invalidateQueries({ queryKey: kanbanKeys.colunas })]);
     } catch (e) { throw new ErroPublico(mensagemErro(e)); }
   };
@@ -147,11 +153,15 @@ export default function Tarefas() {
           onFiltros={(f) => setParams(urlFiltros(f, { quadro: quadroAtual.id }))}
           onNovoQuadro={abrirNovoQuadro}
           onEditarQuadro={() => setQuadroEditandoId(quadroAtual.id)}
+          onCompartilhar={() => setQuadroCompartilharId(quadroAtual.id)}
           onAviso={setAviso}
         />
       ) : (
-        <TelaInicial quadros={listaQuadros} colunas={todasColunas} onNovoQuadro={abrirNovoQuadro} onEditar={setQuadroEditandoId} onExcluir={pedirExclusao} />
+        <TelaInicial quadros={quadrosDaVisao(listaQuadros, visao)} colunas={todasColunas} visao={visao}
+          onVisao={(v) => setParams(v === 'pessoal' ? { visao: 'pessoal' } : {})}
+          onNovoQuadro={abrirNovoQuadro} onEditar={setQuadroEditandoId} onExcluir={pedirExclusao} onCompartilhar={setQuadroCompartilharId} />
       )}
+      {quadroCompartilhar && <CompartilharModal quadro={quadroCompartilhar} pessoas={pessoas.data || []} eu={init.data!} onClose={() => setQuadroCompartilharId(null)} />}
 
       {(quadroModal === 'novo' || nova === 'quadro') && <QuadroModal onClose={fecharQuadroModal} onSalvar={criarQuadro} />}
       {quadroEditando && (
@@ -180,8 +190,9 @@ export default function Tarefas() {
 // =============================================================================
 // Tela inicial: só os quadros
 // =============================================================================
-function TelaInicial({ quadros, colunas, onNovoQuadro, onEditar, onExcluir }: {
-  quadros: Quadro[]; colunas: Coluna[]; onNovoQuadro: () => void; onEditar: (id: string) => void; onExcluir: (q: Quadro) => void;
+function TelaInicial({ quadros, colunas, visao, onVisao, onNovoQuadro, onEditar, onExcluir, onCompartilhar }: {
+  quadros: Quadro[]; colunas: Coluna[]; visao: EscopoQuadro; onVisao: (v: EscopoQuadro) => void;
+  onNovoQuadro: () => void; onEditar: (id: string) => void; onExcluir: (q: Quadro) => void; onCompartilhar: (id: string) => void;
 }) {
   const resumo = useQuery({ queryKey: kanbanKeys.resumo, queryFn: api.listarResumo });
   const [menuAberto, setMenuAberto] = useState<string | null>(null);
@@ -193,9 +204,21 @@ function TelaInicial({ quadros, colunas, onNovoQuadro, onEditar, onExcluir }: {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-black text-slate-800">Kanban de tarefas</h2>
-        <p className="text-sm text-slate-500 mt-1">Escolha um quadro para abrir as tarefas.</p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-black text-slate-800">Kanban de tarefas</h2>
+          <p className="text-sm text-slate-500 mt-1">
+            {visao === 'negocio' ? 'Quadros do negócio e quadros pessoais compartilhados com ele.' : 'Seus quadros pessoais (só você vê) e os compartilhados com você.'}
+          </p>
+        </div>
+        <div className="flex bg-slate-100 p-1 rounded-xl self-start" role="tablist" aria-label="Visão do Kanban">
+          {([['negocio', 'Negócio', Building2], ['pessoal', 'Pessoal', UserRound]] as const).map(([v, rotulo, Icone]) => (
+            <button key={v} type="button" role="tab" aria-selected={visao === v} onClick={() => onVisao(v)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold ${visao === v ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              <Icone size={16} /> {rotulo}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {quadros.map((q, i) => {
@@ -209,7 +232,16 @@ function TelaInicial({ quadros, colunas, onNovoQuadro, onEditar, onExcluir }: {
             <div key={q.id} className="relative group/quadro">
             <Link to={`/tarefas?quadro=${q.id}`} style={{ backgroundImage: CORES_QUADRO[i % CORES_QUADRO.length] }}
               className="h-32 rounded-2xl p-4 flex flex-col justify-between text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all">
-              <p className="text-lg font-black leading-tight break-words line-clamp-2 pr-8">{q.nome}</p>
+              <div className="pr-8 space-y-1">
+                <p className="text-lg font-black leading-tight break-words line-clamp-2">{q.nome}</p>
+                <div className="flex flex-wrap gap-1 text-[10px] font-bold">
+                  {q.escopo === 'pessoal' && visao === 'negocio' && <span className="bg-white/20 rounded px-1.5 py-0.5">Pessoal de {q.dono_nome ?? 'alguém'}</span>}
+                  {q.escopo === 'negocio' && visao === 'pessoal' && <span className="bg-white/20 rounded px-1.5 py-0.5">Do negócio</span>}
+                  {q.escopo === 'pessoal' && visao === 'pessoal' && !q.gerencia && <span className="bg-white/20 rounded px-1.5 py-0.5">De {q.dono_nome ?? 'alguém'}</span>}
+                  {q.permissao === 'ver' && <span className="bg-white/20 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Eye size={10} /> Só visualizar</span>}
+                  {q.compartilhado && q.gerencia && <span className="bg-white/20 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Share2 size={10} /> Compartilhado</span>}
+                </div>
+              </div>
               <div className="space-y-1.5">
                 <div className="h-1.5 rounded-full bg-white/20 overflow-hidden flex" aria-hidden>
                   {total > 0 && <>
@@ -237,13 +269,23 @@ function TelaInicial({ quadros, colunas, onNovoQuadro, onEditar, onExcluir }: {
             {menuAberto === q.id && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setMenuAberto(null)} />
-                <div role="menu" className="absolute z-50 top-11 right-2.5 w-44 bg-white border border-slate-200 rounded-xl shadow-xl p-1">
-                  <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onEditar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
-                    <Pencil size={14} /> Editar quadro
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onExcluir(q); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50">
-                    <Trash2 size={14} /> Excluir quadro
-                  </button>
+                <div role="menu" className="absolute z-50 top-11 right-2.5 w-48 bg-white border border-slate-200 rounded-xl shadow-xl p-1">
+                  {podeEditarQuadro(q) && (
+                    <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onEditar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                      <Pencil size={14} /> Editar quadro
+                    </button>
+                  )}
+                  {q.gerencia && (
+                    <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onCompartilhar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                      <Share2 size={14} /> Compartilhar
+                    </button>
+                  )}
+                  {q.gerencia && (
+                    <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onExcluir(q); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50">
+                      <Trash2 size={14} /> Excluir quadro
+                    </button>
+                  )}
+                  {!podeEditarQuadro(q) && !q.gerencia && <p className="px-3 py-2 text-xs text-slate-500">Compartilhado com você só para visualizar.</p>}
                 </div>
               </>
             )}
@@ -252,7 +294,7 @@ function TelaInicial({ quadros, colunas, onNovoQuadro, onEditar, onExcluir }: {
         })}
         <button type="button" onClick={onNovoQuadro}
           className="h-32 rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-rose-400 hover:text-rose-600 flex flex-col items-center justify-center gap-1 font-bold">
-          <Plus size={22} /> Criar novo quadro
+          <Plus size={22} /> {visao === 'pessoal' ? 'Criar quadro pessoal' : 'Criar quadro do negócio'}
         </button>
       </div>
     </div>
@@ -276,6 +318,7 @@ interface QuadroAbertoProps {
   onFiltros: (f: Filtros) => void;
   onNovoQuadro: () => void;
   onEditarQuadro: () => void;
+  onCompartilhar: () => void;
   onAviso: (t: string) => void;
 }
 
@@ -299,6 +342,10 @@ function QuadroAberto(p: QuadroAbertoProps) {
   // Só a administradora gerencia a equipe; o banco também barra (AUZ-07, política "users: administradora gerencia").
   const ehAdmin = useAuth().perfil?.role === 'admin';
   const [ocupado, setOcupado] = useState(false);
+  // Quadro compartilhado só para visualizar: sem criar, mover nem editar (o banco também barra).
+  const somenteVer = !podeEditarQuadro(p.quadro);
+  const quadrosEditaveis = p.quadros.filter(podeEditarQuadro);
+  const voltar = p.quadro.no_negocio === false ? '/tarefas?visao=pessoal' : '/tarefas';
   const [arrastando, setArrastando] = useState<string | null>(null);
   const [alvo, setAlvo] = useState<{ coluna: string; antesDe: string | null } | null>(null);
 
@@ -438,7 +485,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link to="/tarefas" className="inline-flex items-center text-xs font-bold text-slate-500 hover:text-rose-600"><ChevronLeft size={14} /> Quadros</Link>
+          <Link to={voltar} className="inline-flex items-center text-xs font-bold text-slate-500 hover:text-rose-600"><ChevronLeft size={14} /> Quadros</Link>
           <div className="flex flex-wrap items-center gap-2 mt-1">
             <h2 className="text-xl md:text-2xl font-black text-slate-800">Kanban de tarefas</h2>
             <div className="relative">
@@ -472,9 +519,10 @@ function QuadroAberto(p: QuadroAbertoProps) {
             </button>
             <Painel aberto={menu === 'mais'} titulo="Opções do quadro" onClose={() => setMenu(null)} alinhar="right">
               <div role="menu" className="space-y-0.5 min-w-[200px]">
-                <button type="button" role="menuitem" onClick={() => { setMenu(null); p.onEditarQuadro(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50"><Pencil size={14} /> Editar quadro</button>
+                {!somenteVer && <button type="button" role="menuitem" onClick={() => { setMenu(null); p.onEditarQuadro(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50"><Pencil size={14} /> Editar quadro</button>}
+                {p.quadro.gerencia && <button type="button" role="menuitem" onClick={() => { setMenu(null); p.onCompartilhar(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50"><Share2 size={14} /> Compartilhar</button>}
                 {ehAdmin && (<button type="button" role="menuitem" onClick={() => { setMenu(null); setEquipe(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50"><Users size={14} /> Equipe</button>)}
-                <button type="button" role="menuitem" onClick={() => { setMenu(null); if (p.quadros.length <= 1) p.onAviso('Este é o único quadro. Crie outro antes de excluí-lo.'); else setExcluirQuadro(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50"><Trash2 size={14} /> Excluir quadro</button>
+                {p.quadro.gerencia && <button type="button" role="menuitem" onClick={() => { setMenu(null); if (p.quadro.escopo !== 'pessoal' && p.quadros.filter((q) => q.escopo !== 'pessoal').length <= 1) p.onAviso('Este é o único quadro do negócio. Crie outro antes de excluí-lo.'); else setExcluirQuadro(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50"><Trash2 size={14} /> Excluir quadro</button>}
               </div>
             </Painel>
           </div>
@@ -484,7 +532,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
             </button>
             <Painel aberto={menu === 'acoes'} titulo="Adicionar" onClose={() => setMenu(null)} alinhar="right">
               <div role="menu" className="space-y-0.5 min-w-[180px]">
-                <button type="button" role="menuitem" onClick={() => { setMenu(null); setColunaNova(colunas[0]?.id || ''); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50"><Check size={14} /> Tarefa</button>
+                {!somenteVer && <button type="button" role="menuitem" onClick={() => { setMenu(null); setColunaNova(colunas[0]?.id || ''); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50"><Check size={14} /> Tarefa</button>}
                 <button type="button" role="menuitem" onClick={() => { setMenu(null); p.onNovoQuadro(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50"><SquareKanban size={14} /> Novo quadro</button>
               </div>
             </Painel>
@@ -492,7 +540,11 @@ function QuadroAberto(p: QuadroAbertoProps) {
         </div>
       </div>
 
-      <p className="text-sm text-slate-500 hidden md:block">Arraste os cartões entre as colunas ou para cima e para baixo para definir a ordem.</p>
+      {somenteVer ? (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-center gap-2"><Eye size={16} /> Quadro compartilhado com você só para visualizar{p.quadro.dono_nome ? ` (de ${p.quadro.dono_nome})` : ''}.</p>
+      ) : (
+        <p className="text-sm text-slate-500 hidden md:block">Arraste os cartões entre as colunas ou para cima e para baixo para definir a ordem.</p>
+      )}
 
       <FilterBar filtros={p.filtros} pessoas={p.pessoas} hoje={p.hoje} onChange={p.onFiltros} />
 
@@ -531,6 +583,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
                         hoje={p.hoje}
                         toque={toque}
                         arrastando={arrastando === t.id}
+                        somenteLeitura={somenteVer}
                         podeSubir={i > 0}
                         podeDescer={i < lista.length - 1}
                         onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.id); setArrastando(t.id); }}
@@ -551,17 +604,19 @@ function QuadroAberto(p: QuadroAbertoProps) {
                 )}
                 {indicadorFim && lista.length > 0 && <div className="h-1 rounded-full bg-rose-500" aria-hidden />}
               </div>
-              <button type="button" onClick={() => setColunaNova(c.id)} className="m-2 mt-0 py-2 rounded-xl text-sm font-bold text-slate-500 hover:text-rose-600 hover:bg-white flex items-center justify-center gap-1">
-                <Plus size={16} /> Nova atividade
-              </button>
+              {!somenteVer && (
+                <button type="button" onClick={() => setColunaNova(c.id)} className="m-2 mt-0 py-2 rounded-xl text-sm font-bold text-slate-500 hover:text-rose-600 hover:bg-white flex items-center justify-center gap-1">
+                  <Plus size={16} /> Nova atividade
+                </button>
+              )}
             </section>
           );
         })}
       </div>
 
-      {mostrarNova && (
+      {mostrarNova && !somenteVer && (
         <NovaTarefaModal
-          quadros={p.quadros} colunas={p.colunas} pessoas={p.pessoas} clientes={p.clientes} eu={p.eu} hoje={p.hoje}
+          quadros={quadrosEditaveis} colunas={p.colunas} pessoas={p.pessoas} clientes={p.clientes} eu={p.eu} hoje={p.hoje}
           quadroInicial={p.quadro.id} colunaInicial={colunaNova}
           onClose={fecharNova} onSalvar={criarTarefa}
         />
@@ -569,7 +624,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
       {tarefaEditando && (
         <EditarTarefaModal
           key={tarefaEditando.id}
-          tarefa={tarefaEditando} colunas={colunas} pessoas={p.pessoas} clientes={p.clientes} hoje={p.hoje}
+          tarefa={tarefaEditando} colunas={colunas} pessoas={p.pessoas} clientes={p.clientes} hoje={p.hoje} somenteLeitura={somenteVer}
           onClose={() => setEditando(null)}
           onSalvar={(campos) => salvarTarefa(tarefaEditando.id, campos)}
           onExcluir={() => setExcluindo(tarefaEditando)}

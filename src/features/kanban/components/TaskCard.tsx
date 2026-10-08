@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, GripVertical, Pencil, Trash2, User } from 'lucide-react';
+import { ArrowDown, ArrowUp, Eye, GripVertical, Pencil, Trash2, User } from 'lucide-react';
 import { LIMITES, dataBR, diaEmBrasilia, estaAtrasada, type Coluna, type ItemTarefa, type Tarefa } from '../logic';
 import { Checklist } from './campos';
 
@@ -18,6 +18,8 @@ export interface TaskCardProps {
   podeSubir: boolean;
   podeDescer: boolean;
   arrastando: boolean;
+  /** Quadro compartilhado só para visualizar: sem arrastar, mover ou editar. */
+  somenteLeitura?: boolean;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void;
@@ -53,7 +55,7 @@ export function TaskCard(p: TaskCardProps) {
 
   return (
     <div
-      draggable={!p.toque}
+      draggable={!p.toque && !p.somenteLeitura}
       onPointerDown={(e) => setOrigemTexto(!!(e.target as HTMLElement).closest('input, textarea, select, button'))}
       onDragStart={(e) => { if (origemTexto) { e.preventDefault(); return; } p.onDragStart(e); }}
       onDragEnd={p.onDragEnd}
@@ -63,11 +65,15 @@ export function TaskCard(p: TaskCardProps) {
     >
       {/* Título e ações */}
       <div className="flex items-start gap-1.5">
-        {!p.toque && <GripVertical size={16} className="mt-0.5 shrink-0 text-slate-300 cursor-grab" aria-hidden />}
+        {!p.toque && !p.somenteLeitura && <GripVertical size={16} className="mt-0.5 shrink-0 text-slate-300 cursor-grab" aria-hidden />}
         <p className={`flex-1 min-w-0 text-sm font-semibold break-words ${concluida ? 'line-through text-slate-400' : 'text-slate-800'}`}>{t.titulo}</p>
         <div className={`flex items-center gap-0.5 shrink-0 ${p.toque ? '' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
-          <button type="button" onClick={p.onEditar} className="p-1 text-slate-400 hover:text-rose-600 rounded" aria-label="Editar tarefa"><Pencil size={14} /></button>
-          <button type="button" onClick={p.onExcluir} className="p-1 text-slate-400 hover:text-red-500 rounded" aria-label="Excluir tarefa"><Trash2 size={14} /></button>
+          {p.somenteLeitura ? (
+            <button type="button" onClick={p.onEditar} className="p-1 text-slate-400 hover:text-rose-600 rounded" aria-label="Ver tarefa"><Eye size={14} /></button>
+          ) : (<>
+            <button type="button" onClick={p.onEditar} className="p-1 text-slate-400 hover:text-rose-600 rounded" aria-label="Editar tarefa"><Pencil size={14} /></button>
+            <button type="button" onClick={p.onExcluir} className="p-1 text-slate-400 hover:text-red-500 rounded" aria-label="Excluir tarefa"><Trash2 size={14} /></button>
+          </>)}
         </div>
       </div>
 
@@ -86,6 +92,7 @@ export function TaskCard(p: TaskCardProps) {
       </div>
       {t.clients && <p className="text-[11px] text-slate-500 truncate">Cliente: <span className="font-semibold text-slate-600">{t.clients.name}</span></p>}
 
+      <fieldset disabled={p.somenteLeitura} className="space-y-2 min-w-0">
       {/* Sub-itens */}
       <Checklist
         itens={itens}
@@ -117,8 +124,10 @@ export function TaskCard(p: TaskCardProps) {
         <button type="button" onClick={() => setEditandoObs(true)} className="text-[11px] font-bold text-slate-500 hover:text-amber-600">Observação</button>
       )}
 
+      </fieldset>
+
       {/* Celular/tablet: mover sem arrastar */}
-      {p.toque && (
+      {p.toque && !p.somenteLeitura && (
         <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
           <label className="flex-1 flex items-center gap-1.5 text-[11px] text-slate-500 min-w-0">
             <span className="shrink-0">Mover para</span>
