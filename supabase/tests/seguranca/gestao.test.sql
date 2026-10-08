@@ -193,3 +193,16 @@ select pg_temp.ok(not has_function_privilege('authenticated', 'public.fechamento
 select pg_temp.ok(not has_function_privilege('authenticated', 'public.agenda_conflito(uuid,timestamptz,timestamptz,uuid)', 'execute'), 'consulta de conflito é interna');
 select pg_temp.ok((select count(*) from pg_tables where schemaname = 'public' and not rowsecurity) = 0, 'toda tabela com RLS');
 select pg_temp.ok((select count(*) from pg_policies where schemaname = 'public' and (qual = 'true' or with_check = 'true')) = 0, 'nenhuma política aberta');
+
+-- 9) Apelido (nome na agenda) e catálogo inicial
+set role authenticated;
+select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
+update public.users set apelido = 'Jake' where id = 'bb000000-0000-0000-0000-0000000000b1';
+select pg_temp.ok((select apelido from public.users where id = 'bb000000-0000-0000-0000-0000000000b1') = 'Jake', 'administradora define o apelido');
+select pg_temp.espera_erro($$update public.users set apelido = repeat('x', 41) where id = 'bb000000-0000-0000-0000-0000000000b1'$$, 'users_apelido_check');
+select pg_temp.como('bbbbbbbb-0000-0000-0000-000000000002');
+update public.users set apelido = 'Outro' where id = 'bb000000-0000-0000-0000-0000000000b1';
+select pg_temp.ok((select apelido from public.users where id = 'bb000000-0000-0000-0000-0000000000b1') = 'Jake', 'profissional não altera o próprio apelido');
+select pg_temp.ok((select count(*) from public.servicos s join public.categorias_servico c on c.id = s.categoria_id
+   where s.nome = 'Design de sobrancelha' and c.nome = 'Sobrancelhas e Cílios' and s.preco_base = 0) = 1, 'catálogo inicial na categoria certa, sem preço');
+reset role;

@@ -14,7 +14,7 @@ import { cnpjValido, cpfValido, formatarCnpj, formatarCpf, formatarTelefone, ler
 type Filtro = 'ativos' | 'inativos' | 'todos';
 
 const vazio: DadosMembro = {
-  name: '', role: 'professional', email: '', telefone: '', cpf: '', cnpj: '', modelo_contrato: 'salao_parceiro',
+  name: '', apelido: '', role: 'professional', email: '', telefone: '', cpf: '', cnpj: '', modelo_contrato: 'salao_parceiro',
   comissao_padrao_percentual: null, chave_pix: '', inicio_contrato: '', observacoes: '',
 };
 
@@ -90,6 +90,7 @@ export default function Profissionais() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <h3 className="font-bold text-slate-800 truncate">{m.name}{eu && <span className="text-xs text-slate-400 font-medium"> (você)</span>}</h3>
+                    {m.apelido && <p className="text-xs text-slate-500 truncate">Na agenda: <strong>{m.apelido}</strong></p>}
                     <div className="flex flex-wrap gap-1 mt-1">
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.role === 'admin' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>{ROTULO_PAPEL[m.role]}</span>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{m.active ? 'Ativo' : 'Inativo'}</span>
@@ -169,7 +170,7 @@ function EditarMembro({ membro, onClose, onSalvo }: { membro: MembroEquipe | nul
   const { perfil: eu } = useAuth();
   const p = membro?.perfil;
   const [d, setD] = useState<DadosMembro>(() => membro ? {
-    name: membro.name, role: membro.role,
+    name: membro.name, apelido: membro.apelido ?? '', role: membro.role,
     email: p?.email ?? '', telefone: formatarTelefone(p?.telefone), cpf: formatarCpf(p?.cpf), cnpj: formatarCnpj(p?.cnpj),
     modelo_contrato: p?.modelo_contrato ?? 'salao_parceiro', comissao_padrao_percentual: p?.comissao_padrao_percentual ?? null,
     chave_pix: p?.chave_pix ?? '', inicio_contrato: p?.inicio_contrato ?? '', observacoes: p?.observacoes ?? '',
@@ -187,6 +188,7 @@ function EditarMembro({ membro, onClose, onSalvo }: { membro: MembroEquipe | nul
   const enviar = (ev: React.FormEvent) => {
     ev.preventDefault();
     if (d.name.trim().length < 2) return setErro('Informe o nome.');
+    if (d.apelido.trim().length > 40) return setErro('Apelido com no máximo 40 caracteres.');
     if (d.cpf && !cpfValido(d.cpf)) return setErro('CPF inválido. Confira os dígitos.');
     if (d.cnpj && !cnpjValido(d.cnpj)) return setErro('CNPJ/MEI inválido. Confira os dígitos.');
     if (d.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email.trim())) return setErro('E-mail inválido.');
@@ -211,6 +213,9 @@ function EditarMembro({ membro, onClose, onSalvo }: { membro: MembroEquipe | nul
         <fieldset className="grid sm:grid-cols-2 gap-4">
           <legend className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Identificação</legend>
           <Campo rotulo="Nome completo" obrigatorio><input value={d.name} onChange={(e) => set('name', e.target.value)} className={inputCls} maxLength={120} autoFocus /></Campo>
+          <Campo rotulo="Apelido (nome na agenda)" dica="Como aparece na agenda e nos filtros. Em branco, usa o nome completo.">
+            <input value={d.apelido} onChange={(e) => set('apelido', e.target.value)} className={inputCls} maxLength={40} placeholder="Ex.: Jake" />
+          </Campo>
           <Campo rotulo="Papel no sistema" obrigatorio>
             <select value={d.role} onChange={(e) => set('role', e.target.value as Papel)} className={inputCls}>
               <option value="professional">{ROTULO_PAPEL.professional}</option>

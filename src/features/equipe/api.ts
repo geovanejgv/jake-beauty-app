@@ -27,6 +27,8 @@ export type PerfilProfissional = {
 export type MembroEquipe = {
   id: string;
   name: string;
+  /** Como aparece na agenda; vazio = nome completo. */
+  apelido: string | null;
   role: Papel;
   active: boolean;
   auth_id: string | null;
@@ -39,7 +41,7 @@ export const equipeKeys = { lista: ['equipe'] as const, ativos: ['equipe', 'ativ
 
 export async function listarEquipe(): Promise<MembroEquipe[]> {
   const [{ data: users, error }, { data: perfis, error: e2 }, { data: vinculos, error: e3 }] = await Promise.all([
-    supabase.from('users').select('id, name, role, active, auth_id, created_at').order('name'),
+    supabase.from('users').select('id, name, apelido, role, active, auth_id, created_at').order('name'),
     supabase.from('perfis_profissionais').select('user_id, email, telefone, cpf, cnpj, modelo_contrato, comissao_padrao_percentual, chave_pix, inicio_contrato, observacoes'),
     supabase.from('usuario_servico').select('user_id').eq('ativo', true),
   ]);
@@ -55,14 +57,17 @@ export async function listarEquipe(): Promise<MembroEquipe[]> {
   });
 }
 
+/** Nome mostrado na agenda: o apelido, se houver; senão, o nome completo. */
+export const nomeNaAgenda = (m: { name: string; apelido?: string | null }) => m.apelido?.trim() || m.name;
+
 /** Profissionais ativos (para filtros e seleção na agenda). Disponível para toda a equipe. */
-export async function listarAtivos(): Promise<{ id: string; name: string; role: Papel }[]> {
-  const { data, error } = await supabase.from('users').select('id, name, role').eq('active', true).order('name');
+export async function listarAtivos(): Promise<{ id: string; name: string; apelido: string | null; role: Papel }[]> {
+  const { data, error } = await supabase.from('users').select('id, name, apelido, role').eq('active', true).order('name');
   if (error) throw error;
-  return (data || []) as { id: string; name: string; role: Papel }[];
+  return (data || []) as { id: string; name: string; apelido: string | null; role: Papel }[];
 }
 
-export type DadosMembro = { name: string; role: Papel } & PerfilProfissional;
+export type DadosMembro = { name: string; apelido: string; role: Papel } & PerfilProfissional;
 
 function semVazios(p: PerfilProfissional): PerfilProfissional {
   const limpa = (v: string | null) => (v && v.trim() ? v.trim() : null);
@@ -82,13 +87,14 @@ function traduzirErroBanco(e: unknown, padrao: string): never {
 }
 
 export async function salvarMembro(id: string | null, d: DadosMembro): Promise<string> {
-  const { name, role, ...perfil } = d;
+  const { name, apelido, role, ...perfil } = d;
+  const apelidoLimpo = apelido.trim() || null;
   let userId = id;
   if (userId) {
-    const { error } = await supabase.from('users').update({ name: name.trim(), role }).eq('id', userId);
+    const { error } = await supabase.from('users').update({ name: name.trim(), apelido: apelidoLimpo, role }).eq('id', userId);
     if (error) traduzirErroBanco(error, 'Não foi possível salvar o profissional.');
   } else {
-    const { data, error } = await supabase.from('users').insert([{ name: name.trim(), role, active: true }]).select('id').single();
+    const { data, error } = await supabase.from('users').insert([{ name: name.trim(), apelido: apelidoLimpo, role, active: true }]).select('id').single();
     if (error) traduzirErroBanco(error, 'Não foi possível cadastrar o profissional.');
     userId = (data as { id: string }).id;
   }
