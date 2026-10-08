@@ -6,7 +6,7 @@ import { mensagemDeErro } from '../lib/seguranca/erros';
 import { useNetworkState } from 'react-use';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { equipeKeys, listarAtivos } from '../features/equipe/api';
+import { equipeKeys, listarAtivos, nomeNaAgenda } from '../features/equipe/api';
 import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '../features/catalogo/api';
 import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
 import { mensagemAgenda } from '../features/agenda/logic';
@@ -102,7 +102,9 @@ export default function Agenda() {
     }
   });
 
-  const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos });
+  // Na agenda, a profissional aparece pelo apelido (cadastro em Profissionais).
+  const { data: equipeBruta = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos });
+  const equipe = equipeBruta.map((p) => ({ ...p, name: nomeNaAgenda(p) }));
   const { data: categorias = [] } = useQuery({ queryKey: catalogoKeys.categorias, queryFn: listarCategorias });
   const { data: servicosCatalogo = [] } = useQuery({ queryKey: catalogoKeys.servicos, queryFn: listarServicos });
   const { data: vinculos = [] } = useQuery({ queryKey: catalogoKeys.vinculos(), queryFn: () => listarVinculos() });
