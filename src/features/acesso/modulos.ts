@@ -3,7 +3,7 @@
 // do banco (AUZ-07); por isso cada módulo de administradora também é protegido lá.
 import {
   BarChart3, CalendarDays, ClipboardList, DollarSign, HandCoins, LayoutDashboard, Scissors,
-  Package, Settings, ShoppingCart, SquareKanban, Store, UserCog, Users, Wallet, type LucideIcon,
+  Gem, Package, Settings, ShoppingCart, SquareKanban, Store, UserCog, Users, Wallet, type LucideIcon,
 } from 'lucide-react';
 
 export type Papel = 'admin' | 'professional';
@@ -20,7 +20,7 @@ export type IdModulo =
   | 'clientes' | 'profissionais' | 'servicos'
   | 'financas' | 'pagamentos' | 'pdv' | 'pacotes'
   | 'relatorio_comissoes'
-  | 'configuracoes';
+  | 'configuracoes' | 'plano';
 
 export type Modulo = {
   id: IdModulo;
@@ -70,6 +70,8 @@ export const MODULOS: Modulo[] = [
     descricao: 'Venda de pacotes de sessões, saldo, validade e extrato.' },
   { id: 'relatorio_comissoes', rotulo: 'Relatório de Comissões', caminho: '/relatorios/comissoes', icone: ClipboardList, grupo: 'relatorios', papeis: TODOS, ocultavel: true,
     descricao: 'Atendimentos com valor bruto, comissão e líquido, com PDF.' },
+  { id: 'plano', rotulo: 'Plano', caminho: '/plano', icone: Gem, grupo: 'sistema', papeis: TODOS, ocultavel: true,
+    descricao: 'Plano do estabelecimento, prazo da demonstração e uso dos limites.' },
   { id: 'configuracoes', rotulo: 'Configurações', caminho: '/configuracoes', icone: Settings, grupo: 'sistema', papeis: TODOS, ocultavel: false,
     descricao: 'Preferências de interface e regras de comissão.' },
 ];

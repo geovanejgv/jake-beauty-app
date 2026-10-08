@@ -1,4 +1,5 @@
 import { logger } from './logger';
+import { MENSAGENS_PLANO, travaDoPlano } from '../../features/plano/plano';
 
 /**
  * Tratamento central de erros na tela (LOG-01). O usuário vê só uma mensagem
@@ -32,6 +33,12 @@ export function mensagemDeErro(e: unknown, padrao = 'Não foi possível concluir
   const erro = (e ?? {}) as ErroSupabase;
   const msg = typeof erro.message === 'string' ? erro.message : '';
 
+  // Travas do plano (gatilhos do banco) viram texto próprio, nunca erro genérico (RF-15).
+  const trava = travaDoPlano(msg);
+  if (trava) return MENSAGENS_PLANO[trava];
+  if (/outro_estabelecimento|referencia_de_outro_estabelecimento|estabelecimento_imutavel|so_admin_global/.test(msg)) {
+    return 'Você não tem permissão para esta ação.';
+  }
   if (erro.code === 'P0001' && msg && msg.length <= MAX_MENSAGEM_PROPRIA) return msg;
   if (/JWT|not authenticated|refresh token/i.test(msg) || erro.code === 'PGRST301' || erro.status === 401) {
     return 'Sessão expirada. Entre novamente.';

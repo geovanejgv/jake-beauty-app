@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { logger } from '../lib/seguranca/logger';
-import { SENHA_MIN, mensagemErroAuth, validarTrocaSenha } from '../lib/seguranca/senha';
+import { SENHA_MIN, mensagemErroAuth, validarNovaSenha, validarTrocaSenha } from '../lib/seguranca/senha';
 import { Campo, Modal, inputCls } from '../features/kanban/components/ui';
 
 /**
@@ -14,8 +14,10 @@ import { Campo, Modal, inputCls } from '../features/kanban/components/ui';
  *
  * obrigatoria: primeiro acesso com senha temporária criada pela administradora; a
  * janela não fecha até a troca (ou sair do sistema).
+ * definir: primeiro acesso pelo convite por e-mail (nova administradora de um
+ * estabelecimento). Não há senha atual: o link do e-mail é a comprovação.
  */
-export default function AlterarSenhaModal({ onClose, obrigatoria = false }: { onClose: () => void; obrigatoria?: boolean }) {
+export default function AlterarSenhaModal({ onClose, obrigatoria = false, definir = false }: { onClose: () => void; obrigatoria?: boolean; definir?: boolean }) {
   const { user, signOut } = useAuth();
   const fechar = obrigatoria ? () => {} : onClose;
   const [atual, setAtual] = useState('');
@@ -32,19 +34,21 @@ export default function AlterarSenhaModal({ onClose, obrigatoria = false }: { on
   const salvar = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (ocupado) return;
-    const problema = validarTrocaSenha({ atual, nova, confirmacao });
+    const problema = definir ? validarNovaSenha({ nova, confirmacao }) : validarTrocaSenha({ atual, nova, confirmacao });
     if (problema) return setErro(problema);
     if (!user?.email) return setErro('Sessão expirada. Entre novamente.');
 
     setOcupado(true);
     setErro(null);
     try {
-      // Reautenticação: confere a senha atual no Supabase Auth antes de trocar.
-      const conferencia = await supabase.auth.signInWithPassword({ email: user.email, password: atual });
-      if (conferencia.error) return setErro(traduzir(conferencia.error, 'Não foi possível conferir a senha atual.'));
+      if (!definir) {
+        // Reautenticação: confere a senha atual no Supabase Auth antes de trocar.
+        const conferencia = await supabase.auth.signInWithPassword({ email: user.email, password: atual });
+        if (conferencia.error) return setErro(traduzir(conferencia.error, 'Não foi possível conferir a senha atual.'));
+      }
 
       // Também desmarca a troca obrigatória do primeiro acesso.
-      const troca = await supabase.auth.updateUser({ password: nova, data: { trocar_senha: false } });
+      const troca = await supabase.auth.updateUser({ password: nova, data: definir ? { definir_senha: false, trocar_senha: false } : { trocar_senha: false } });
       if (troca.error) return setErro(traduzir(troca.error, 'Não foi possível trocar a senha.'));
 
       // Quem estava logado em outro aparelho precisa entrar de novo com a senha nova.
@@ -92,12 +96,16 @@ export default function AlterarSenhaModal({ onClose, obrigatoria = false }: { on
         <input type="email" name="email" autoComplete="username" value={user?.email ?? ''} readOnly hidden />
         {obrigatoria && (
           <p className="text-sm text-slate-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-            Primeiro acesso: troque a senha temporária que recebeu por uma senha só sua para continuar.
+            {definir
+              ? 'Bem-vinda! Crie a sua senha para entrar no sistema das próximas vezes.'
+              : 'Primeiro acesso: troque a senha temporária que recebeu por uma senha só sua para continuar.'}
           </p>
         )}
-        <Campo rotulo={obrigatoria ? 'Senha temporária' : 'Senha atual'} obrigatorio>
-          <input type={tipo} autoComplete="current-password" value={atual} onChange={(e) => setAtual(e.target.value)} className={inputCls} autoFocus />
-        </Campo>
+        {!definir && (
+          <Campo rotulo={obrigatoria ? 'Senha temporária' : 'Senha atual'} obrigatorio>
+            <input type={tipo} autoComplete="current-password" value={atual} onChange={(e) => setAtual(e.target.value)} className={inputCls} autoFocus />
+          </Campo>
+        )}
         <Campo rotulo="Nova senha" obrigatorio dica={`Pelo menos ${SENHA_MIN} caracteres. Uma frase longa é fácil de lembrar e difícil de adivinhar.`}>
           <input type={tipo} autoComplete="new-password" value={nova} onChange={(e) => setNova(e.target.value)} className={inputCls} />
         </Campo>

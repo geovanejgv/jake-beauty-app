@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { registrarAuditoria } from '../lib/seguranca/auditoria';
-import { buscarPerfilAtivo } from '../contexts/AuthContext';
+import { buscarPerfilAtivo, estabelecimentoInativo } from '../contexts/AuthContext';
+
+const MENSAGEM_INATIVO = 'O acesso deste estabelecimento está desativado. Fale com o suporte.';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const [error, setError] = useState<string | null>(params.get('erro') === 'estabelecimento-inativo' ? MENSAGEM_INATIVO : null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +29,13 @@ export default function Login() {
     } else if (data.user) {
       // Trilha de auditoria (LOG-05): login com perfil ativo ou login sem acesso liberado.
       const perfil = await buscarPerfilAtivo(data.user.id).catch(() => undefined);
-      if (perfil !== undefined) await registrarAuditoria(perfil ? 'login' : 'login_negado');
+      const inativo = perfil === null ? await estabelecimentoInativo().catch(() => false) : false;
+      if (perfil !== undefined) await registrarAuditoria(perfil ? 'login' : 'login_negado', inativo ? { motivo: 'estabelecimento_inativo' } : undefined);
+      if (inativo) {
+        // Estabelecimento desativado ou excluído: a sessão não fica aberta (RF-17).
+        await supabase.auth.signOut({ scope: 'local' });
+        setError(MENSAGEM_INATIVO);
+      }
     }
     setLoading(false);
   };
@@ -34,7 +44,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">Studio Labeli</h1>
+          <h1 className="text-4xl font-bold text-slate-900 mb-2">Jake Beauty</h1>
           <p className="text-slate-500">Acesso Restrito</p>
         </div>
         
