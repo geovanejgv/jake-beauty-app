@@ -1,7 +1,12 @@
 -- =============================================================================
 -- Pacotes de sessões (fase 1). Especificação: docs/especificacoes/pacotes-de-sessoes.md
 --
--- NÃO APLICADA. Só aplicar em produção com aprovação explícita (DEV-02).
+-- APLICADA em produção em 2026-10-08 com aprovação explícita do usuário (DEV-02), em 7 partes
+-- (pacotes_1_tabelas, 2a_saldos, 2b_venda, 2c_renovar_anular, 3a_gatilhos, 3b_agendar,
+-- 3c_fechamento_protecao), porque o conector do Supabase não concluía a chamada única.
+-- Dois ajustes equivalentes feitos na aplicação e refletidos aqui: vender_pacote lê os itens
+-- direto do JSON (sem tabela temporária) e a versão anterior de agendar_atendimento é
+-- renomeada para agendar_atendimento_v1, sem execução, em vez de removida.
 --
 -- Decisões da administradora (2026-10-08):
 --  - validade padrão de 12 meses, renovável no sistema;
@@ -218,6 +223,7 @@ declare
   v_item record;
   v_valor_item numeric(10,2);
   v_pag record;
+  v_por_sessoes boolean;
 begin
   if not public.usuario_admin() then
     raise exception 'Somente a administradora vende pacotes.';
@@ -244,35 +250,25 @@ begin
     raise exception 'Formas de pagamento inválidas.';
   end if;
 
-  -- Itens validados numa tabela temporária da transação.
-  create temporary table if not exists pg_temp.pacote_venda_itens (
-    ordem integer, servico_id uuid, sessoes integer, comissao numeric, peso numeric
-  ) on commit drop;
-  delete from pg_temp.pacote_venda_itens;
-  insert into pg_temp.pacote_venda_itens
-  select x.ordem::integer,
-         (x.e ->> 'servico_id')::uuid,
-         (x.e ->> 'sessoes')::integer,
-         round((x.e ->> 'comissao_percentual')::numeric, 2),
-         0
-    from jsonb_array_elements(p_itens) with ordinality as x(e, ordem);
-  if exists (select 1 from pg_temp.pacote_venda_itens
-              where servico_id is null or sessoes is null or sessoes not between 1 and 100
-                 or comissao is null or comissao not between 0 and 100) then
+  -- Itens lidos direto do JSON (sem tabela temporária).
+  if exists (select 1 from jsonb_array_elements(p_itens) e
+              where (e ->> 'servico_id') is null or (e ->> 'sessoes') is null or (e ->> 'comissao_percentual') is null
+                 or (e ->> 'sessoes')::integer not between 1 and 100
+                 or (e ->> 'comissao_percentual')::numeric not between 0 and 100) then
     raise exception 'Cada serviço precisa de 1 a 100 sessões e comissão entre 0 e 100%%.';
   end if;
-  if (select count(*) <> count(distinct servico_id) from pg_temp.pacote_venda_itens) then
+  if (select count(*) <> count(distinct e ->> 'servico_id') from jsonb_array_elements(p_itens) e) then
     raise exception 'O mesmo serviço aparece duas vezes no pacote.';
   end if;
-  if exists (select 1 from pg_temp.pacote_venda_itens t
-              where not exists (select 1 from public.servicos s where s.id = t.servico_id and s.ativo)) then
+  if exists (select 1 from jsonb_array_elements(p_itens) e
+              where not exists (select 1 from public.servicos s where s.id = (e ->> 'servico_id')::uuid and s.ativo)) then
     raise exception 'Serviço inexistente ou inativo no pacote.';
   end if;
-  update pg_temp.pacote_venda_itens t set peso = s.preco_base * t.sessoes from public.servicos s where s.id = t.servico_id;
-  select sum(peso), count(*) into v_peso_total, v_n from pg_temp.pacote_venda_itens;
-  if v_peso_total = 0 then
-    update pg_temp.pacote_venda_itens set peso = sessoes;
-    select sum(peso) into v_peso_total from pg_temp.pacote_venda_itens;
+  select coalesce(sum(s.preco_base * (e ->> 'sessoes')::integer), 0), count(*) into v_peso_total, v_n
+    from jsonb_array_elements(p_itens) e join public.servicos s on s.id = (e ->> 'servico_id')::uuid;
+  v_por_sessoes := v_peso_total = 0;
+  if v_por_sessoes then
+    select sum((e ->> 'sessoes')::integer) into v_peso_total from jsonb_array_elements(p_itens) e;
   end if;
 
   -- Pagamentos: soma igual ao total; taxa de cada forma congelada.
@@ -299,7 +295,14 @@ begin
           p_validade, public.usuario_atual_id(), nullif(btrim(coalesce(p_observacao, '')), ''))
   returning id into v_id;
 
-  for v_item in select * from pg_temp.pacote_venda_itens order by ordem loop
+  for v_item in
+    select x.ordem, (x.e ->> 'servico_id')::uuid as servico_id, (x.e ->> 'sessoes')::integer as sessoes,
+           round((x.e ->> 'comissao_percentual')::numeric, 2) as comissao,
+           case when v_por_sessoes then (x.e ->> 'sessoes')::numeric else s.preco_base * (x.e ->> 'sessoes')::integer end as peso
+      from jsonb_array_elements(p_itens) with ordinality as x(e, ordem)
+      join public.servicos s on s.id = (x.e ->> 'servico_id')::uuid
+     order by x.ordem
+  loop
     v_i := v_i + 1;
     v_valor_item := case when v_i = v_n then v_total - v_rateado
                          else round(v_total * v_item.peso / v_peso_total, 2) end;
@@ -510,7 +513,12 @@ create trigger appointments_pacote_movimento
   for each row execute function public.appointments_pacote_movimento();
 
 -- Agendamento com pacote: mesma função da agenda, com o item do pacote.
-drop function public.agendar_atendimento(uuid, uuid, uuid, timestamptz, text, numeric, integer, text, text);
+-- A versão anterior (sem pacote) é renomeada e fica sem permissão de execução, em vez de
+-- removida: o conector do Supabase segura comandos de remoção para confirmação manual.
+alter function public.agendar_atendimento(uuid, uuid, uuid, timestamptz, text, numeric, integer, text, text)
+  rename to agendar_atendimento_v1;
+revoke execute on function public.agendar_atendimento_v1(uuid, uuid, uuid, timestamptz, text, numeric, integer, text, text)
+  from anon, authenticated, public;
 create or replace function public.agendar_atendimento(
   p_cliente uuid,
   p_profissional uuid,

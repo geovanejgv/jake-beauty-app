@@ -80,7 +80,7 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
 
 ## Pacotes de sessões
 
-24. **Migração `20261013120000_pacotes.sql` (DEV-02).** Só aplicar com "autorizo" explícito, **antes** de publicar o front desta entrega (o front novo chama `pacote_saldos` e grava `pacote_item_id`). Efeitos visíveis:
+24. **Migração `20261013120000_pacotes.sql` (DEV-02).** **APLICADA em 2026-10-08** com "autorizo" do usuário, em 7 partes (o conector não concluía a chamada única); conferências OK: RLS nas 4 tabelas, escrita direta negada, nenhuma função executável por `anon`, versão anterior `agendar_atendimento_v1` sem execução. O site atual continua funcionando; o front desta entrega entra com o PR. Efeitos visíveis:
     - nova tela **Pacotes** (só administradora); a venda entra no faturamento na data da venda (nota fiscal na venda);
     - na agenda, a cliente com pacote mostra o saldo e o agendamento reserva a sessão; no checkout, o padrão é "Abater do pacote";
     - falta (no-show) em sessão de pacote desconta a sessão, sem comissão; cancelar libera a reserva;
