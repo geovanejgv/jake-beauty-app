@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, Eye, GripVertical, Pencil, Trash2, User } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Eye, GripVertical, ListChecks, Pencil, Trash2, User } from 'lucide-react';
 import { LIMITES, dataBR, diaEmBrasilia, estaAtrasada, type Coluna, type ItemTarefa, type Tarefa } from '../logic';
 import { Checklist } from './campos';
 
@@ -20,6 +20,10 @@ export interface TaskCardProps {
   arrastando: boolean;
   /** Quadro compartilhado só para visualizar: sem arrastar, mover ou editar. */
   somenteLeitura?: boolean;
+  /** Visualização compacta: só o título; expande para ver o resto. */
+  compacto?: boolean;
+  expandido?: boolean;
+  onAlternarExpandir?: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void;
@@ -47,6 +51,47 @@ export function TaskCard(p: TaskCardProps) {
 
   useEffect(() => { if (!editandoObs) setObs(t.descricao || ''); }, [t.descricao, editandoObs]);
 
+  const iniciais = (nome: string) => nome.replace(/[^\p{L}\s]/gu, '').split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase() || '?';
+  const feitos = itens.filter((i) => i.concluido).length;
+  const arrastavel = !p.toque && !p.somenteLeitura;
+  const propsArraste = {
+    draggable: arrastavel,
+    onPointerDown: (e: React.PointerEvent) => setOrigemTexto(!!(e.target as HTMLElement).closest('input, textarea, select, button:not([data-arrastavel])')),
+    onDragStart: (e: React.DragEvent) => { if (origemTexto) { e.preventDefault(); return; } p.onDragStart(e); },
+    onDragEnd: p.onDragEnd,
+    onDragOver: p.onDragOver,
+    'data-tarefa': t.id,
+  };
+
+  // Compacta e recolhida: uma linha com o título e sinais discretos
+  if (p.compacto && !p.expandido) {
+    const responsavel = p.nomePessoa(t.responsible_id);
+    return (
+      <div {...propsArraste}
+        className={`group flex items-center gap-1.5 bg-white rounded-lg border border-slate-200 border-l-4 ${FAIXA_CRITICIDADE[t.criticidade]} shadow-sm pl-2 pr-1 py-1.5 transition-all hover:shadow-md ${p.arrastando ? 'opacity-40' : ''} ${cancelada ? 'opacity-60' : ''}`}>
+        {arrastavel && <GripVertical size={14} className="shrink-0 text-slate-300 cursor-grab" aria-hidden />}
+        <button type="button" data-arrastavel onClick={p.onAlternarExpandir} aria-expanded={false} title={t.titulo}
+          className={`flex-1 min-w-0 text-left text-[13px] font-medium truncate ${concluida ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+          {t.titulo}
+        </button>
+        {atrasada && <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" title="Atrasada" aria-label="Atrasada" />}
+        {itens.length > 0 && (
+          <span className="flex items-center gap-0.5 text-[10px] font-semibold text-slate-400 shrink-0" title="Checklist">
+            <ListChecks size={11} />{feitos}/{itens.length}
+          </span>
+        )}
+        {t.responsible_id && (
+          <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-bold flex items-center justify-center shrink-0" title={responsavel}>
+            {iniciais(responsavel)}
+          </span>
+        )}
+        <button type="button" onClick={p.onAlternarExpandir} className="p-1 rounded text-slate-400 hover:text-rose-600 shrink-0" aria-label={`Expandir ${t.titulo}`}>
+          <ChevronDown size={14} />
+        </button>
+      </div>
+    );
+  }
+
   const salvarObs = () => {
     setEditandoObs(false);
     const novo = obs.slice(0, LIMITES.descricao);
@@ -55,12 +100,7 @@ export function TaskCard(p: TaskCardProps) {
 
   return (
     <div
-      draggable={!p.toque && !p.somenteLeitura}
-      onPointerDown={(e) => setOrigemTexto(!!(e.target as HTMLElement).closest('input, textarea, select, button'))}
-      onDragStart={(e) => { if (origemTexto) { e.preventDefault(); return; } p.onDragStart(e); }}
-      onDragEnd={p.onDragEnd}
-      onDragOver={p.onDragOver}
-      data-tarefa={t.id}
+      {...propsArraste}
       className={`group relative bg-white rounded-xl border border-slate-200 border-l-4 ${FAIXA_CRITICIDADE[t.criticidade]} shadow-sm p-3 space-y-2 transition-opacity ${p.arrastando ? 'opacity-40' : ''} ${cancelada ? 'opacity-70' : ''}`}
     >
       {/* Título e ações */}
@@ -75,6 +115,7 @@ export function TaskCard(p: TaskCardProps) {
             <button type="button" onClick={p.onExcluir} className="p-1 text-slate-400 hover:text-red-500 rounded" aria-label="Excluir tarefa"><Trash2 size={14} /></button>
           </>)}
         </div>
+        {p.compacto && <button type="button" onClick={p.onAlternarExpandir} aria-expanded className="p-1 -mr-1 text-slate-400 hover:text-rose-600 rounded shrink-0" aria-label="Recolher tarefa"><ChevronUp size={14} /></button>}
       </div>
 
       {/* Linha de dados */}

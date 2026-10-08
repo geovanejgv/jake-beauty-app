@@ -70,9 +70,9 @@ describe('AUZ-05: chave administrativa nunca no navegador', () => {
 });
 
 describe('SES-02: armazenamento do navegador', () => {
-  it('localStorage só guarda preferências de tela (tema, escopo de finanças, grupos do menu)', () => {
+  it('localStorage só guarda preferências de tela (tema, escopo de finanças, grupos do menu, visualização do Kanban)', () => {
     const usos = ocorrencias(/localStorage|sessionStorage/);
-    expect(usos.filter((u) => !/^src\/(hooks\/useTheme\.ts|pages\/Financeiro\.tsx|layouts\/MainLayout\.tsx):/.test(u))).toEqual([]);
+    expect(usos.filter((u) => !/^src\/(hooks\/useTheme\.ts|pages\/Financeiro\.tsx|layouts\/MainLayout\.tsx|features\/kanban\/components\/ui\.tsx):/.test(u))).toEqual([]);
     expect(ocorrencias(/(local|session)Storage.*(token|session|auth)/i)).toEqual([]);
   });
 });

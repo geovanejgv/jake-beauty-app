@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, ChevronDown, ChevronLeft, EllipsisVertical, Eye, Folder, FolderInput, FolderPlus, Layers, Loader2, Pencil, Plus, RefreshCw, Share2, SquareKanban, Trash2, UserRound, Users } from 'lucide-react';
+import { Building2, Check, ChevronDown, ChevronLeft, ChevronsDownUp, ChevronsUpDown, EllipsisVertical, LayoutList, Rows3, Eye, Folder, FolderInput, FolderPlus, Layers, Loader2, Pencil, Plus, RefreshCw, Share2, SquareKanban, Trash2, UserRound, Users } from 'lucide-react';
 import * as api from '../features/kanban/api';
 import { kanbanKeys, mensagemErro } from '../features/kanban/api';
 import { ErroPublico } from '../lib/seguranca/erros';
@@ -14,7 +14,7 @@ import { TaskCard } from '../features/kanban/components/TaskCard';
 import { FilterBar } from '../features/kanban/components/FilterBar';
 import { EditarTarefaModal, EquipeModal, NovaTarefaModal, QuadroModal, type ExtrasQuadro } from '../features/kanban/components/janelas';
 import { GrupoDoQuadroModal, GrupoModal } from '../features/kanban/components/Grupos';
-import { Aviso, Confirmar, Painel, useToque } from '../features/kanban/components/ui';
+import { Aviso, Confirmar, Painel, useDensidade, useToque } from '../features/kanban/components/ui';
 import { CompartilharModal } from '../features/kanban/components/Compartilhar';
 
 // Cores dos quadros pela posição (8 opções)
@@ -460,6 +460,12 @@ function QuadroAberto(p: QuadroAbertoProps) {
   const somenteVer = !podeEditarQuadro(p.quadro);
   const quadrosEditaveis = p.quadros.filter(podeEditarQuadro);
   const voltar = p.quadro.no_negocio === false ? '/tarefas?visao=pessoal' : '/tarefas';
+  // Visualização compacta: só o título; cada cartão expande sozinho
+  const [densidade, setDensidade] = useDensidade();
+  const compacto = densidade === 'compacta';
+  const [expandidos, setExpandidos] = useState<Set<string>>(() => new Set());
+  const alternarExpandir = (id: string) => setExpandidos((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const mudarDensidade = (d: typeof densidade) => { setDensidade(d); setExpandidos(new Set()); };
   const [arrastando, setArrastando] = useState<string | null>(null);
   const [alvo, setAlvo] = useState<{ coluna: string; antesDe: string | null } | null>(null);
 
@@ -624,6 +630,21 @@ function QuadroAberto(p: QuadroAbertoProps) {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          <div className="flex items-center p-0.5 rounded-lg border border-slate-200 bg-white" role="group" aria-label="Visualização dos cartões">
+            {([['detalhada', 'Detalhada', LayoutList], ['compacta', 'Compacta', Rows3]] as const).map(([v, rotulo, Icone]) => (
+              <button key={v} type="button" onClick={() => mudarDensidade(v)} aria-pressed={densidade === v} title={`Visualização ${rotulo.toLowerCase()}`}
+                className={`flex items-center gap-1 h-8 px-2 rounded-md text-xs font-bold transition-colors ${densidade === v ? 'bg-rose-50 text-rose-700' : 'text-slate-500 hover:text-slate-700'}`}>
+                <Icone size={16} /><span className="hidden lg:inline">{rotulo}</span>
+              </button>
+            ))}
+          </div>
+          {compacto && (
+            <button type="button" onClick={() => setExpandidos(expandidos.size ? new Set() : new Set(tarefas.map((x) => x.id)))}
+              className="p-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-rose-600"
+              aria-label={expandidos.size ? 'Recolher todas' : 'Expandir todas'} title={expandidos.size ? 'Recolher todas' : 'Expandir todas'}>
+              {expandidos.size ? <ChevronsDownUp size={18} /> : <ChevronsUpDown size={18} />}
+            </button>
+          )}
           <button type="button" onClick={atualizar} className="p-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-rose-600" aria-label="Atualizar" title="Atualizar">
             <RefreshCw size={18} className={tarefasQ.isFetching ? 'animate-spin' : ''} />
           </button>
@@ -678,7 +699,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
               <div
                 onDragOver={(e) => aoArrastarSobreColuna(e, c.id)}
                 onDrop={(e) => aoSoltar(e, c.id)}
-                className="flex-1 overflow-y-auto px-2 pt-1 pb-2 space-y-2 max-h-[calc(100dvh-230px)] md:max-h-[calc(100vh-300px)] min-h-[120px]"
+                className={`flex-1 overflow-y-auto px-2 pt-1 pb-2 ${compacto ? 'space-y-1.5' : 'space-y-2'} max-h-[calc(100dvh-230px)] md:max-h-[calc(100vh-300px)] min-h-[120px]`}
               >
                 {tarefasQ.isLoading ? (
                   <div className="flex justify-center py-8"><Loader2 className="animate-spin text-rose-400" size={22} /></div>
@@ -689,7 +710,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
                 ) : (
                   lista.map((t, i) => (
                     <div key={t.id}>
-                      {arrastando && alvo?.coluna === c.id && alvo.antesDe === t.id && <div className="h-1 rounded-full bg-rose-500 mb-2" aria-hidden />}
+                      {arrastando && alvo?.coluna === c.id && alvo.antesDe === t.id && <div className={`h-1 rounded-full bg-rose-500 ${compacto ? 'mb-1.5' : 'mb-2'}`} aria-hidden />}
                       <TaskCard
                         tarefa={t}
                         nomePessoa={nomePessoa}
@@ -698,6 +719,9 @@ function QuadroAberto(p: QuadroAbertoProps) {
                         toque={toque}
                         arrastando={arrastando === t.id}
                         somenteLeitura={somenteVer}
+                        compacto={compacto}
+                        expandido={expandidos.has(t.id)}
+                        onAlternarExpandir={() => alternarExpandir(t.id)}
                         podeSubir={i > 0}
                         podeDescer={i < lista.length - 1}
                         onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.id); setArrastando(t.id); }}
