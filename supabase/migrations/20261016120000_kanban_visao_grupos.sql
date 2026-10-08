@@ -1,7 +1,9 @@
 -- =============================================================================
 -- Kanban: onde o quadro aparece (negócio, pessoal ou ambos) e grupos de quadros.
 --
--- NÃO APLICADA. Só aplicar em produção com aprovação explícita (DEV-02).
+-- APLICADA em produção em 2026-10-08 com aprovação explícita do usuário (DEV-02), em
+-- partes (kanban_visao_1_permissoes, kanban_visao_2_excluir_visiveis_definir,
+-- kanban_visao_3_grupos), com o mesmo SQL deste arquivo.
 --
 -- Visão do quadro (um único quadro; alterar em uma visão altera na outra):
 --  - 'negocio': escopo 'negocio', sem dono;
