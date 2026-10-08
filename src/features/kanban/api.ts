@@ -2,7 +2,7 @@
 // (ver supabase/migrations/20261004120000_kanban.sql); cartões e sub-itens são gravados direto.
 import { supabase } from '../../lib/supabase';
 import { ErroPublico, mensagemDeErro } from '../../lib/seguranca/erros';
-import type { Coluna, ColunaEdicao, Compartilhamento, EscopoQuadro, ItemTarefa, NovaTarefa, Pessoa, PermissaoQuadro, Quadro, Tarefa } from './logic';
+import type { Coluna, ColunaEdicao, Compartilhamento, EscopoQuadro, Grupo, ItemTarefa, NovaTarefa, Pessoa, PermissaoQuadro, Quadro, Tarefa, VinculoGrupo, VisaoQuadro } from './logic';
 
 export const kanbanKeys = {
   base: ['kanban'] as const,
@@ -14,6 +14,7 @@ export const kanbanKeys = {
   comentarios: (taskId: string) => ['kanban', 'comentarios', taskId] as const,
   compartilhamentos: (quadroId: string) => ['kanban', 'compartilhamentos', quadroId] as const,
   eu: ['kanban', 'eu'] as const,
+  grupos: ['kanban', 'grupos'] as const,
   clientes: ['kanban', 'clientes'] as const,
 };
 
@@ -165,6 +166,50 @@ export async function compartilhar(quadroId: string, destino: 'negocio' | 'pesso
 export async function removerCompartilhamento(id: string): Promise<void> {
   const removidos = await rodar(supabase.from('kanban_compartilhamentos').delete().eq('id', id).select('id'));
   if (!removidos || removidos.length === 0) throw new Error('Compartilhamento não encontrado.');
+}
+
+/**
+ * Onde o quadro aparece. Ao ir para o negócio, o compartilhamento com o negócio deixa de
+ * fazer sentido e sai antes (o banco recusa a mudança se ele continuar).
+ */
+export async function definirVisao(quadro: Quadro, visao: VisaoQuadro): Promise<void> {
+  if (quadro.escopo === 'pessoal' && visao !== 'pessoal') {
+    await rodar(supabase.from('kanban_compartilhamentos').delete().eq('quadro_id', quadro.id).eq('destino', 'negocio'));
+  }
+  await rodar(supabase.rpc('kanban_definir_visao', { p_quadro: quadro.id, p_visao: visao }));
+}
+
+// ---------------------------------------------------------------- grupos (só da pessoa logada, RLS)
+
+export async function listarGrupos(): Promise<{ grupos: Grupo[]; vinculos: VinculoGrupo[] }> {
+  const [grupos, vinculos] = await Promise.all([
+    rodar(supabase.from('kanban_grupos').select('id, nome').order('nome')),
+    rodar(supabase.from('kanban_quadro_grupo').select('quadro_id, grupo_id')),
+  ]);
+  return { grupos: (grupos ?? []) as Grupo[], vinculos: (vinculos ?? []) as VinculoGrupo[] };
+}
+
+export async function criarGrupo(nome: string): Promise<string> {
+  const g = (await rodar(supabase.from('kanban_grupos').insert({ nome: nome.trim() }).select('id').single())) as { id: string };
+  return g.id;
+}
+
+export async function renomearGrupo(id: string, nome: string): Promise<void> {
+  await rodar(supabase.from('kanban_grupos').update({ nome: nome.trim() }).eq('id', id));
+}
+
+/** Os quadros do grupo voltam para "sem grupo"; nenhum quadro é apagado. */
+export async function excluirGrupo(id: string): Promise<void> {
+  await rodar(supabase.from('kanban_grupos').delete().eq('id', id));
+}
+
+/** Coloca o quadro num grupo (ou tira, com null). */
+export async function definirGrupo(eu: string, quadroId: string, grupoId: string | null): Promise<void> {
+  if (!grupoId) {
+    await rodar(supabase.from('kanban_quadro_grupo').delete().eq('quadro_id', quadroId));
+    return;
+  }
+  await rodar(supabase.from('kanban_quadro_grupo').upsert({ user_id: eu, quadro_id: quadroId, grupo_id: grupoId }, { onConflict: 'user_id,quadro_id' }));
 }
 
 export async function salvarQuadro(id: string, nome: string, colunas: ColunaEdicao[]): Promise<void> {

@@ -31,6 +31,31 @@ export function quadrosDaVisao(quadros: Quadro[], visao: EscopoQuadro): Quadro[]
   return quadros.filter((q) => (visao === 'negocio' ? q.no_negocio ?? q.escopo !== 'pessoal' : !!q.no_pessoal));
 }
 
+/** Onde o quadro aparece: só no negócio, só no pessoal ou nos dois (o mesmo quadro). */
+export type VisaoQuadro = 'negocio' | 'pessoal' | 'ambos';
+
+export function visaoDoQuadro(q: Pick<Quadro, 'escopo' | 'dono_id'>): VisaoQuadro {
+  if (q.escopo === 'pessoal') return 'pessoal';
+  return q.dono_id ? 'ambos' : 'negocio';
+}
+
+/** Grupo da tela inicial (organização pessoal: cada pessoa vê só os seus). */
+export type Grupo = { id: string; nome: string };
+export type VinculoGrupo = { quadro_id: string; grupo_id: string };
+export type SecaoQuadros = { grupo: Grupo | null; quadros: Quadro[] };
+
+/** Separa os quadros da visão em grupos (por nome) e "sem grupo" sempre no fim; grupos vazios também aparecem. */
+export function agruparQuadros(quadros: Quadro[], grupos: Grupo[], vinculos: VinculoGrupo[]): SecaoQuadros[] {
+  const doQuadro = new Map(vinculos.map((v) => [v.quadro_id, v.grupo_id]));
+  const ids = new Set(grupos.map((g) => g.id));
+  const secoes: SecaoQuadros[] = [...grupos]
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+    .map((g) => ({ grupo: g, quadros: quadros.filter((q) => doQuadro.get(q.id) === g.id) }));
+  const soltos = quadros.filter((q) => !ids.has(doQuadro.get(q.id) ?? ''));
+  secoes.push({ grupo: null, quadros: soltos });
+  return secoes;
+}
+
 export type Compartilhamento = { id: string; quadro_id: string; destino: 'negocio' | 'pessoa'; user_id: string | null; permissao: PermissaoQuadro };
 
 export interface Coluna {
@@ -89,6 +114,7 @@ export const LIMITES = {
   envolvidos: 20,
   nomeQuadro: 30,
   nomeColuna: 25,
+  nomeGrupo: 40,
   minColunas: 2,
   maxColunas: 10,
 } as const;
@@ -469,3 +495,11 @@ export function validarQuadro(nome: string, colunas: ColunaEdicao[]): string | n
 }
 
 export const COLUNAS_PADRAO: ColunaEdicao[] = [{ nome: 'A Fazer' }, { nome: 'Fazendo' }, { nome: 'Concluído' }];
+
+/** Nome de grupo: 1 a 40 caracteres e sem repetir outro grupo da pessoa (ignora maiúsculas). */
+export function validarNomeGrupo(nome: string, grupos: Grupo[], idAtual?: string): string | null {
+  const n = nome.trim();
+  if (n.length < 1 || n.length > LIMITES.nomeGrupo) return `O nome do grupo deve ter de 1 a ${LIMITES.nomeGrupo} caracteres.`;
+  if (grupos.some((g) => g.id !== idAtual && g.nome.trim().toLocaleLowerCase('pt-BR') === n.toLocaleLowerCase('pt-BR'))) return 'Já existe um grupo com esse nome.';
+  return null;
+}
