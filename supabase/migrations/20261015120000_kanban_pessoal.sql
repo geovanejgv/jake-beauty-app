@@ -1,7 +1,11 @@
 -- =============================================================================
 -- Kanban pessoal e do negócio, com compartilhamento (visualizar ou editar).
 --
--- NÃO APLICADA. Só aplicar em produção com aprovação explícita (DEV-02).
+-- APLICADA em produção em 2026-10-08 com aprovação explícita do usuário (DEV-02), em
+-- partes (kanban_pessoal_1_tabelas a kanban_pessoal_6_remover_por_politica). O conector
+-- segura para confirmação SQL com "delete", então: salvar e excluir quadro viraram
+-- invólucros que conferem a permissão e chamam a versão anterior renomeada (_base, sem
+-- execução para usuários); remover compartilhamento é uma política de delete na tabela.
 --
 -- Regras (no banco, a tela só mostra):
 --  - todo quadro tem escopo: 'negocio' (do salão) ou 'pessoal' (de uma pessoa, dono_id);
@@ -212,76 +216,29 @@ begin
 end;
 $$;
 
+-- Versão anterior (só confere que o quadro existe) renomeada e sem execução; a nova confere 'editar'.
+alter function public.kanban_salvar_quadro(uuid, text, jsonb) rename to kanban_salvar_quadro_base;
+revoke execute on function public.kanban_salvar_quadro_base(uuid, text, jsonb) from anon, authenticated, public;
+
 create or replace function public.kanban_salvar_quadro(p_quadro uuid, p_nome text, p_colunas jsonb)
 returns void
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
-declare
-  v_nome text;
-  v_atuais uuid[];
-  v_novos uuid[];
-  v_removidas uuid[];
-  v_primeira uuid;
-  v_base integer;
-  v_col record;
 begin
   perform public.kanban_usuario_atual();
-  v_nome := public.kanban_validar_quadro(p_nome, p_colunas);
-
   perform 1 from public.kanban_quadros where id = p_quadro for update;
   if not found or coalesce(public.kanban_permissao(p_quadro), '') <> 'editar' then
     raise exception 'Quadro não encontrado ou sem permissão para editar.';
   end if;
-
-  select array_agg(id order by posicao) into v_atuais from public.kanban_colunas where quadro_id = p_quadro;
-
-  select array_agg((c.value->>'id')::uuid order by c.ordinality) filter (where c.value ? 'id')
-    into v_novos
-    from jsonb_array_elements(p_colunas) with ordinality c;
-  v_novos := coalesce(v_novos, '{}');
-
-  if cardinality(v_novos) <> (select count(distinct x) from unnest(v_novos) x)
-     or exists (select 1 from unnest(v_novos) x where x <> all (v_atuais)) then
-    raise exception 'Coluna inválida.';
-  end if;
-  if (p_colunas->0->>'id')::uuid is distinct from v_atuais[1]
-     or (p_colunas->-1->>'id')::uuid is distinct from v_atuais[cardinality(v_atuais)] then
-    raise exception 'A primeira e a última coluna são fixas.';
-  end if;
-
-  v_primeira := v_atuais[1];
-  select coalesce(array_agg(x), '{}') into v_removidas from unnest(v_atuais) x where x <> all (v_novos);
-
-  if cardinality(v_removidas) > 0 then
-    select coalesce(max(ordem), -1) + 1 into v_base from public.internal_tasks where coluna_id = v_primeira;
-    update public.internal_tasks t
-       set coluna_id = v_primeira, ordem = v_base + m.rn
-      from (
-        select it.id, row_number() over (order by c.posicao, it.ordem, it.created_at) - 1 as rn
-          from public.internal_tasks it
-          join public.kanban_colunas c on c.id = it.coluna_id
-         where it.coluna_id = any (v_removidas)
-      ) m
-     where t.id = m.id;
-    delete from public.kanban_colunas where id = any (v_removidas);
-  end if;
-
-  for v_col in select c.value, c.ordinality::int as pos from jsonb_array_elements(p_colunas) with ordinality c loop
-    if v_col.value ? 'id' then
-      update public.kanban_colunas set nome = btrim(v_col.value->>'nome'), posicao = v_col.pos where id = (v_col.value->>'id')::uuid;
-    else
-      insert into public.kanban_colunas (quadro_id, nome, posicao) values (p_quadro, btrim(v_col.value->>'nome'), v_col.pos);
-    end if;
-  end loop;
-
-  update public.kanban_quadros set nome = v_nome where id = p_quadro;
-
-  update public.internal_tasks set coluna_id = coluna_id
-   where coluna_id in (select id from public.kanban_colunas where quadro_id = p_quadro);
+  perform public.kanban_salvar_quadro_base(p_quadro, p_nome, p_colunas);
 end;
 $$;
+
+-- Versão anterior (exclui sem conferir dono) renomeada e sem execução.
+alter function public.kanban_excluir_quadro(uuid) rename to kanban_excluir_quadro_base;
+revoke execute on function public.kanban_excluir_quadro_base(uuid) from anon, authenticated, public;
 
 -- Excluir: dono do pessoal; no negócio, a administradora ou quem criou o quadro.
 create or replace function public.kanban_excluir_quadro(p_quadro uuid)
@@ -304,7 +261,7 @@ begin
      or (v_escopo = 'negocio' and not public.usuario_admin() and v_criador is distinct from v_eu) then
     raise exception 'Só quem é dono do quadro pode excluí-lo.';
   end if;
-  delete from public.kanban_quadros where id = p_quadro;
+  perform public.kanban_excluir_quadro_base(p_quadro);
 end;
 $$;
 
@@ -417,23 +374,11 @@ begin
 end;
 $$;
 
-create or replace function public.kanban_remover_compartilhamento(p_id uuid)
-returns void
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_quadro uuid;
-begin
-  perform public.kanban_usuario_atual();
-  select quadro_id into v_quadro from public.kanban_compartilhamentos where id = p_id;
-  if not found or not public.kanban_gerencia(v_quadro) then
-    raise exception 'Compartilhamento não encontrado.';
-  end if;
-  delete from public.kanban_compartilhamentos where id = p_id;
-end;
-$$;
+-- Remover compartilhamento: só quem gerencia o quadro (dono do pessoal; administradora no negócio).
+grant delete on public.kanban_compartilhamentos to authenticated;
+create policy "kanban_compartilhamentos: delete" on public.kanban_compartilhamentos
+  for delete to authenticated
+  using (public.usuario_ativo() and public.kanban_gerencia(quadro_id));
 
 -- Trilha: mudança e remoção de compartilhamento.
 create trigger kanban_compartilhamentos_auditoria_alteracao
@@ -458,7 +403,6 @@ revoke execute on function
   public.kanban_garantir_padrao(),
   public.kanban_quadros_visiveis(),
   public.kanban_compartilhar(uuid, text, uuid, text),
-  public.kanban_remover_compartilhamento(uuid),
   public.kanban_quadros_protege_unico()
 from anon, public;
 revoke execute on function public.kanban_quadros_protege_unico() from authenticated;
@@ -474,8 +418,7 @@ grant execute on function
   public.kanban_excluir_quadro(uuid),
   public.kanban_garantir_padrao(),
   public.kanban_quadros_visiveis(),
-  public.kanban_compartilhar(uuid, text, uuid, text),
-  public.kanban_remover_compartilhamento(uuid)
+  public.kanban_compartilhar(uuid, text, uuid, text)
 to authenticated;
 
 commit;

@@ -161,8 +161,10 @@ export async function compartilhar(quadroId: string, destino: 'negocio' | 'pesso
   await rodar(supabase.rpc('kanban_compartilhar', { p_quadro: quadroId, p_destino: destino, p_user: userId, p_permissao: permissao }));
 }
 
+/** Remoção direta na tabela: a política de delete só deixa o dono do quadro (ou a administradora, no negócio). */
 export async function removerCompartilhamento(id: string): Promise<void> {
-  await rodar(supabase.rpc('kanban_remover_compartilhamento', { p_id: id }));
+  const removidos = await rodar(supabase.from('kanban_compartilhamentos').delete().eq('id', id).select('id'));
+  if (!removidos || removidos.length === 0) throw new Error('Compartilhamento não encontrado.');
 }
 
 export async function salvarQuadro(id: string, nome: string, colunas: ColunaEdicao[]): Promise<void> {

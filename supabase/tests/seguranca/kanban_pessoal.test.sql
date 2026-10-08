@@ -83,8 +83,13 @@ insert into public.internal_tasks (titulo, responsible_id, coluna_id) values ('T
 select pg_temp.ok(true, 'quem não recebeu restrição continua editando o negócio');
 
 -- 5) Remover compartilhamento e excluir
+select pg_temp.como('cccccccc-0000-0000-0000-000000000003');
+delete from public.kanban_compartilhamentos where id = :'comp_neg';
+reset role;
+select pg_temp.ok((select count(*) from public.kanban_compartilhamentos where id = :'comp_neg') = 1, 'quem recebeu não remove o compartilhamento');
+set role authenticated;
 select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
-select public.kanban_remover_compartilhamento(:'comp_neg');
+delete from public.kanban_compartilhamentos where id = :'comp_neg';
 select pg_temp.como('cccccccc-0000-0000-0000-000000000003');
 select pg_temp.ok((select count(*) from public.internal_tasks where titulo = 'Tarefa da admin') = 0, 'sem o compartilhamento, volta a ver só as próprias');
 select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
