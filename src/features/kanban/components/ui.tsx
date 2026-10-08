@@ -20,6 +20,20 @@ export const useToque = () => useMedia('(max-width: 1023px), (pointer: coarse)')
 /** Celular: janelas e filtros em tela cheia, colunas deslizantes. */
 export const useCelular = () => useMedia('(max-width: 767px)');
 
+/** Visualização dos cartões: detalhada ou compacta (só o título). Lembrada neste navegador. */
+export type Densidade = 'detalhada' | 'compacta';
+const CHAVE_DENSIDADE = 'jb-kanban-densidade';
+export function useDensidade(): [Densidade, (d: Densidade) => void] {
+  const [d, setD] = useState<Densidade>(() => {
+    try { return localStorage.getItem(CHAVE_DENSIDADE) === 'compacta' ? 'compacta' : 'detalhada'; } catch { return 'detalhada'; }
+  });
+  const mudar = (nova: Densidade) => {
+    setD(nova);
+    try { localStorage.setItem(CHAVE_DENSIDADE, nova); } catch { /* sem armazenamento: vale só nesta visita */ }
+  };
+  return [d, mudar];
+}
+
 function useEsc(ativo: boolean, onClose: () => void) {
   useEffect(() => {
     if (!ativo) return;
