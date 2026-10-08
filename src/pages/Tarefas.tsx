@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, ChevronDown, ChevronLeft, ChevronsDownUp, ChevronsUpDown, EllipsisVertical, LayoutList, Rows3, Eye, Folder, FolderInput, FolderPlus, Layers, Loader2, Pencil, Plus, RefreshCw, Share2, SquareKanban, Trash2, UserRound, Users } from 'lucide-react';
+import { Building2, Check, ChevronDown, ChevronLeft, ChevronsDownUp, ChevronsUpDown, EllipsisVertical, LayoutGrid, LayoutList, List, Rows3, Eye, Folder, FolderInput, FolderPlus, Layers, Loader2, Pencil, Plus, RefreshCw, Share2, SquareKanban, Trash2, UserRound, Users } from 'lucide-react';
 import * as api from '../features/kanban/api';
 import { kanbanKeys, mensagemErro } from '../features/kanban/api';
 import { ErroPublico } from '../lib/seguranca/erros';
@@ -14,7 +14,7 @@ import { TaskCard } from '../features/kanban/components/TaskCard';
 import { FilterBar } from '../features/kanban/components/FilterBar';
 import { EditarTarefaModal, EquipeModal, NovaTarefaModal, QuadroModal, type ExtrasQuadro } from '../features/kanban/components/janelas';
 import { GrupoDoQuadroModal, GrupoModal } from '../features/kanban/components/Grupos';
-import { Aviso, Confirmar, Painel, useDensidade, useToque } from '../features/kanban/components/ui';
+import { Aviso, Confirmar, Painel, useDensidade, useFormatoQuadros, useToque } from '../features/kanban/components/ui';
 import { CompartilharModal } from '../features/kanban/components/Compartilhar';
 
 // Cores dos quadros pela posição (8 opções)
@@ -259,6 +259,7 @@ function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovo
   const resumo = useQuery({ queryKey: kanbanKeys.resumo, queryFn: api.listarResumo });
   const [menuAberto, setMenuAberto] = useState<string | null>(null);
   const [recolhidos, setRecolhidos] = useState<Set<string>>(() => new Set());
+  const [formato, setFormato] = useFormatoQuadros();
   const porColuna = useMemo(() => {
     const m = new Map<string, number>();
     for (const t of resumo.data || []) m.set(t.coluna_id, (m.get(t.coluna_id) || 0) + 1);
@@ -267,81 +268,174 @@ function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovo
   // Cor estável: pela posição do quadro na lista completa (não muda ao trocar de grupo ou de visão)
   const corDe = (id: string) => CORES_QUADRO[Math.max(0, todos.findIndex((q) => q.id === id)) % CORES_QUADRO.length];
   const alternar = (id: string) => setRecolhidos((r) => { const n = new Set(r); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const textoCriar = visao === 'pessoal' ? 'Criar quadro pessoal' : 'Criar quadro do negócio';
 
-  const cartao = (q: Quadro) => {
+  const contar = (q: Quadro) => {
     const cols = colunas.filter((c) => c.quadro_id === q.id).sort((a, b) => a.posicao - b.posicao);
     const contagens = cols.map((c) => porColuna.get(c.id) || 0);
     const afazer = contagens[0] || 0;
     const concluido = contagens.length > 1 ? contagens[contagens.length - 1] : 0;
     const fazendo = contagens.slice(1, -1).reduce((a, b) => a + b, 0);
-    const total = afazer + fazendo + concluido;
+    return { afazer, fazendo, concluido, total: afazer + fazendo + concluido };
+  };
+  const textoContagem = (c: ReturnType<typeof contar>) =>
+    resumo.isLoading ? '…' : c.total === 0 ? 'Nenhuma atividade' : `${c.afazer} a fazer · ${c.fazendo} fazendo · ${c.concluido} concluído`;
+
+  const selos = (q: Quadro, claro: boolean) => {
     // 'Ambos' de que sou dono: aparece nas minhas duas visões
     const meuAmbos = visaoDoQuadro(q) === 'ambos' && !!q.no_pessoal && !!q.gerencia;
+    const cls = `rounded px-1.5 py-0.5 inline-flex items-center gap-1 ${claro ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`;
+    const itens = [
+      meuAmbos && <span key="a" className={cls}><Layers size={10} /> Negócio e pessoal</span>,
+      q.escopo === 'pessoal' && visao === 'negocio' && <span key="p" className={cls}>Pessoal de {q.dono_nome ?? 'alguém'}</span>,
+      q.escopo === 'negocio' && visao === 'pessoal' && !meuAmbos && <span key="n" className={cls}>Do negócio</span>,
+      q.escopo === 'pessoal' && visao === 'pessoal' && !q.gerencia && <span key="d" className={cls}>De {q.dono_nome ?? 'alguém'}</span>,
+      q.permissao === 'ver' && <span key="v" className={cls}><Eye size={10} /> Só visualizar</span>,
+      q.compartilhado && q.gerencia && <span key="c" className={cls}><Share2 size={10} /> Compartilhado</span>,
+    ].filter(Boolean);
+    return itens.length ? <div className="flex flex-wrap gap-1 text-[10px] font-bold">{itens}</div> : null;
+  };
+
+  const barra = (c: ReturnType<typeof contar>, fundo: string, base: string) => (
+    <div className={`h-1.5 rounded-full ${fundo} overflow-hidden flex`} aria-hidden>
+      {c.total > 0 && <>
+        <div className={base} style={{ width: `${(c.afazer / c.total) * 100}%` }} />
+        <div className="bg-amber-300" style={{ width: `${(c.fazendo / c.total) * 100}%` }} />
+        <div className="bg-emerald-400" style={{ width: `${(c.concluido / c.total) * 100}%` }} />
+      </>}
+    </div>
+  );
+
+  // Botão ⋮ e menu do quadro: editar, grupo, compartilhar e excluir
+  const menu = (q: Quadro, botaoCls: string, topo: string) => (<>
+    <button type="button" onClick={() => setMenuAberto(menuAberto === q.id ? null : q.id)} className={botaoCls}
+      aria-label={`Opções do quadro ${q.nome}`} aria-haspopup="menu" aria-expanded={menuAberto === q.id}>
+      <EllipsisVertical size={16} />
+    </button>
+    {menuAberto === q.id && (
+      <>
+        <div className="fixed inset-0 z-40" onClick={() => setMenuAberto(null)} />
+        <div role="menu" className={`absolute z-50 ${topo} right-2.5 w-52 bg-white border border-slate-200 rounded-xl shadow-xl p-1`}>
+          {podeEditarQuadro(q) && (
+            <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onEditar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+              <Pencil size={14} /> Editar quadro
+            </button>
+          )}
+          <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onGrupoDoQuadro(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+            <FolderInput size={14} /> Mover para grupo
+          </button>
+          {q.gerencia && (
+            <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onCompartilhar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+              <Share2 size={14} /> Compartilhar
+            </button>
+          )}
+          {q.gerencia && (
+            <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onExcluir(q); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50">
+              <Trash2 size={14} /> Excluir quadro
+            </button>
+          )}
+          {!podeEditarQuadro(q) && !q.gerencia && <p className="px-3 py-2 text-xs text-slate-500">Compartilhado com você só para visualizar.</p>}
+        </div>
+      </>
+    )}
+  </>);
+
+  const botaoMenuClaro = 'absolute p-1.5 rounded-lg text-white/90 bg-white/10 hover:bg-white/25 backdrop-blur-sm';
+
+  const cartao = (q: Quadro) => {
+    const c = contar(q);
     return (
-      <div key={q.id} className="relative group/quadro">
+      <div key={q.id} className="relative">
         <Link to={`/tarefas?quadro=${q.id}`} style={{ backgroundImage: corDe(q.id) }}
           className="h-32 rounded-2xl p-4 flex flex-col justify-between text-white shadow-md hover:shadow-xl hover:-translate-y-0.5 transition-all">
           <div className="pr-8 space-y-1">
             <p className="text-lg font-black leading-tight break-words line-clamp-2">{q.nome}</p>
-            <div className="flex flex-wrap gap-1 text-[10px] font-bold">
-              {meuAmbos && <span className="bg-white/20 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Layers size={10} /> Negócio e pessoal</span>}
-              {q.escopo === 'pessoal' && visao === 'negocio' && <span className="bg-white/20 rounded px-1.5 py-0.5">Pessoal de {q.dono_nome ?? 'alguém'}</span>}
-              {q.escopo === 'negocio' && visao === 'pessoal' && !meuAmbos && <span className="bg-white/20 rounded px-1.5 py-0.5">Do negócio</span>}
-              {q.escopo === 'pessoal' && visao === 'pessoal' && !q.gerencia && <span className="bg-white/20 rounded px-1.5 py-0.5">De {q.dono_nome ?? 'alguém'}</span>}
-              {q.permissao === 'ver' && <span className="bg-white/20 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Eye size={10} /> Só visualizar</span>}
-              {q.compartilhado && q.gerencia && <span className="bg-white/20 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Share2 size={10} /> Compartilhado</span>}
-            </div>
+            {selos(q, true)}
           </div>
           <div className="space-y-1.5">
-            <div className="h-1.5 rounded-full bg-white/20 overflow-hidden flex" aria-hidden>
-              {total > 0 && <>
-                <div className="bg-white" style={{ width: `${(afazer / total) * 100}%` }} />
-                <div className="bg-amber-300" style={{ width: `${(fazendo / total) * 100}%` }} />
-                <div className="bg-emerald-400" style={{ width: `${(concluido / total) * 100}%` }} />
-              </>}
-            </div>
-            <p className="text-xs text-white/85">
-              {resumo.isLoading ? '…' : total === 0 ? 'Nenhuma atividade' : `${afazer} a fazer · ${fazendo} fazendo · ${concluido} concluído`}
-            </p>
+            {barra(c, 'bg-white/20', 'bg-white')}
+            <p className="text-xs text-white/85">{textoContagem(c)}</p>
           </div>
         </Link>
-        {/* Menu do quadro: editar, grupo, compartilhar e excluir */}
-        <button
-          type="button"
-          onClick={() => setMenuAberto(menuAberto === q.id ? null : q.id)}
-          className="absolute top-2.5 right-2.5 p-1.5 rounded-lg text-white/90 bg-white/10 hover:bg-white/25 backdrop-blur-sm"
-          aria-label={`Opções do quadro ${q.nome}`}
-          aria-haspopup="menu"
-          aria-expanded={menuAberto === q.id}
-        >
-          <EllipsisVertical size={16} />
-        </button>
-        {menuAberto === q.id && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setMenuAberto(null)} />
-            <div role="menu" className="absolute z-50 top-11 right-2.5 w-52 bg-white border border-slate-200 rounded-xl shadow-xl p-1">
-              {podeEditarQuadro(q) && (
-                <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onEditar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
-                  <Pencil size={14} /> Editar quadro
-                </button>
-              )}
-              <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onGrupoDoQuadro(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
-                <FolderInput size={14} /> Mover para grupo
-              </button>
-              {q.gerencia && (
-                <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onCompartilhar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
-                  <Share2 size={14} /> Compartilhar
-                </button>
-              )}
-              {q.gerencia && (
-                <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onExcluir(q); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50">
-                  <Trash2 size={14} /> Excluir quadro
-                </button>
-              )}
-              {!podeEditarQuadro(q) && !q.gerencia && <p className="px-3 py-2 text-xs text-slate-500">Compartilhado com você só para visualizar.</p>}
-            </div>
-          </>
-        )}
+        {menu(q, `${botaoMenuClaro} top-2.5 right-2.5`, 'top-11')}
+      </div>
+    );
+  };
+
+  // Compacto: faixa baixa com o nome e uma linha de progresso
+  const cartaoCompacto = (q: Quadro) => {
+    const c = contar(q);
+    return (
+      <div key={q.id} className="relative">
+        <Link to={`/tarefas?quadro=${q.id}`} style={{ backgroundImage: corDe(q.id) }} title={textoContagem(c)}
+          className="h-[68px] rounded-xl pl-3 pr-10 py-2.5 flex flex-col justify-between text-white shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all">
+          <div className="flex items-baseline justify-between gap-2 min-w-0">
+            <p className="text-sm font-bold truncate">{q.nome}</p>
+            <span className="text-[11px] font-semibold text-white/80 shrink-0 tabular-nums">{resumo.isLoading ? '…' : `${c.concluido}/${c.total}`}</span>
+          </div>
+          {barra(c, 'bg-white/20', 'bg-white')}
+        </Link>
+        {menu(q, `${botaoMenuClaro} top-1/2 -translate-y-1/2 right-2 !p-1`, 'top-14')}
+      </div>
+    );
+  };
+
+  // Lista: uma linha por quadro, com a cor numa marca à esquerda
+  const linha = (q: Quadro) => {
+    const c = contar(q);
+    return (
+      <li key={q.id} className="relative">
+        <Link to={`/tarefas?quadro=${q.id}`} className="flex items-center gap-3 pl-3 pr-12 py-2.5 hover:bg-slate-50 transition-colors">
+          <span className="w-1.5 self-stretch rounded-full shrink-0" style={{ backgroundImage: corDe(q.id) }} aria-hidden />
+          <div className="flex-1 min-w-0 space-y-0.5">
+            <p className="text-sm font-bold text-slate-800 truncate">{q.nome}</p>
+            {selos(q, false)}
+          </div>
+          <div className="hidden sm:flex items-center gap-3 shrink-0 text-[11px] font-semibold tabular-nums">
+            <span className="text-slate-500" title="A fazer">{c.afazer} a fazer</span>
+            <span className="text-amber-600" title="Fazendo">{c.fazendo} fazendo</span>
+            <span className="text-emerald-600" title="Concluído">{c.concluido} concluído</span>
+          </div>
+          <span className="sm:hidden text-[11px] font-semibold text-slate-400 tabular-nums shrink-0">{resumo.isLoading ? '…' : `${c.concluido}/${c.total}`}</span>
+          <div className="w-14 sm:w-24 shrink-0">{barra(c, 'bg-slate-200', 'bg-slate-400')}</div>
+        </Link>
+        {menu(q, 'absolute top-1/2 -translate-y-1/2 right-2 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100', 'top-11')}
+      </li>
+    );
+  };
+
+  const botaoCriar = (alto: string, texto: string) => (
+    <button type="button" onClick={onNovoQuadro} title={textoCriar}
+      className={`${alto} rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-rose-400 hover:text-rose-600 flex items-center justify-center gap-1.5 font-bold text-sm whitespace-nowrap`}>
+      <Plus size={18} /> {texto}
+    </button>
+  );
+
+  const conteudo = (quadros: Quadro[], grupo: Grupo | null) => {
+    const vazio = grupo && quadros.length === 0
+      ? <p className="col-span-full text-sm text-slate-400 py-1">Nenhum quadro neste grupo nesta visão. Use "Mover para grupo" no menu de um quadro.</p>
+      : null;
+    if (formato === 'lista') {
+      return (
+        <div className="space-y-2">
+          {quadros.length > 0 && <ul className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">{quadros.map(linha)}</ul>}
+          {vazio}
+          {grupo === null && (
+            <button type="button" onClick={onNovoQuadro} className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-slate-500 hover:text-rose-600">
+              <Plus size={16} /> {textoCriar}
+            </button>
+          )}
+        </div>
+      );
+    }
+    const compacto = formato === 'compacto';
+    return (
+      <div className={compacto
+        ? 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2.5'
+        : 'grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'}>
+        {quadros.map(compacto ? cartaoCompacto : cartao)}
+        {vazio}
+        {grupo === null && (compacto ? botaoCriar('h-[68px] !rounded-xl', 'Novo quadro') : botaoCriar('h-32 flex-col', textoCriar))}
       </div>
     );
   };
@@ -356,6 +450,14 @@ function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovo
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start">
+          <div className="flex items-center p-0.5 rounded-xl border border-slate-200 bg-white" role="group" aria-label="Formato dos quadros">
+            {([['cartoes', 'Cartões', LayoutGrid], ['compacto', 'Compacto', Rows3], ['lista', 'Lista', List]] as const).map(([v, rotulo, Icone]) => (
+              <button key={v} type="button" onClick={() => setFormato(v)} aria-pressed={formato === v} title={rotulo} aria-label={rotulo}
+                className={`h-8 w-9 flex items-center justify-center rounded-lg transition-colors ${formato === v ? 'bg-rose-50 text-rose-700' : 'text-slate-500 hover:text-slate-700'}`}>
+                <Icone size={16} />
+              </button>
+            ))}
+          </div>
           <button type="button" onClick={onNovoGrupo}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:border-rose-300 hover:text-rose-600">
             <FolderPlus size={16} /> Novo grupo
@@ -374,9 +476,8 @@ function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovo
       {secoes.map(({ grupo, quadros }) => {
         const id = grupo?.id ?? 'sem-grupo';
         const recolhido = recolhidos.has(id);
-        const ultimo = grupo === null;
         return (
-          <section key={id} aria-label={grupo ? `Grupo ${grupo.nome}` : 'Quadros sem grupo'} className="space-y-3">
+          <section key={id} aria-label={grupo ? `Grupo ${grupo.nome}` : 'Quadros sem grupo'} className={formato === 'cartoes' ? 'space-y-3' : 'space-y-2'}>
             {(temGrupos || grupo) && (
               <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
                 <button type="button" onClick={() => alternar(id)} aria-expanded={!recolhido}
@@ -394,20 +495,7 @@ function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovo
                 )}
               </div>
             )}
-            {!recolhido && (
-              <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {quadros.map(cartao)}
-                {grupo && quadros.length === 0 && (
-                  <p className="col-span-full text-sm text-slate-400">Nenhum quadro neste grupo nesta visão. Use "Mover para grupo" no menu de um quadro.</p>
-                )}
-                {ultimo && (
-                  <button type="button" onClick={onNovoQuadro}
-                    className="h-32 rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-rose-400 hover:text-rose-600 flex flex-col items-center justify-center gap-1 font-bold">
-                    <Plus size={22} /> {visao === 'pessoal' ? 'Criar quadro pessoal' : 'Criar quadro do negócio'}
-                  </button>
-                )}
-              </div>
-            )}
+            {!recolhido && conteudo(quadros, grupo)}
           </section>
         );
       })}

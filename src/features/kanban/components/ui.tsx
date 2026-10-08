@@ -34,6 +34,23 @@ export function useDensidade(): [Densidade, (d: Densidade) => void] {
   return [d, mudar];
 }
 
+/** Formato da tela inicial: cartões, compacto (faixas baixas) ou lista. Lembrado neste navegador. */
+export type FormatoQuadros = 'cartoes' | 'compacto' | 'lista';
+const CHAVE_FORMATO = 'jb-kanban-formato-quadros';
+export function useFormatoQuadros(): [FormatoQuadros, (f: FormatoQuadros) => void] {
+  const [f, setF] = useState<FormatoQuadros>(() => {
+    try {
+      const v = localStorage.getItem(CHAVE_FORMATO);
+      return v === 'compacto' || v === 'lista' ? v : 'cartoes';
+    } catch { return 'cartoes'; }
+  });
+  const mudar = (novo: FormatoQuadros) => {
+    setF(novo);
+    try { localStorage.setItem(CHAVE_FORMATO, novo); } catch { /* sem armazenamento: vale só nesta visita */ }
+  };
+  return [f, mudar];
+}
+
 function useEsc(ativo: boolean, onClose: () => void) {
   useEffect(() => {
     if (!ativo) return;
