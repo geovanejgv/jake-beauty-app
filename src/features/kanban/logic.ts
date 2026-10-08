@@ -3,11 +3,35 @@
 export type StatusTarefa = 'pendente' | 'em_andamento' | 'concluida';
 export type Criticidade = 'normal' | 'urgente' | 'critico';
 
+export type EscopoQuadro = 'negocio' | 'pessoal';
+export type PermissaoQuadro = 'editar' | 'ver';
+
 export interface Quadro {
   id: string;
   nome: string;
   created_at: string;
+  /** Do negócio (salão) ou pessoal (de uma pessoa). */
+  escopo?: EscopoQuadro;
+  dono_id?: string | null;
+  dono_nome?: string | null;
+  /** Permissão da pessoa logada; o banco é quem garante (RLS). */
+  permissao?: PermissaoQuadro;
+  /** Pode renomear, excluir e compartilhar. */
+  gerencia?: boolean;
+  /** Aparece na visão do negócio / na visão pessoal. */
+  no_negocio?: boolean;
+  no_pessoal?: boolean;
+  compartilhado?: boolean;
 }
+
+export const podeEditarQuadro = (q: Pick<Quadro, 'permissao'>) => q.permissao !== 'ver';
+
+/** Quadros de cada visão: negócio (do salão e pessoais compartilhados com ele) ou pessoal (meus e compartilhados comigo). */
+export function quadrosDaVisao(quadros: Quadro[], visao: EscopoQuadro): Quadro[] {
+  return quadros.filter((q) => (visao === 'negocio' ? q.no_negocio ?? q.escopo !== 'pessoal' : !!q.no_pessoal));
+}
+
+export type Compartilhamento = { id: string; quadro_id: string; destino: 'negocio' | 'pessoa'; user_id: string | null; permissao: PermissaoQuadro };
 
 export interface Coluna {
   id: string;

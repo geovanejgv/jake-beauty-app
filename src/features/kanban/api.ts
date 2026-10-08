@@ -2,7 +2,7 @@
 // (ver supabase/migrations/20261004120000_kanban.sql); cartões e sub-itens são gravados direto.
 import { supabase } from '../../lib/supabase';
 import { ErroPublico, mensagemDeErro } from '../../lib/seguranca/erros';
-import type { Coluna, ColunaEdicao, ItemTarefa, NovaTarefa, Pessoa, Quadro, Tarefa } from './logic';
+import type { Coluna, ColunaEdicao, Compartilhamento, EscopoQuadro, ItemTarefa, NovaTarefa, Pessoa, PermissaoQuadro, Quadro, Tarefa } from './logic';
 
 export const kanbanKeys = {
   base: ['kanban'] as const,
@@ -12,6 +12,7 @@ export const kanbanKeys = {
   tarefas: (quadroId: string) => ['kanban', 'tarefas', quadroId] as const,
   pessoas: ['kanban', 'pessoas'] as const,
   comentarios: (taskId: string) => ['kanban', 'comentarios', taskId] as const,
+  compartilhamentos: (quadroId: string) => ['kanban', 'compartilhamentos', quadroId] as const,
   eu: ['kanban', 'eu'] as const,
   clientes: ['kanban', 'clientes'] as const,
 };
@@ -37,8 +38,9 @@ export async function usuarioAtual(): Promise<string> {
   return rodar(supabase.rpc('kanban_usuario_atual')) as Promise<string>;
 }
 
+/** Quadros visíveis para a pessoa, com escopo, permissão e em qual visão aparecem. */
 export async function listarQuadros(): Promise<Quadro[]> {
-  return (await rodar(supabase.from('kanban_quadros').select('id, nome, created_at').order('created_at'))) as Quadro[];
+  return ((await rodar(supabase.rpc('kanban_quadros_visiveis'))) as Quadro[] | null) ?? [];
 }
 
 export async function listarColunas(): Promise<Coluna[]> {
@@ -140,10 +142,29 @@ export async function excluirItem(taskId: string, itemId: string): Promise<void>
 
 // ---------------------------------------------------------------- quadros
 
-export async function criarQuadro(nome: string, colunas: ColunaEdicao[]): Promise<string> {
+export async function criarQuadro(nome: string, colunas: ColunaEdicao[], escopo: EscopoQuadro = 'negocio'): Promise<string> {
   return (await rodar(
-    supabase.rpc('kanban_criar_quadro', { p_nome: nome.trim(), p_colunas: colunas.map((c) => ({ nome: c.nome.trim() })) }),
+    supabase.rpc('kanban_criar_quadro', { p_nome: nome.trim(), p_colunas: colunas.map((c) => ({ nome: c.nome.trim() })), p_escopo: escopo }),
   )) as string;
+}
+
+// ---------------------------------------------------------------- compartilhamento
+
+export async function listarCompartilhamentos(quadroId: string): Promise<Compartilhamento[]> {
+  return (await rodar(
+    supabase.from('kanban_compartilhamentos').select('id, quadro_id, destino, user_id, permissao').eq('quadro_id', quadroId).order('created_at'),
+  )) as Compartilhamento[];
+}
+
+/** destino 'negocio' (toda a equipe, só para quadro pessoal) ou 'pessoa' (espaço pessoal de alguém). */
+export async function compartilhar(quadroId: string, destino: 'negocio' | 'pessoa', userId: string | null, permissao: PermissaoQuadro): Promise<void> {
+  await rodar(supabase.rpc('kanban_compartilhar', { p_quadro: quadroId, p_destino: destino, p_user: userId, p_permissao: permissao }));
+}
+
+/** Remoção direta na tabela: a política de delete só deixa o dono do quadro (ou a administradora, no negócio). */
+export async function removerCompartilhamento(id: string): Promise<void> {
+  const removidos = await rodar(supabase.from('kanban_compartilhamentos').delete().eq('id', id).select('id'));
+  if (!removidos || removidos.length === 0) throw new Error('Compartilhamento não encontrado.');
 }
 
 export async function salvarQuadro(id: string, nome: string, colunas: ColunaEdicao[]): Promise<void> {

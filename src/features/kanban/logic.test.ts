@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   FILTROS_PADRAO,
+  podeEditarQuadro,
+  quadrosDaVisao,
   conclusaoParaTimestamp,
   edicaoParaBanco,
   estaAtrasada,
@@ -204,5 +206,28 @@ describe('validações', () => {
     expect(validarQuadro('Q', [{ nome: 'a'.repeat(26) }, { nome: 'b' }])).not.toBeNull();
     expect(validarQuadro('a'.repeat(31), [{ nome: 'a' }, { nome: 'b' }])).not.toBeNull();
     expect(validarQuadro('Q', [{ nome: 'a' }, { nome: 'b' }])).toBeNull();
+  });
+});
+
+describe('visões do Kanban (negócio e pessoal)', () => {
+  const q = (x: Partial<import('./logic').Quadro>) => ({ id: 'q', nome: 'Q', created_at: '', ...x });
+  it('separa os quadros por visão, incluindo os compartilhados', () => {
+    const lista = [
+      q({ id: 'neg', escopo: 'negocio', no_negocio: true, no_pessoal: false }),
+      q({ id: 'meu', escopo: 'pessoal', no_negocio: false, no_pessoal: true }),
+      q({ id: 'meuCompart', escopo: 'pessoal', no_negocio: true, no_pessoal: true }),
+      q({ id: 'negNoMeu', escopo: 'negocio', no_negocio: true, no_pessoal: true }),
+    ];
+    expect(quadrosDaVisao(lista, 'negocio').map((x) => x.id)).toEqual(['neg', 'meuCompart', 'negNoMeu']);
+    expect(quadrosDaVisao(lista, 'pessoal').map((x) => x.id)).toEqual(['meu', 'meuCompart', 'negNoMeu']);
+  });
+  it('quadro sem dados de escopo (antigo) fica no negócio', () => {
+    expect(quadrosDaVisao([q({})], 'negocio')).toHaveLength(1);
+    expect(quadrosDaVisao([q({})], 'pessoal')).toHaveLength(0);
+  });
+  it('permissão de edição', () => {
+    expect(podeEditarQuadro({ permissao: 'ver' })).toBe(false);
+    expect(podeEditarQuadro({ permissao: 'editar' })).toBe(true);
+    expect(podeEditarQuadro({})).toBe(true);
   });
 });
