@@ -1,5 +1,5 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import Dashboard from './pages/Dashboard';
 import Agenda from './pages/Agenda';
@@ -16,14 +16,18 @@ import MeuPainel from './pages/MeuPainel';
 import PagamentoProfissionais from './pages/PagamentoProfissionais';
 import RelatorioComissoes from './pages/RelatorioComissoes';
 import ImprimirComissoes from './pages/ImprimirComissoes';
+import Plano from './pages/Plano';
+import AdminGlobal from './pages/AdminGlobal';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { moduloVisivel, rotaInicial, type IdModulo } from './features/acesso/modulos';
+import { moduloLiberadoNoPlano } from './features/plano/plano';
 
 /** Negação por padrão (AUZ-01): sem sessão vai para /login; sem perfil ativo não entra. */
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, acesso } = useAuth();
   if (loading || (user && acesso === 'carregando')) return <div className="h-screen flex items-center justify-center">Carregando...</div>;
   if (!user) return <Navigate to="/login" />;
+  if (acesso === 'inativo') return <EstabelecimentoInativo />;
   if (acesso !== 'liberado') return <AcessoNaoLiberado />;
   return <>{children}</>;
 }
@@ -36,7 +40,25 @@ function RotaModulo({ id, children }: { id: IdModulo; children: React.ReactNode 
   const { perfil } = useAuth();
   if (!perfil) return null;
   if (!moduloVisivel(id, perfil.role, perfil.preferencias_ui)) return <Navigate to={rotaInicial(perfil.role, perfil.preferencias_ui)} replace />;
+  // Demonstração vencida: telas dos módulos pagos levam à página do plano (o banco também trava a gravação).
+  if (!moduloLiberadoNoPlano(id, perfil.estabelecimento)) return <Navigate to="/plano" replace />;
   return <>{children}</>;
+}
+
+/** Só quem está na lista de administradores globais; a tela confere o MFA e o banco confere de novo. */
+function RotaAdminGlobal({ children }: { children: React.ReactNode }) {
+  const { adminGlobal } = useAuth();
+  return adminGlobal ? <>{children}</> : <Navigate to="/" replace />;
+}
+
+/** Estabelecimento desativado ou excluído: encerra a sessão e explica no login (RF-17, RF-18). */
+function EstabelecimentoInativo() {
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+  useEffect(() => {
+    void signOut().finally(() => navigate('/login?erro=estabelecimento-inativo', { replace: true }));
+  }, [signOut, navigate]);
+  return <div className="h-screen flex items-center justify-center">Encerrando a sessão...</div>;
 }
 
 function Inicio() {
@@ -98,6 +120,8 @@ export default function App() {
             <Route path="pacotes" element={<RotaModulo id="pacotes"><Pacotes /></RotaModulo>} />
             <Route path="relatorios/comissoes" element={<RotaModulo id="relatorio_comissoes"><RelatorioComissoes /></RotaModulo>} />
             <Route path="configuracoes" element={<RotaModulo id="configuracoes"><Configuracoes /></RotaModulo>} />
+            <Route path="plano" element={<RotaModulo id="plano"><Plano /></RotaModulo>} />
+            <Route path="admin-global" element={<RotaAdminGlobal><AdminGlobal /></RotaAdminGlobal>} />
           </Route>
 
           {/* Relatório para imprimir/salvar em PDF: página limpa, sem o menu */}

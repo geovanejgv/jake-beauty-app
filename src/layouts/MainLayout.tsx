@@ -1,17 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, ChevronLeft, ChevronRight, ChevronDown, SquareKanban, Plus, SquareCheckBig, CalendarPlus, UserPlus } from 'lucide-react';
+import { Menu, X, ChevronLeft, ChevronRight, ChevronDown, SquareKanban, Plus, SquareCheckBig, CalendarPlus, UserPlus, Lock, Building2, Gem } from 'lucide-react';
 import AlterarSenhaModal from '../components/AlterarSenhaModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { GRUPOS, ROTULO_PAPEL, moduloDaRota, modulosVisiveis, type IdGrupo, type Modulo } from '../features/acesso/modulos';
+import { demoExpirada, diasRestantesDemo, moduloLiberadoNoPlano } from '../features/plano/plano';
 
 const CHAVE_GRUPOS = 'jb-menu-grupos';
 
 export default function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { perfil, user } = useAuth();
+  const { perfil, user, adminGlobal } = useAuth();
   // Aplica o tema salvo ao abrir o portal; a troca fica em Configurações.
   useTheme();
 
@@ -21,6 +22,12 @@ export default function MainLayout() {
 
   // Primeiro acesso com senha temporária: a troca é obrigatória antes de usar o portal.
   const trocaObrigatoria = user?.user_metadata?.trocar_senha === true;
+  // Entrou pelo convite por e-mail (nova administradora): define a primeira senha.
+  const definirSenha = user?.user_metadata?.definir_senha === true;
+  const estabelecimento = perfil?.estabelecimento ?? null;
+  const demoVencida = !!estabelecimento && demoExpirada(estabelecimento);
+  const diasDemo = estabelecimento ? diasRestantesDemo(estabelecimento) : null;
+  const liberado = (m: Modulo) => moduloLiberadoNoPlano(m.id, estabelecimento);
 
   const papel = perfil?.role ?? 'professional';
   const modulos = useMemo(() => modulosVisiveis(papel, perfil?.preferencias_ui ?? { ocultar: [] }), [papel, perfil?.preferencias_ui]);
@@ -85,10 +92,12 @@ export default function MainLayout() {
     const link = (m: Modulo, recuado: boolean) => {
       const Icon = m.icone;
       const isActive = ativo(m);
+      // Demonstração vencida: o item fica com cadeado e leva à página do plano.
+      const bloqueado = !liberado(m);
       return (
         <Link
           key={m.id}
-          to={m.caminho}
+          to={bloqueado ? '/plano' : m.caminho}
           title={compacto ? m.rotulo : ''}
           aria-current={isActive ? 'page' : undefined}
           onClick={() => setIsMobileMenuOpen(false)}
@@ -97,12 +106,21 @@ export default function MainLayout() {
           } ${compacto ? 'justify-center py-3' : `${recuado ? 'pl-9 pr-3' : 'px-4'} py-2.5 space-x-3`}`}
         >
           <Icon size={recuado ? 18 : 22} className={`shrink-0 ${isActive ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
-          {!compacto && <span className={`text-sm leading-tight ${recuado ? 'min-w-0' : 'whitespace-nowrap'}`}>{m.rotulo}</span>}
+          {!compacto && <span className={`text-sm leading-tight ${recuado ? 'min-w-0' : 'whitespace-nowrap'} ${bloqueado ? 'opacity-60' : ''}`}>{m.rotulo}</span>}
+          {!compacto && bloqueado && <Lock size={14} className="ml-auto shrink-0 text-slate-400" aria-label="Requer plano" />}
         </Link>
       );
     };
 
-    return GRUPOS.map((g) => {
+    const linkGlobal = adminGlobal && (
+      <Link key="admin-global" to="/admin-global" title={compacto ? 'Administração global' : ''} onClick={() => setIsMobileMenuOpen(false)}
+        aria-current={location.pathname.startsWith('/admin-global') ? 'page' : undefined}
+        className={`flex items-center rounded-xl transition-all duration-200 group ${location.pathname.startsWith('/admin-global') ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50 hover:text-rose-500'} ${compacto ? 'justify-center py-3' : 'px-4 py-2.5 space-x-3'}`}>
+        <Building2 size={22} className="shrink-0" />
+        {!compacto && <span className="text-sm leading-tight whitespace-nowrap">Administração global</span>}
+      </Link>
+    );
+    return [...GRUPOS.map((g) => {
       const itens = modulos.filter((m) => m.grupo === g.id);
       if (!itens.length) return null;
       if (!g.rotulo || compacto) {
@@ -126,8 +144,18 @@ export default function MainLayout() {
           {aberto && <div className="space-y-1">{itens.map((m) => link(m, true))}</div>}
         </div>
       );
-    });
+    }), linkGlobal];
   };
+
+  // Faixa da demonstração (RF-10): dias restantes; vencida, explica o que segue funcionando.
+  const faixaPlano = estabelecimento?.plano === 'demonstracao' && estabelecimento.demo_expira_em && (
+    <Link to="/plano" className={`shrink-0 flex items-center justify-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold text-center ${demoVencida ? 'bg-red-50 text-red-700 border-b border-red-100' : 'bg-amber-50 text-amber-800 border-b border-amber-100'}`}>
+      <Gem size={14} className="shrink-0" />
+      {demoVencida
+        ? 'A demonstração terminou: agenda, clientes e cadastros seguem funcionando. Veja como liberar o restante.'
+        : `Demonstração com acesso completo: ${diasDemo === 1 ? 'falta 1 dia' : `faltam ${diasDemo} dias`}.`}
+    </Link>
+  );
 
   const identificacao = perfil && (
     <div className="min-w-0">
@@ -241,11 +269,15 @@ export default function MainLayout() {
           </aside>
         </div>
 
+        {faixaPlano}
+
         {/* Tela que renderiza as páginas (Agenda, Dashboard, etc) */}
         <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 relative">
           <Outlet />
         </main>
-        {trocaObrigatoria && <AlterarSenhaModal obrigatoria onClose={() => undefined} />}
+        {definirSenha
+          ? <AlterarSenhaModal obrigatoria definir onClose={() => undefined} />
+          : trocaObrigatoria && <AlterarSenhaModal obrigatoria onClose={() => undefined} />}
       </div>
     </div>
   );

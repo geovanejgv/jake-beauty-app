@@ -13,7 +13,7 @@ describe('preferências de interface', () => {
     expect(moduloVisivel('agenda', 'admin', prefs)).toBe(true);
   });
   it('Configurações nunca some', () => {
-    const tudo = normalizarPreferencias({ ocultar: ['resumo', 'meu_painel', 'agenda', 'tarefas', 'clientes', 'relatorio_comissoes'] });
+    const tudo = normalizarPreferencias({ ocultar: ['resumo', 'meu_painel', 'agenda', 'tarefas', 'clientes', 'relatorio_comissoes', 'plano'] });
     expect(modulosVisiveis('professional', tudo).map((m) => m.id)).toEqual(['configuracoes']);
     expect(rotaInicial('professional', tudo)).toBe('/configuracoes');
   });

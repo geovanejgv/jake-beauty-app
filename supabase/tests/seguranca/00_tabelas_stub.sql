@@ -53,3 +53,9 @@ create table public.manual_incomes (id uuid primary key default gen_random_uuid(
 create table public.personal_finances (id uuid primary key default gen_random_uuid(), description text, amount numeric, finance_date date);
 -- Supabase concede as tabelas a anon/authenticated/service_role por padrão; o RLS é que barra.
 grant all on all tables in schema public to anon, authenticated, service_role;
+
+-- Claims do token (auth.jwt() do Supabase): usado para o nível de autenticação (aal).
+create or replace function auth.jwt() returns jsonb language sql stable as $$
+  select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb
+$$;
+grant execute on function auth.jwt() to anon, authenticated, service_role;

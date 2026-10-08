@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, KeyRound, LogOut, Moon, Settings, SlidersHorizontal, Sun, UserCircle } from 'lucide-react';
 import AlterarSenhaModal from '../components/AlterarSenhaModal';
+import SegurancaMfa from '../components/SegurancaMfa';
 import { useTheme } from '../hooks/useTheme';
 import { Chave, ConfigComissoes } from '../features/comissoes/ConfigComissoes';
 import { useAuth } from '../contexts/AuthContext';
@@ -70,6 +71,8 @@ export default function Configuracoes() {
           </button>
         </div>
       </section>
+
+      <div id="seguranca"><SegurancaMfa onAviso={setAviso} /></div>
 
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4" aria-labelledby="titulo-interface">
         <div className="flex items-center gap-2">

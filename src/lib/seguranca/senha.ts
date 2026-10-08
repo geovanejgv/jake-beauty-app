@@ -21,6 +21,15 @@ export function validarTrocaSenha({ atual, nova, confirmacao }: DadosTrocaSenha)
   return null;
 }
 
+/** Primeira senha de quem entrou pelo convite por e-mail (não há senha atual). */
+export function validarNovaSenha({ nova, confirmacao }: { nova: string; confirmacao: string }): string | null {
+  if ([...nova].length < SENHA_MIN) return `A nova senha precisa ter pelo menos ${SENHA_MIN} caracteres.`;
+  if (new TextEncoder().encode(nova).length > SENHA_MAX_BYTES) return 'A nova senha é longa demais (máximo de 72 caracteres simples).';
+  if (nova.trim() !== nova) return 'A nova senha não pode começar nem terminar com espaço.';
+  if (nova !== confirmacao) return 'A confirmação não confere com a nova senha.';
+  return null;
+}
+
 /** Mensagens do Supabase Auth na troca de senha que já são seguras para a tela. */
 export function mensagemErroAuth(codigo: string | undefined): string | null {
   switch (codigo) {

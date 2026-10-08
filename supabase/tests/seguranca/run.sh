@@ -15,6 +15,7 @@ rodar() {
   for m in "$DIR"/../../migrations/*.sql; do
     psql -d "$banco" -q -v ON_ERROR_STOP=1 -f "$m"
   done
+  psql -d "$banco" -q -v ON_ERROR_STOP=1 -f "$DIR/01_estabelecimento_teste.sql"
   psql -d "$banco" -q -At -v ON_ERROR_STOP=1 -f "$DIR/$teste"
 }
 
@@ -23,4 +24,5 @@ rodar "${DB}_gestao" gestao.test.sql
 rodar "${DB}_pacotes" pacotes.test.sql
 rodar "${DB}_kanban_pessoal" kanban_pessoal.test.sql
 rodar "${DB}_kanban_visao" kanban_visao_grupos.test.sql
+rodar "${DB}_estabelecimentos" estabelecimentos.test.sql
 echo "Testes de segurança do banco: OK"
