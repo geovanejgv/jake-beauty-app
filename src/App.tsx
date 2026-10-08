@@ -6,6 +6,7 @@ import Agenda from './pages/Agenda';
 import Clientes from './pages/Clientes';
 import Financeiro from './pages/Financeiro';
 import PDV from './pages/PDV';
+import Pacotes from './pages/Pacotes';
 import Login from './pages/Login';
 import Tarefas from './pages/Tarefas';
 import Configuracoes from './pages/Configuracoes';
@@ -94,6 +95,7 @@ export default function App() {
             <Route path="financas" element={<RotaModulo id="financas"><Financeiro /></RotaModulo>} />
             <Route path="pagamentos" element={<RotaModulo id="pagamentos"><PagamentoProfissionais /></RotaModulo>} />
             <Route path="pdv" element={<RotaModulo id="pdv"><PDV /></RotaModulo>} />
+            <Route path="pacotes" element={<RotaModulo id="pacotes"><Pacotes /></RotaModulo>} />
             <Route path="relatorios/comissoes" element={<RotaModulo id="relatorio_comissoes"><RelatorioComissoes /></RotaModulo>} />
             <Route path="configuracoes" element={<RotaModulo id="configuracoes"><Configuracoes /></RotaModulo>} />
           </Route>

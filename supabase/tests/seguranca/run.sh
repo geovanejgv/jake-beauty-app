@@ -5,19 +5,20 @@
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 DB="${SEGURANCA_TEST_DB:-seguranca_test}"
-psql -qc "drop database if exists $DB" -c "create database $DB"
-psql -d "$DB" -q -v ON_ERROR_STOP=1 -f "$DIR/../kanban/00_supabase_stub.sql"
-psql -d "$DB" -q -v ON_ERROR_STOP=1 -f "$DIR/00_tabelas_stub.sql"
-for m in "$DIR"/../../migrations/*.sql; do
-  psql -d "$DB" -q -v ON_ERROR_STOP=1 -f "$m"
-done
-psql -d "$DB" -q -At -v ON_ERROR_STOP=1 -f "$DIR/seguranca.test.sql"
-# Banco novo para os testes da gestão do salão (independentes dos anteriores).
-psql -qc "drop database if exists ${DB}_gestao" -c "create database ${DB}_gestao"
-psql -d "${DB}_gestao" -q -v ON_ERROR_STOP=1 -f "$DIR/../kanban/00_supabase_stub.sql"
-psql -d "${DB}_gestao" -q -v ON_ERROR_STOP=1 -f "$DIR/00_tabelas_stub.sql"
-for m in "$DIR"/../../migrations/*.sql; do
-  psql -d "${DB}_gestao" -q -v ON_ERROR_STOP=1 -f "$m"
-done
-psql -d "${DB}_gestao" -q -At -v ON_ERROR_STOP=1 -f "$DIR/gestao.test.sql"
+
+# Banco novo com o stub e todas as migrações; cada arquivo de teste roda no seu.
+rodar() {
+  local banco="$1" teste="$2"
+  psql -qc "drop database if exists $banco" -c "create database $banco"
+  psql -d "$banco" -q -v ON_ERROR_STOP=1 -f "$DIR/../kanban/00_supabase_stub.sql"
+  psql -d "$banco" -q -v ON_ERROR_STOP=1 -f "$DIR/00_tabelas_stub.sql"
+  for m in "$DIR"/../../migrations/*.sql; do
+    psql -d "$banco" -q -v ON_ERROR_STOP=1 -f "$m"
+  done
+  psql -d "$banco" -q -At -v ON_ERROR_STOP=1 -f "$DIR/$teste"
+}
+
+rodar "$DB" seguranca.test.sql
+rodar "${DB}_gestao" gestao.test.sql
+rodar "${DB}_pacotes" pacotes.test.sql
 echo "Testes de segurança do banco: OK"

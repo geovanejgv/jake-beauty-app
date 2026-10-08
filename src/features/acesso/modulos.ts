@@ -3,7 +3,7 @@
 // do banco (AUZ-07); por isso cada módulo de administradora também é protegido lá.
 import {
   BarChart3, CalendarDays, ClipboardList, DollarSign, HandCoins, LayoutDashboard, Scissors,
-  Settings, ShoppingCart, SquareKanban, Store, UserCog, Users, Wallet, type LucideIcon,
+  Package, Settings, ShoppingCart, SquareKanban, Store, UserCog, Users, Wallet, type LucideIcon,
 } from 'lucide-react';
 
 export type Papel = 'admin' | 'professional';
@@ -18,7 +18,7 @@ export type IdGrupo = 'principal' | 'estabelecimento' | 'financeiro' | 'relatori
 export type IdModulo =
   | 'resumo' | 'meu_painel' | 'agenda' | 'tarefas'
   | 'clientes' | 'profissionais' | 'servicos'
-  | 'financas' | 'pagamentos' | 'pdv'
+  | 'financas' | 'pagamentos' | 'pdv' | 'pacotes'
   | 'relatorio_comissoes'
   | 'configuracoes';
 
@@ -66,6 +66,8 @@ export const MODULOS: Modulo[] = [
     descricao: 'Comissões, gorjetas, fechamentos e assinaturas.' },
   { id: 'pdv', rotulo: 'Checkout PDV', caminho: '/pdv', icone: ShoppingCart, grupo: 'financeiro', papeis: ADMIN, ocultavel: true,
     descricao: 'Finalização de atendimento e forma de pagamento.' },
+  { id: 'pacotes', rotulo: 'Pacotes', caminho: '/pacotes', icone: Package, grupo: 'financeiro', papeis: ADMIN, ocultavel: true,
+    descricao: 'Venda de pacotes de sessões, saldo, validade e extrato.' },
   { id: 'relatorio_comissoes', rotulo: 'Relatório de Comissões', caminho: '/relatorios/comissoes', icone: ClipboardList, grupo: 'relatorios', papeis: TODOS, ocultavel: true,
     descricao: 'Atendimentos com valor bruto, comissão e líquido, com PDF.' },
   { id: 'configuracoes', rotulo: 'Configurações', caminho: '/configuracoes', icone: Settings, grupo: 'sistema', papeis: TODOS, ocultavel: false,

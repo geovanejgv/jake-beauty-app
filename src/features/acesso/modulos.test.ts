@@ -22,7 +22,7 @@ describe('preferências de interface', () => {
 describe('papéis', () => {
   it('profissional não vê módulos da administradora', () => {
     const ids = modulosVisiveis('professional', { ocultar: [] }).map((m) => m.id);
-    for (const id of ['resumo', 'profissionais', 'servicos', 'financas', 'pagamentos', 'pdv'] as const) expect(ids).not.toContain(id);
+    for (const id of ['resumo', 'profissionais', 'servicos', 'financas', 'pagamentos', 'pdv', 'pacotes'] as const) expect(ids).not.toContain(id);
     expect(ids).toContain('meu_painel');
     expect(ids).toContain('agenda');
   });

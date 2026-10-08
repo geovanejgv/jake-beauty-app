@@ -1,13 +1,39 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { brl, dataHoraBR } from '../lib/formatos';
+import { brl, dataHoraBR, dataLocal, isoParaBR } from '../lib/formatos';
+import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
+import { COR_SITUACAO, ROTULO_SITUACAO, agruparSaldos, situacaoPacote } from '../features/pacotes/logic';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
-import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package } from 'lucide-react';
 
 const TIPOS_HISTORICO: Record<string, string> = { tecnico: 'Técnico', alergia: 'Alergia', preferencia: 'Preferência', observacao: 'Observação' };
+
+/** Pacotes da cliente: saldo por serviço e validade (profissional vê sem valores). */
+function PacotesCliente({ clienteId }: { clienteId: string }) {
+  const hoje = dataLocal();
+  const { data: linhas = [], isLoading } = useQuery({ queryKey: pacotesKeys.saldos(clienteId, true), queryFn: () => listarSaldos(clienteId, true) });
+  const pacotes = agruparSaldos(linhas).map((p) => ({ ...p, situacao: situacaoPacote(p, hoje) }));
+  if (isLoading) return <p className="text-sm text-slate-400 text-center py-6">Carregando...</p>;
+  if (!pacotes.length) return <p className="text-sm text-slate-400 text-center py-8">Nenhum pacote para esta cliente.</p>;
+  return (
+    <div className="space-y-3">
+      {pacotes.map((p) => (
+        <div key={p.pacote_id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-2">
+          <div className="flex justify-between items-start gap-2">
+            <div><h4 className="font-bold text-slate-800">{p.nome}</h4><p className="text-xs text-slate-500">Validade {isoParaBR(p.validade)}</p></div>
+            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${COR_SITUACAO[p.situacao]}`}>{ROTULO_SITUACAO[p.situacao]}</span>
+          </div>
+          <ul className="text-sm text-slate-600 space-y-0.5">
+            {p.itens.map((i) => <li key={i.item_id}>{i.servico_nome}: <strong>{i.sessoes - i.usadas - i.faltas}</strong> de {i.sessoes} restantes{i.reservadas ? `, ${i.reservadas} agendada(s)` : ''}{i.faltas ? `, ${i.faltas} falta(s)` : ''}</li>)}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** Histórico técnico da cliente (fórmulas, alergias, preferências): visível à equipe, autor gravado pelo banco. */
 function HistoricoTecnico({ clienteId }: { clienteId: string }) {
@@ -64,7 +90,7 @@ export default function Clientes() {
   // Profissional: só nome e contato mascarado (view clientes_visiveis), sem editar (risco de fuga de base).
   const ehAdmin = perfil?.role === 'admin';
   const [searchParams, setSearchParams] = useSearchParams();
-  const [abaHistorico, setAbaHistorico] = useState<'atendimentos' | 'tecnico'>('atendimentos');
+  const [abaHistorico, setAbaHistorico] = useState<'atendimentos' | 'tecnico' | 'pacotes'>('atendimentos');
   const [searchTerm, setSearchTerm] = useState('');
   
   const [showAddModal, setShowAddModal] = useState(false);
@@ -316,10 +342,11 @@ export default function Clientes() {
             <div className="flex border-b border-slate-100 px-6" role="tablist">
               <button type="button" role="tab" aria-selected={abaHistorico === 'atendimentos'} onClick={() => setAbaHistorico('atendimentos')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'atendimentos' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><Scissors size={14} /> Atendimentos</button>
               <button type="button" role="tab" aria-selected={abaHistorico === 'tecnico'} onClick={() => setAbaHistorico('tecnico')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'tecnico' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><NotebookPen size={14} /> Histórico técnico</button>
+              <button type="button" role="tab" aria-selected={abaHistorico === 'pacotes'} onClick={() => setAbaHistorico('pacotes')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'pacotes' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><Package size={14} /> Pacotes</button>
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
-              {abaHistorico === 'tecnico' ? <HistoricoTecnico clienteId={selectedHistoryClient.id} /> : clientAppointments.length === 0 ? (
+              {abaHistorico === 'pacotes' ? <PacotesCliente clienteId={selectedHistoryClient.id} /> : abaHistorico === 'tecnico' ? <HistoricoTecnico clienteId={selectedHistoryClient.id} /> : clientAppointments.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">Nenhum atendimento registrado.</div>
               ) : (
                 clientAppointments.map((apt: any) => {

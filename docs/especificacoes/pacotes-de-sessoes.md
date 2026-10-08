@@ -1,6 +1,20 @@
 # Especificação de implantação: pacotes de sessões
 
-Versão 1.0, 2026-10-08. Status: **proposta, não implementada**. Nada aqui foi aplicado em produção.
+Versão 1.1, 2026-10-08. Status: **fase 1 implementada no código** (migração `supabase/migrations/20261013120000_pacotes.sql`, ainda **não aplicada em produção**). Fases 2 a 4: propostas.
+
+## Decisões da administradora (2026-10-08)
+
+| Tema | Decisão | Como ficou na fase 1 |
+|---|---|---|
+| Validade | 12 meses, renovável no sistema | Padrão de 12 meses na venda; `renovar_pacote` com motivo e extrato |
+| Antecedência para cancelar | Não implementar | Cancelar o agendamento sempre libera a reserva |
+| Taxa ao profissional na falta | Não implementar | Falta desconta a sessão, sem comissão para ninguém |
+| Base da comissão | Percentual definido na venda, pago conforme a execução | `comissao_percentual` por serviço do pacote, aplicado ao valor da sessão no fechamento de quem executou |
+| Reembolso | Não disponível | Sem fluxo de reembolso; "anular" só corrige venda lançada por engano, sem uso |
+| Nota fiscal | Na venda | Faturamento do pacote no Resumo na data da venda; sessão abatida não conta de novo |
+| Multa de desistência | Sem multa | Não há multa no sistema |
+
+Fora da fase 1 (seguem como proposta): uso por terceiro e transferência (2.4), congelamento (2.2), intervalo mínimo entre sessões (M3), parcelamento com liberação proporcional (M4), estorno de baixa (M6, hoje basta voltar o status do atendimento), termo com hash (M7), rotina diária com alertas automáticos (a fase 1 calcula vencimento na leitura e destaca "vencem em 30 dias") e WhatsApp automático (fase 4).
 
 Escopo: venda de pacotes, saldo de sessões, validade, falta (no-show), uso por terceiro, notificações e comissão na execução, integrados à agenda, ao checkout (PDV), ao fechamento de comissões assinado e às finanças que já existem.
 

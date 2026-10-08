@@ -16,6 +16,10 @@ describe('cálculo de comissão (mesma conta do teste do banco)', () => {
       { descontarTaxa: false, descontarMaterial: false, taxas: { credito: 3.49 } });
     expect(c).toMatchObject({ valorTaxa: 0, material: 0, base: 100, comissao: 50 });
   });
+  it('sessão de pacote usa a taxa congelada do pacote (mesma conta do teste do banco)', () => {
+    const c = calcularComissao({ valor_cobrado: 90, comissao_percentual: 40, gorjeta: 0, payment_method: 'pacote', custo_material: 0, taxa_percentual: 1.94 }, regras);
+    expect(c).toMatchObject({ taxaPercentual: 1.94, valorTaxa: 1.75, base: 88.25, comissao: 35.3 });
+  });
   it('base nunca fica negativa', () => {
     expect(calcularComissao({ valor_cobrado: 5, comissao_percentual: 50, gorjeta: 0, payment_method: null, custo_material: 30 }, regras).base).toBe(0);
   });

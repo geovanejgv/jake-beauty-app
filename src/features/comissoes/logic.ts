@@ -3,7 +3,7 @@
 
 export type StatusAgendamento = 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
 export type StatusFechamento = 'aguardando_conferencia' | 'contestado' | 'assinado_pago' | 'cancelado';
-export type FormaPagamento = 'pix' | 'dinheiro' | 'debito' | 'credito' | 'cartao' | 'outro';
+export type FormaPagamento = 'pix' | 'dinheiro' | 'debito' | 'credito' | 'cartao' | 'outro' | 'pacote';
 
 export const ROTULO_STATUS_AGENDAMENTO: Record<StatusAgendamento, string> = {
   scheduled: 'Pendente', confirmed: 'Confirmado', completed: 'Concluído', cancelled: 'Cancelado', no_show: 'Não compareceu',
@@ -21,7 +21,7 @@ export const COR_STATUS_FECHAMENTO: Record<StatusFechamento, string> = {
 };
 
 export const ROTULO_FORMA: Record<FormaPagamento, string> = {
-  pix: 'PIX', dinheiro: 'Dinheiro', debito: 'Débito', credito: 'Crédito', cartao: 'Cartão', outro: 'Outro',
+  pix: 'PIX', dinheiro: 'Dinheiro', debito: 'Débito', credito: 'Crédito', cartao: 'Cartão', outro: 'Outro', pacote: 'Pacote',
 };
 
 export type Regras = { descontarTaxa: boolean; descontarMaterial: boolean; taxas: Partial<Record<FormaPagamento, number>> };
@@ -32,6 +32,8 @@ export type EntradaCalculo = {
   gorjeta: number | null;
   payment_method: string | null;
   custo_material: number | null;
+  /** Taxa congelada do pacote (sessão de pacote); nos demais, vale a taxa da forma de pagamento. */
+  taxa_percentual?: number | null;
 };
 
 export type Calculo = {
@@ -44,7 +46,7 @@ const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 /** Mesma conta do banco: base = bruto - taxa - material (mínimo 0); comissão = base x %; líquido = comissão + gorjeta. */
 export function calcularComissao(e: EntradaCalculo, regras: Regras): Calculo {
   const bruto = r2(Number(e.valor_cobrado ?? 0));
-  const taxaPercentual = regras.descontarTaxa ? Number(regras.taxas[(e.payment_method ?? '') as FormaPagamento] ?? 0) : 0;
+  const taxaPercentual = regras.descontarTaxa ? Number(e.taxa_percentual ?? regras.taxas[(e.payment_method ?? '') as FormaPagamento] ?? 0) : 0;
   const valorTaxa = r2((bruto * taxaPercentual) / 100);
   const material = regras.descontarMaterial ? r2(Number(e.custo_material ?? 0)) : 0;
   const base = Math.max(r2(bruto - valorTaxa - material), 0);

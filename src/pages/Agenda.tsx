@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus, Users, BadgeCheck } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus, Users, BadgeCheck, Package } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { useNetworkState } from 'react-use';
@@ -11,7 +11,9 @@ import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '
 import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
 import { mensagemAgenda } from '../features/agenda/logic';
 import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
-import { brl, lerValor, valorParaCampo } from '../lib/formatos';
+import { brl, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
+import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
+import { itemParaAbater } from '../features/pacotes/logic';
 
 /** Erro de agenda: conflito de horário vem com mensagem própria; o resto, genérica com código. */
 const erroAgenda = (e: unknown, padrao: string, origem: string) => mensagemAgenda(e) ?? mensagemDeErro(e, padrao, origem);
@@ -47,6 +49,7 @@ export default function Agenda() {
   const [novoServico, setNovoServico] = useState('');
   const [novoValor, setNovoValor] = useState('');
   const [novaDuracao, setNovaDuracao] = useState('45');
+  const [usarPacote, setUsarPacote] = useState(true);
   const [novoConfirmado, setNovoConfirmado] = useState(false);
   const [blockProf, setBlockProf] = useState('');
   const [editProf, setEditProf] = useState('');
@@ -82,7 +85,7 @@ export default function Agenda() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('appointments')
-        .select(`id, start_time, end_time, status, is_block, block_reason, whatsapp_sent_at, return_reminder_date, return_reminder_sent, return_reminder_sent_at, is_manual_reminder, is_recurring, recurring_group_id, professional_id, client_id, servico_id, valor_cobrado, notes, services ( id, name, price, commission_rate ), servicos ( id, nome, categoria_id )`)
+        .select(`id, start_time, end_time, status, is_block, block_reason, whatsapp_sent_at, return_reminder_date, return_reminder_sent, return_reminder_sent_at, is_manual_reminder, is_recurring, recurring_group_id, professional_id, client_id, servico_id, valor_cobrado, pacote_item_id, notes, services ( id, name, price, commission_rate ), servicos ( id, nome, categoria_id )`)
         .order('start_time', { ascending: true });
       if (error) throw error;
       return data || [];
@@ -125,6 +128,15 @@ export default function Agenda() {
     .map((s) => ({ s, c: condicoesEfetivas(s, vinculos.find((v) => v.user_id === profAgendamento && v.servico_id === s.id), null) }))
     .filter((x) => x.c.oferece);
   const ofertaEscolhida = ofertas.find((x) => x.s.id === novoServico);
+
+  // Pacotes da cliente escolhida: etiqueta de saldo e sessão reservada ao agendar.
+  const { data: saldosCliente = [] } = useQuery({
+    queryKey: pacotesKeys.saldos(selectedClient?.id ?? null, false),
+    queryFn: () => listarSaldos(selectedClient.id, false),
+    enabled: !!selectedClient?.id && showAddModal && appointmentType === 'appointment',
+  });
+  const itemPacote = appointmentType === 'appointment' ? itemParaAbater(saldosCliente, novoServico) : null;
+  const comPacote = !!itemPacote && usarPacote;
 
   // Atalho do botão "+ Novo > Agendamento" (/agenda?novo=agendamento)
   useEffect(() => {
@@ -194,11 +206,13 @@ export default function Agenda() {
         p_duracao_minutos: newApt.duracao,
         p_status: newApt.confirmado ? 'confirmed' : 'scheduled',
         p_observacao: null,
+        p_pacote_item: newApt.pacote_item_id ?? null,
       });
       if (error) throw error;
     },
     onSuccess: () => { 
       queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); 
+      queryClient.invalidateQueries({ queryKey: pacotesKeys.base });
       setShowAddModal(false); 
       setSelectedClient(null); 
       setClientSearchTerm(''); 
@@ -272,9 +286,15 @@ export default function Agenda() {
       const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); setEditingAppointment(null); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); queryClient.invalidateQueries({ queryKey: pacotesKeys.base }); setEditingAppointment(null); },
     onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível mudar o status.', 'agenda.status'))
   });
+
+  // Falta em sessão de pacote desconta a sessão (regra do pacote); pede confirmação.
+  const marcarFalta = (apt: any) => {
+    if (apt.pacote_item_id && !window.confirm('Esta é uma sessão de pacote: a falta desconta 1 sessão do saldo da cliente. Confirmar a falta?')) return;
+    updateStatusMutation.mutate({ id: apt.id, status: 'no_show' });
+  };
 
   const deleteAppointmentMutation = useMutation({
     mutationFn: async (apt: any) => {
@@ -355,6 +375,7 @@ export default function Agenda() {
     setNovoServico('');
     setNovoValor('');
     setNovoConfirmado(false);
+    setUsarPacote(true);
     if (hora) setAppointmentTime(hora);
     setIsRecurring(false);
     if (dateStr) setAppointmentDate(dateStr);
@@ -394,7 +415,7 @@ export default function Agenda() {
       if (!novoServico) return alert('Escolha o serviço.');
     }
     const avulso = novoServico === 'avulso' || appointmentType === 'reminder';
-    const valor = avulso ? lerValor(servicePrice) : (ehAdmin && novoValor.trim() ? lerValor(novoValor) : null);
+    const valor = avulso ? lerValor(servicePrice) : (ehAdmin && novoValor.trim() && !comPacote ? lerValor(novoValor) : null);
     if (appointmentType === 'appointment' && avulso && valor === null) return alert('Valor inválido.');
     const duracao = avulso ? Number(novaDuracao) : null;
     if (appointmentType === 'appointment' && avulso && (!duracao || duracao < 5 || duracao > 600)) return alert('Duração entre 5 e 600 minutos.');
@@ -406,6 +427,7 @@ export default function Agenda() {
       valor,
       duracao,
       confirmado: novoConfirmado,
+      pacote_item_id: !avulso && comPacote ? itemPacote!.item_id : null,
       date: appointmentDate, 
       time: appointmentTime, 
       type: appointmentType,
@@ -553,6 +575,7 @@ export default function Agenda() {
               <h4 className="font-bold flex items-center space-x-1 text-sm text-indigo-900">
                 <User size={14} className="text-indigo-400" /> <span>{cName}</span>
                 {ev.is_recurring && <Repeat size={14} className="ml-1 text-indigo-500"><title>Recorrente Mensal</title></Repeat>}
+                {ev.pacote_item_id && <Package size={14} className="ml-1 text-violet-600"><title>Sessão de pacote</title></Package>}
                 {ev.return_reminder_sent_at && <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded ml-2 uppercase font-bold flex items-center gap-1"><CheckCircle size={8}/> Já Chamou ({new Date(ev.return_reminder_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})})</span>}
               </h4>
               <p className="text-xs text-indigo-600">Lembrar de agendar: {sName}</p>
@@ -598,7 +621,7 @@ export default function Agenda() {
                  {ev.whatsapp_sent_at && (<span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-1 rounded flex items-center gap-1 border border-emerald-100"><CheckCircle size={10} /> {new Date(ev.whatsapp_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</span>)}
                  <button onClick={(e) => { e.stopPropagation(); handleSendWhatsApp(ev); }} className="p-1.5 border border-emerald-100 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 rounded-lg transition-colors flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></button>
                </div>}
-               <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({id: ev.id, status: 'no_show'}) }} className="px-2.5 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold rounded-lg transition-colors text-xs border border-amber-100 hidden sm:block">Faltou</button>
+               <button onClick={(e) => { e.stopPropagation(); marcarFalta(ev) }} className="px-2.5 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold rounded-lg transition-colors text-xs border border-amber-100 hidden sm:block">Faltou</button>
                <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({id: ev.id, status: 'cancelled'}) }} className="px-2.5 py-1.5 bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold rounded-lg transition-colors text-xs border border-slate-200 hidden sm:block">Cancelou</button>
              </div>
           )}
@@ -733,7 +756,7 @@ export default function Agenda() {
                           <div className="flex justify-between items-center mb-0.5">
                              <span className="flex items-center text-indigo-600">
                                <CalendarHeart size={10} className="mr-1"/> Retorno
-                               {ev.is_recurring && <Repeat size={10} className="ml-1 text-indigo-500"><title>Recorrente Mensal</title></Repeat>}
+                               {ev.is_recurring && <Repeat size={10} className="ml-1 text-indigo-500"><title>Recorrente Mensal</title></Repeat>}{ev.pacote_item_id && <Package size={10} className="ml-1 text-violet-600"><title>Sessão de pacote</title></Package>}
                              </span>
                              <button onClick={(e) => { e.stopPropagation(); setAppointmentToDelete(ev); }} className="opacity-50 hover:opacity-100 hover:text-red-500" title="Excluir Lembrete"><Trash2 size={10} /></button>
                           </div>
@@ -795,7 +818,7 @@ export default function Agenda() {
                              <div className="flex items-center justify-between w-full min-w-0">
                                <span className="truncate flex items-center">
                                  <CalendarHeart size={8} className="mr-0.5 text-indigo-500 shrink-0"/>
-                                 {ev.is_recurring && <Repeat size={8} className="mr-0.5 text-indigo-500 shrink-0"><title>Recorrente Mensal</title></Repeat>}
+                                 {ev.is_recurring && <Repeat size={8} className="mr-0.5 text-indigo-500 shrink-0"><title>Recorrente Mensal</title></Repeat>}{ev.pacote_item_id && <Package size={8} className="mr-0.5 text-violet-600 shrink-0"><title>Sessão de pacote</title></Package>}
                                  <span className="truncate">{ev.clients?.name}</span>
                                </span>
                                <div className="flex items-center shrink-0 ml-1 gap-0.5">
@@ -946,6 +969,15 @@ export default function Agenda() {
                   </>
                 )}
               </div>
+              {selectedClient && appointmentType === 'appointment' && saldosCliente.some((l) => l.disponiveis > 0) && (
+                <div className="flex flex-wrap gap-1.5 -mt-2" aria-label="Pacotes da cliente">
+                  {saldosCliente.filter((l) => l.disponiveis > 0).map((l) => (
+                    <span key={l.item_id} className="inline-flex items-center gap-1 text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-2 py-0.5">
+                      <Package size={11} /> {l.servico_nome}: {l.disponiveis} disponíve{l.disponiveis > 1 ? 'is' : 'l'} · vence {isoParaBR(l.validade)}
+                    </span>
+                  ))}
+                </div>
+              )}
               {ehAdmin && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Profissional {appointmentType === 'appointment' && '*'}</label>
                   <select value={novoProf} onChange={(e) => { setNovoProf(e.target.value); setNovoServico(''); }} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
@@ -955,7 +987,7 @@ export default function Agenda() {
                 </div>
               )}
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Serviço {appointmentType === 'appointment' && '*'}</label>
-                <select value={novoServico} onChange={(e) => { setNovoServico(e.target.value); setNovoValor(''); }} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
+                <select value={novoServico} onChange={(e) => { setNovoServico(e.target.value); setNovoValor(''); setUsarPacote(true); }} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
                   <option value="">{appointmentType === 'appointment' && ehAdmin && !novoProf ? 'Escolha o profissional primeiro' : 'Selecione'}</option>
                   {categorias.map((c) => {
                     const daCategoria = ofertas.filter((x) => x.s.categoria_id === c.id);
@@ -966,12 +998,20 @@ export default function Agenda() {
                 </select>
                 {appointmentType === 'appointment' && profAgendamento && ofertas.length === 0 && <p className="text-[11px] text-amber-700 mt-1">Este profissional ainda não tem serviços habilitados (Serviços &gt; Serviços por profissional).</p>}
               </div>
+              {itemPacote && (
+                <label className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-lg p-2.5 text-xs text-violet-800">
+                  <input type="checkbox" checked={usarPacote} onChange={(e) => setUsarPacote(e.target.checked)} className="mt-0.5 w-4 h-4 accent-violet-600" />
+                  <span><strong>Usar o pacote "{itemPacote.pacote_nome}"</strong>: {itemPacote.disponiveis} sessão(ões) disponível(is), vence em {isoParaBR(itemPacote.validade)}. A sessão fica reservada e é descontada na conclusão.</span>
+                </label>
+              )}
               {(novoServico === 'avulso' || (appointmentType === 'reminder' && !novoServico)) && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Procedimento *</label><input type="text" required maxLength={120} value={serviceName} onChange={(e) => setServiceName(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
               )}
               <div className="grid grid-cols-2 gap-4">
                 {appointmentType === 'appointment' && novoServico === 'avulso' ? (
                   <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$) *</label><input type="text" inputMode="decimal" required value={servicePrice} onChange={(e) => setServicePrice(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
+                ) : appointmentType === 'appointment' && ofertaEscolhida && comPacote ? (
+                  <div><span className="block text-xs font-bold text-slate-500 mb-1">Valor</span><p className="p-2.5 text-sm font-bold text-violet-700">Pacote{itemPacote?.valor_sessao != null ? ` (${brl(itemPacote.valor_sessao)})` : ''}</p></div>
                 ) : appointmentType === 'appointment' && ofertaEscolhida ? (
                   ehAdmin
                     ? <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input type="text" inputMode="decimal" value={novoValor} placeholder={valorParaCampo(ofertaEscolhida.c.valor)} onChange={(e) => setNovoValor(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
@@ -1015,6 +1055,7 @@ export default function Agenda() {
                 {editingAppointment.status === 'confirmed' && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Confirmado</span>}
                 {ehAdmin && <span className="text-[10px] text-slate-500 ml-2">{nomeProf(editingAppointment.professional_id)}</span>}
                 {editingAppointment.status === 'cancelled' && <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Cancelou</span>}
+                {editingAppointment.pacote_item_id && <span className="text-[10px] bg-violet-100 text-violet-700 px-2 py-0.5 rounded font-bold uppercase mt-1 mr-1 inline-flex items-center gap-1"><Package size={10} /> Sessão de pacote</span>}
                 {editingAppointment.status === 'no_show' && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Faltou</span>}
               </div>
               <div className="flex items-center space-x-1">
@@ -1035,7 +1076,7 @@ export default function Agenda() {
               )}
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Procedimento</label><input type="text" required value={editServiceName} disabled={!ehAdmin || !!editingAppointment.servico_id || !editingAppointment.services?.id} onChange={(e) => setEditServiceName(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input type="text" inputMode="decimal" required value={editServicePrice} disabled={!ehAdmin} onChange={(e) => setEditServicePrice(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input type="text" inputMode="decimal" required value={editServicePrice} disabled={!ehAdmin || !!editingAppointment.pacote_item_id} onChange={(e) => setEditServicePrice(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-100 disabled:text-slate-500" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Data</label><input type="date" required value={editDate} onChange={(e) => setEditDate(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm" /></div>
               </div>
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Horário</label><input type="time" required value={editTime} onChange={(e) => setEditTime(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
@@ -1053,7 +1094,7 @@ export default function Agenda() {
                   {ehAdmin
                     ? <button type="button" onClick={() => handleSendToCheckout(editingAppointment)} className="flex-1 bg-emerald-50 text-emerald-700 py-2 rounded-lg font-bold text-xs hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1 shadow-sm">🛒 Checkout</button>
                     : <button type="button" onClick={() => updateStatusMutation.mutate({id: editingAppointment.id, status: 'completed'})} className="flex-1 bg-emerald-50 text-emerald-700 py-2 rounded-lg font-bold text-xs hover:bg-emerald-100 transition-colors shadow-sm">Concluir</button>}
-                  <button type="button" onClick={() => updateStatusMutation.mutate({id: editingAppointment.id, status: 'no_show'})} className="flex-1 bg-amber-50 text-amber-700 py-2 rounded-lg font-bold text-xs hover:bg-amber-100 transition-colors shadow-sm">❌ Faltou</button>
+                  <button type="button" onClick={() => marcarFalta(editingAppointment)} className="flex-1 bg-amber-50 text-amber-700 py-2 rounded-lg font-bold text-xs hover:bg-amber-100 transition-colors shadow-sm">❌ Faltou</button>
                   <button type="button" onClick={() => updateStatusMutation.mutate({id: editingAppointment.id, status: 'cancelled'})} className="flex-1 bg-slate-50 text-slate-600 border border-slate-200 py-2 rounded-lg font-bold text-xs hover:bg-slate-100 transition-colors shadow-sm">🚫 Cancelou</button>
                 </div>
               )}
