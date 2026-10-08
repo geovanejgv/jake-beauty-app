@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, Menu, X, ChevronLeft, ChevronRight, ChevronDown, Moon, Sun, SquareKanban, Plus, SquareCheckBig, KeyRound, CalendarPlus, UserPlus } from 'lucide-react';
+import { Menu, X, ChevronLeft, ChevronRight, ChevronDown, SquareKanban, Plus, SquareCheckBig, CalendarPlus, UserPlus } from 'lucide-react';
 import AlterarSenhaModal from '../components/AlterarSenhaModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
@@ -11,14 +11,11 @@ const CHAVE_GRUPOS = 'jb-menu-grupos';
 export default function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut, perfil, user } = useAuth();
-  const { theme, toggleTheme } = useTheme();
-  const isDark = theme === 'dark';
-  const themeLabel = isDark ? 'Modo Claro' : 'Modo Escuro';
-  const ThemeIcon = isDark ? Sun : Moon;
+  const { perfil, user } = useAuth();
+  // Aplica o tema salvo ao abrir o portal; a troca fica em Configurações.
+  useTheme();
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [senhaAberta, setSenhaAberta] = useState(false);
   // Estado que controla se o menu do PC está largo ou apenas com os ícones
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -39,11 +36,6 @@ export default function MainLayout() {
       try { localStorage.setItem(CHAVE_GRUPOS, JSON.stringify(novo)); } catch { /* preferência de tela; pode falhar */ }
       return novo;
     });
-  };
-
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/login');
   };
 
   // Fecha o menu sanduíche ao trocar de tela
@@ -182,35 +174,8 @@ export default function MainLayout() {
           {renderNav('lateral')}
         </nav>
 
-        {/* Rodapé: Botões de Sair e Recolher */}
+        {/* Rodapé: recolher menu (tema, senha e sair ficam em Configurações) */}
         <div className="p-4 border-t border-slate-100 space-y-2 shrink-0">
-          <button
-            onClick={toggleTheme}
-            title={isCollapsed ? themeLabel : ""}
-            className={`flex items-center w-full text-slate-500 hover:bg-slate-100 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
-          >
-            <ThemeIcon size={22} className="shrink-0" />
-            {!isCollapsed && <span className="whitespace-nowrap font-medium">{themeLabel}</span>}
-          </button>
-
-          <button
-            onClick={() => setSenhaAberta(true)}
-            title={isCollapsed ? "Alterar senha" : ""}
-            className={`flex items-center w-full text-slate-500 hover:bg-slate-100 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
-          >
-            <KeyRound size={22} className="shrink-0" />
-            {!isCollapsed && <span className="whitespace-nowrap font-medium">Alterar senha</span>}
-          </button>
-
-          <button
-            onClick={handleLogout}
-            title={isCollapsed ? "Sair do Sistema" : ""}
-            className={`flex items-center w-full text-red-500 hover:bg-red-50 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
-          >
-            <LogOut size={22} className="shrink-0" />
-            {!isCollapsed && <span className="whitespace-nowrap font-medium">Sair do Sistema</span>}
-          </button>
-
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className={`flex items-center w-full text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
@@ -242,9 +207,6 @@ export default function MainLayout() {
             </div>
           </div>
           <div className="relative flex items-center">
-            <button onClick={toggleTheme} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg" title={themeLabel} aria-label={themeLabel}>
-              <ThemeIcon size={22} />
-            </button>
             {quickAddItems.length > 0 && (
               <button onClick={() => setIsQuickAddOpen(!isQuickAddOpen)} className="ml-1 p-2 bg-rose-600 text-white rounded-lg" aria-label="Novo" aria-haspopup="menu" aria-expanded={isQuickAddOpen}>
                 <Plus size={22} />
@@ -276,17 +238,6 @@ export default function MainLayout() {
               {renderNav('gaveta')}
             </nav>
 
-            <div className="p-3 border-t border-slate-100 space-y-1 shrink-0">
-              <button onClick={toggleTheme} className="flex items-center space-x-3 px-4 py-3 w-full text-left text-slate-600 font-medium hover:bg-slate-100 rounded-xl">
-                <ThemeIcon size={22} className="shrink-0" /> <span>{themeLabel}</span>
-              </button>
-              <button onClick={() => { setIsMobileMenuOpen(false); setSenhaAberta(true); }} className="flex items-center space-x-3 px-4 py-3 w-full text-left text-slate-600 font-medium hover:bg-slate-100 rounded-xl">
-                <KeyRound size={22} className="shrink-0" /> <span>Alterar senha</span>
-              </button>
-              <button onClick={handleLogout} className="flex items-center space-x-3 px-4 py-3 w-full text-left text-red-500 font-medium hover:bg-red-50 rounded-xl">
-                <LogOut size={22} className="shrink-0" /> <span>Sair do Sistema</span>
-              </button>
-            </div>
           </aside>
         </div>
 
@@ -294,9 +245,7 @@ export default function MainLayout() {
         <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 relative">
           <Outlet />
         </main>
-        {(senhaAberta || trocaObrigatoria) && (
-          <AlterarSenhaModal obrigatoria={trocaObrigatoria} onClose={() => setSenhaAberta(false)} />
-        )}
+        {trocaObrigatoria && <AlterarSenhaModal obrigatoria onClose={() => undefined} />}
       </div>
     </div>
   );
