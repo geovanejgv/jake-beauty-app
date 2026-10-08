@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { TrendingUp, Calendar, Filter, BarChart3, Loader2, DollarSign, CreditCard, X, FileSpreadsheet, Edit2, Trash2, AlertTriangle, Wallet, TrendingDown, Clock, CheckCircle } from 'lucide-react';
+import { listarSaldos, listarVendas, pacotesKeys } from '../features/pacotes/api';
+import { TrendingUp, Calendar, Filter, BarChart3, Loader2, DollarSign, CreditCard, X, FileSpreadsheet, Edit2, Trash2, AlertTriangle, Wallet, TrendingDown, Clock, CheckCircle, Package } from 'lucide-react';
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
@@ -46,16 +48,29 @@ export default function Dashboard() {
     }
   });
 
+  // 1a. Pacotes: a venda é o faturamento (nota fiscal na venda); a sessão abatida não conta de novo.
+  const { data: vendasPacote = [] } = useQuery({ queryKey: pacotesKeys.vendas, queryFn: listarVendas });
+  const { data: saldosPacote = [] } = useQuery({ queryKey: pacotesKeys.saldos(null, false), queryFn: () => listarSaldos(null, false) });
+  const receitas = useMemo(() => [
+    ...appointments.filter((a: any) => a.payment_method !== 'pacote'),
+    ...vendasPacote.map((v) => ({
+      id: `pacote-${v.id}`, ehPacote: true, start_time: v.vendido_em, payment_method: 'pacote_venda', clients: { name: v.cliente_nome },
+      services: { name: `Pacote: ${v.nome}`, price: v.valor_total },
+    })),
+  ], [appointments, vendasPacote]);
+  const aExecutar = saldosPacote.reduce((t, l) => ({ sessoes: t.sessoes + l.sessoes - l.usadas - l.faltas, valor: t.valor + Number(l.valor_restante ?? 0) }), { sessoes: 0, valor: 0 });
+
   // 1b. Agendamentos ainda não finalizados (para "previsto" e pendências do filtro)
   const { data: scheduledAppointments = [] } = useQuery({
     queryKey: ['dashboard-scheduled'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('appointments')
-        .select('id, start_time, is_block, is_manual_reminder, valor_cobrado, services ( price )')
+        .select('id, start_time, is_block, is_manual_reminder, valor_cobrado, pacote_item_id, services ( price )')
         .in('status', ['scheduled', 'confirmed']);
       if (error) throw error;
-      return (data || []).filter((a: any) => !a.is_block && !a.is_manual_reminder).map((a: any) => ({ ...a, services: { price: a.valor_cobrado ?? a.services?.price ?? 0 } }));
+      // Sessão de pacote já foi recebida na venda: não entra no "previsto".
+      return (data || []).filter((a: any) => !a.is_block && !a.is_manual_reminder && !a.pacote_item_id).map((a: any) => ({ ...a, services: { price: a.valor_cobrado ?? a.services?.price ?? 0 } }));
     }
   });
 
@@ -107,7 +122,7 @@ export default function Dashboard() {
     const hasCustomRange = !!(startDate && endDate && startDate <= endDate);
     let week1 = 0; let week2 = 0; let week3 = 0; let week4 = 0;
 
-    appointments.forEach((apt: any) => {
+    receitas.forEach((apt: any) => {
       const aptDate = aptLocalDate(apt.start_time);
       const price = parseFloat(apt.services?.price || 0);
 
@@ -150,12 +165,12 @@ export default function Dashboard() {
       chartData: [week1, week2, week3, week4],
       monthExpensesPaid, monthExpensesPending, netIncome
     };
-  }, [appointments, scheduledAppointments, expenses, startDate, endDate, todayStr, startOfWeekStr, endOfWeekStr, startOfFortnightStr, endOfFortnightStr, startOfMonthStr, endOfMonthStr]);
+  }, [receitas, scheduledAppointments, expenses, startDate, endDate, todayStr, startOfWeekStr, endOfWeekStr, startOfFortnightStr, endOfFortnightStr, startOfMonthStr, endOfMonthStr]);
 
   // Filtro do Relatório de Faturamento
   const reportData = useMemo(() => {
     if (!reportFilterName) return [];
-    return appointments.filter((apt: any) => {
+    return receitas.filter((apt: any) => {
       const aptDate = aptLocalDate(apt.start_time);
       switch (reportFilterName) {
         case 'Faturamento Hoje': return aptDate === todayStr;
@@ -166,12 +181,12 @@ export default function Dashboard() {
         default: return false;
       }
     });
-  }, [appointments, reportFilterName, todayStr, startOfWeekStr, endOfWeekStr, startOfFortnightStr, endOfFortnightStr, startOfMonthStr, endOfMonthStr, startDate, endDate]);
+  }, [receitas, reportFilterName, todayStr, startOfWeekStr, endOfWeekStr, startOfFortnightStr, endOfFortnightStr, startOfMonthStr, endOfMonthStr, startDate, endDate]);
 
   const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
   const translatePaymentMethod = (method: string) => {
-    const map: Record<string, string> = { 'pix': 'PIX', 'debito': 'Débito', 'credito': 'Crédito', 'dinheiro': 'Dinheiro', 'cartao': 'Cartão', 'outro': 'Outro', 'debit': 'Débito', 'credit_cash': 'Crédito à vista', 'credit_installments': 'Crédito parcelado', 'cash': 'Dinheiro' };
+    const map: Record<string, string> = { 'pix': 'PIX', 'debito': 'Débito', 'credito': 'Crédito', 'dinheiro': 'Dinheiro', 'cartao': 'Cartão', 'outro': 'Outro', 'debit': 'Débito', 'credit_cash': 'Crédito à vista', 'credit_installments': 'Crédito parcelado', 'cash': 'Dinheiro', 'pacote_venda': 'Venda de pacote' };
     return map[method] || method || 'Não informado';
   };
 
@@ -281,6 +296,13 @@ export default function Dashboard() {
           <div className="bg-white/10 p-3 rounded-xl text-white"><Calendar size={20} /></div>
         </button>
       </div>
+
+      {aExecutar.sessoes > 0 && (
+        <Link to="/pacotes" className="flex flex-wrap items-center gap-2 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 text-sm text-violet-800 hover:bg-violet-100">
+          <Package size={18} /> <strong>Pacotes:</strong> {aExecutar.sessoes} sessões a executar, {formatCurrency(aExecutar.valor)} já recebidos e ainda devidos em serviço.
+          <span className="text-xs text-violet-600">O faturamento do pacote entra na data da venda.</span>
+        </Link>
+      )}
 
       {/* Barra de Filtro Customizado (Abaixo dos cards para poupar espaço vertical) */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -548,10 +570,12 @@ export default function Dashboard() {
                           <td className="px-4 py-3"><span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider">{translatePaymentMethod(row.payment_method)}</span></td>
                           <td className="px-4 py-3 text-right font-black text-rose-600">{formatCurrency(row.services?.price || 0)}</td>
                           <td className="px-4 py-3">
+                            {row.ehPacote ? <Link to="/pacotes" className="block text-center text-[11px] font-bold text-violet-700 hover:underline">Ver em Pacotes</Link> : (
                             <div className="flex items-center justify-center space-x-2">
                               <button onClick={() => handleEditOpen(row)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"><Edit2 size={16} /></button>
                               <button onClick={() => setRecordToDelete(row)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
                             </div>
+                            )}
                           </td>
                         </tr>
                       ))}

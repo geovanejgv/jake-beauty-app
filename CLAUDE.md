@@ -6,6 +6,7 @@ Portal do estúdio: SPA Vite + React 18 + TypeScript + Tailwind, dados no Supaba
 
 - `src/features/<módulo>/`: lógica (com testes) e acesso a dados de cada módulo: `acesso` (papéis, menu e preferências), `equipe`, `catalogo`, `agenda`, `comissoes`, `kanban`.
 - `src/pages/`: telas. Papéis: `admin` (administradora) e `professional` (profissional parceiro); a fronteira de acesso é o RLS do banco.
+- `docs/especificacoes/`: especificações de funcionalidades ainda não implantadas.
 - `supabase/migrations/`: migrações (aplicar em produção só com aprovação). `supabase/functions/admin-usuarios/`: Edge Function de acessos (única com chave de serviço).
 
 ## Segurança

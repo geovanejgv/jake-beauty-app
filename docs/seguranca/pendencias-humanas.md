@@ -77,3 +77,14 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
 21. **Agendamentos antigos sem profissional.** **FEITO em 2026-10-04** com "autorizo" do usuário: 175 dos 181 atribuídos à administradora. Atendimentos sobrepostos foram movidos para 1 minuto depois do fim do anterior, mantendo a duração (27/08, 28/08, 01/09 (2), 05/09, 01/10 e 09/10; o de 09/10 foi para 09:46, avisar a cliente). O bloqueio de 30/09 das 12:00 passou a começar às 16:01. Seis bloqueios já cobertos por outro bloqueio ou atendimento ficaram sem profissional (nada foi apagado).
 22. **Contrato de parceria (Lei 13.352/2016) [Confirmar].** O sistema guarda CPF, CNPJ/MEI, modelo e início do contrato e avisa quando falta CNPJ/MEI; a redação, a homologação e a guarda do contrato assinado são fora do sistema.
 23. **Com profissionais entrando no sistema, os itens 2 a 5 ficam mais urgentes**: mínimo de 12 caracteres e senhas vazadas no Supabase Auth, cadastro público desligado e MFA para a administradora.
+
+## Pacotes de sessões
+
+24. **Migração `20261013120000_pacotes.sql` (DEV-02).** **APLICADA em 2026-10-08** com "autorizo" do usuário, em 7 partes (o conector não concluía a chamada única); conferências OK: RLS nas 4 tabelas, escrita direta negada, nenhuma função executável por `anon`, versão anterior `agendar_atendimento_v1` sem execução. O site atual continua funcionando; o front desta entrega entra com o PR. Efeitos visíveis:
+    - nova tela **Pacotes** (só administradora); a venda entra no faturamento na data da venda (nota fiscal na venda);
+    - na agenda, a cliente com pacote mostra o saldo e o agendamento reserva a sessão; no checkout, o padrão é "Abater do pacote";
+    - falta (no-show) em sessão de pacote desconta a sessão, sem comissão; cancelar libera a reserva;
+    - a comissão de cada sessão é o percentual definido na venda, paga a quem executou, no fechamento.
+25. **Termo do pacote e reembolso [Confirmar].** Decisão registrada: validade de 12 meses renovável, sem multa e sem reembolso pelo sistema. Recomenda-se termo escrito entregue à cliente com essas regras (CDC, art. 6º, III) e conferência do advogado sobre a recusa de reembolso em caso de desistência, que pode ser questionada como desvantagem exagerada (CDC, art. 51). Se houver devolução fora do sistema, lançar como despesa em Finanças.
+26. **Pacotes vendidos fora do sistema.** Se houver pacotes antigos em caderno ou planilha, lançá-los pela tela de venda (valor e validade originais) e registrar as sessões já usadas como atendimentos concluídos com o pacote.
+

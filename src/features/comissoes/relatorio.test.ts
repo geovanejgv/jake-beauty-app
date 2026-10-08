@@ -6,7 +6,7 @@ import type { Regras } from './logic';
 const regras: Regras = { descontarTaxa: false, descontarMaterial: false, taxas: {} };
 const linha = (x: Partial<LinhaAtendimento>): LinhaAtendimento => ({
   id: crypto.randomUUID(), start_time: '2026-10-10T13:00:00Z', end_time: '2026-10-10T14:00:00Z', status: 'completed',
-  valor_cobrado: 100, comissao_percentual: 50, gorjeta: 0, payment_method: 'pix', professional_id: 'p1', client_id: 'c1',
+  valor_cobrado: 100, comissao_percentual: 50, gorjeta: 0, payment_method: 'pix', taxa_percentual: null, professional_id: 'p1', client_id: 'c1',
   servico_id: null, service_id: null, cliente_nome: 'Ana', servico_nome: 'Corte', custo_material: 0, profissional_nome: 'Jana',
   fechamento: null, ...x,
 });

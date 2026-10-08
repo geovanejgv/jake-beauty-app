@@ -12,6 +12,8 @@ export type LinhaAtendimento = {
   comissao_percentual: number | null;
   gorjeta: number | null;
   payment_method: string | null;
+  /** Taxa congelada do pacote (só em sessão de pacote concluída). */
+  taxa_percentual: number | null;
   professional_id: string | null;
   client_id: string | null;
   servico_id: string | null;
@@ -67,7 +69,7 @@ export async function listarAtendimentos(f: { de: string; ate: string; profissio
   const { de, ate } = intervaloLocal(f.de, f.ate);
   let q = supabase
     .from('appointments')
-    .select('id, start_time, end_time, status, valor_cobrado, comissao_percentual, gorjeta, payment_method, professional_id, client_id, servico_id, service_id, is_block, is_manual_reminder')
+    .select('id, start_time, end_time, status, valor_cobrado, comissao_percentual, gorjeta, payment_method, taxa_percentual, professional_id, client_id, servico_id, service_id, is_block, is_manual_reminder')
     .gte('start_time', de)
     .lt('start_time', ate)
     .order('start_time')
