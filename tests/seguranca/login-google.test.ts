@@ -64,15 +64,16 @@ describe('L-05: destino só interno', () => {
   });
 });
 
-describe('M-06: autenticador ativo pede o código logo depois do login', () => {
-  it('a área logada mostra a verificação enquanto o MFA está pendente', () => {
-    expect(app).toMatch(/if \(acesso === 'mfa_pendente'\) return <Verificacao \/>/);
-    expect(ler('src/contexts/AuthContext.tsx')).toMatch(/n\.proximo === 'aal2' && n\.atual !== 'aal2'/);
+describe('Login sem código (decisão de 2026-10-09): o código fica só nas ações administrativas', () => {
+  const fora = ler('supabase/migrations/20261019120000_mfa_fora_do_login.sql');
+  it('a área logada não pede o código no login', () => {
+    expect(app).not.toMatch(/Verificacao|mfa_pendente/);
+    expect(ler('src/contexts/AuthContext.tsx')).not.toMatch(/setAcesso\('mfa_pendente'\)/);
   });
-  it('o banco não mostra nada antes do código (funções de sessão conferem mfa_pendente)', () => {
+  it('as funções de sessão não dependem mais do código', () => {
     for (const f of ['estabelecimento_atual', 'usuario_ativo', 'usuario_admin', 'usuario_atual_id']) {
-      const corpo = sql.slice(sql.indexOf(`function public.${f}()`));
-      expect(corpo.slice(0, corpo.indexOf('$$;', corpo.indexOf('as $$'))), f).toMatch(/not public\.mfa_pendente\(\)/);
+      const corpo = fora.slice(fora.indexOf(`function public.${f}()`));
+      expect(corpo.slice(0, corpo.indexOf('$$;', corpo.indexOf('as $$'))), f).not.toMatch(/mfa_pendente/);
     }
   });
 });
