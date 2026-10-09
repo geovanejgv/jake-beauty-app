@@ -33,6 +33,8 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
 8. **Ambientes e conectores do agente (DEV-01, DEV-05, PRV-06).** Hoje existe só o projeto de produção, e o conector Supabase do agente tem escrita nele. Recomendado:
    - criar um projeto Supabase de homologação (dados fictícios) para testes;
    - restringir o conector do agente a somente leitura ou ao projeto de homologação.
+   - **Decisão de 2026-10-09: sem projeto de homologação por enquanto.** O plano gratuito do Supabase já está no limite de 2 projetos ativos. As mudanças de banco seguem testadas antes num Postgres local descartável (`supabase/tests/`), e produção só muda com aprovação explícita (DEV-02). Reavaliar com o plano Pro (também traz backup diário, item 9).
+   - **Rede do ambiente do agente:** `mkjruwxiyjonqgnefkbw.supabase.co` liberado em 2026-10-09 (acesso Personalizado, com a lista padrão de gerenciadores de pacotes).
 
 ## Banco e hospedagem
 
