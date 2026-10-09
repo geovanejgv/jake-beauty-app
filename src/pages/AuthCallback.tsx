@@ -4,7 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { registrarAuditoria } from '../lib/seguranca/auditoria';
 import { retirarDestino } from '../lib/seguranca/redirecionamento';
 import { supabase } from '../lib/supabase';
-import { marcarAtividade } from '../features/acesso/inatividade';
 
 /** Erro devolvido pelo Supabase/Google na própria URL de retorno -> código da tela de login. */
 export function erroDoRetorno(busca: string, fragmento: string): string | null {
@@ -47,7 +46,6 @@ export default function AuthCallback() {
     if (acesso === 'carregando') return;
     if (acesso === 'liberado') {
       feito.current = true;
-      marcarAtividade(); // login novo começa do zero, sem herdar tempo parado antigo
       void registrarAuditoria('login')
         .finally(() => navigate(retirarDestino(), { replace: true }));
       return;

@@ -3,7 +3,6 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, ChevronLeft, ChevronRight, ChevronDown, SquareKanban, Plus, SquareCheckBig, CalendarPlus, UserPlus, Lock, Building2, Gem, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
-import { useInatividadeAdmin } from '../hooks/useInatividadeAdmin';
 import { GRUPOS, ROTULO_PAPEL, moduloDaRota, modulosVisiveis, type IdGrupo, type Modulo } from '../features/acesso/modulos';
 import { demoExpirada, diasRestantesDemo, moduloLiberadoNoPlano } from '../features/plano/plano';
 
@@ -12,7 +11,7 @@ const CHAVE_GRUPOS = 'jb-menu-grupos';
 export default function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { perfil, adminGlobal, nivel, signOut } = useAuth();
+  const { perfil, adminGlobal, nivel } = useAuth();
   // Aplica o tema salvo ao abrir o portal; a troca fica em Configurações.
   useTheme();
 
@@ -20,10 +19,6 @@ export default function MainLayout() {
   // Estado que controla se o menu do PC está largo ou apenas com os ícones
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Administradora parada por 30 minutos sai do portal (L-09).
-  useInatividadeAdmin(perfil?.role === 'admin', () => {
-    void signOut().finally(() => navigate('/login?erro=inatividade', { replace: true }));
-  });
   const estabelecimento = perfil?.estabelecimento ?? null;
   const demoVencida = !!estabelecimento && demoExpirada(estabelecimento);
   const diasDemo = estabelecimento ? diasRestantesDemo(estabelecimento) : null;

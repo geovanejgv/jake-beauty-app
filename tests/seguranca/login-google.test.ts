@@ -52,7 +52,7 @@ describe('L-04: só entra quem foi cadastrado', () => {
   });
   it('todas as mensagens da tela de login existem', () => {
     const mensagens = login.slice(login.indexOf('MENSAGENS_LOGIN'), login.indexOf('};'));
-    for (const c of ['sem-acesso', 'inatividade', 'falha', 'limite', 'estabelecimento-inativo']) expect(mensagens).toMatch(new RegExp(`^\\s+'?${c}'?:`, 'm'));
+    for (const c of ['sem-acesso', 'falha', 'limite', 'estabelecimento-inativo']) expect(mensagens).toMatch(new RegExp(`^\\s+'?${c}'?:`, 'm'));
   });
 });
 
@@ -117,14 +117,13 @@ describe('L-11: contas sem senha', () => {
   });
 });
 
-describe('L-08 e L-09: logout e inatividade', () => {
+describe('L-08: logout e sessão', () => {
   it('logout revoga a sessão no servidor de autenticação', () => {
     expect(ler('src/contexts/AuthContext.tsx')).toMatch(/supabase\.auth\.signOut\(\{ scope: 'local' \}\)/);
   });
-  it('administradora parada sai do portal com a mensagem de inatividade', () => {
-    const layout = ler('src/layouts/MainLayout.tsx');
-    expect(layout).toMatch(/useInatividadeAdmin\(perfil\?\.role === 'admin'/);
-    expect(layout).toMatch(/erro=inatividade/);
+  it('sem encerramento por inatividade: a sessão do Google fica aberta até sair (decisão de 2026-10-09)', () => {
+    expect(ler('src/layouts/MainLayout.tsx')).not.toMatch(/Inatividade|erro=inatividade/);
+    expect(ler('src/lib/supabase.ts')).toMatch(/persistSession: true, autoRefreshToken: true/);
   });
 });
 
