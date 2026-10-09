@@ -78,19 +78,11 @@ describe('SG-09 e SG-10: criação pela Edge Function', () => {
   const bloco = edge.slice(edge.indexOf("if (acao === 'criar_estabelecimento')"), edge.indexOf('// ------------------------------------------------------------ equipe'));
   it('confere admin global (com MFA) antes de usar a chave de serviço', () => {
     expect(bloco.indexOf('await exigirAdminGlobal()')).toBeGreaterThan(-1);
-    expect(bloco.indexOf('await exigirAdminGlobal()')).toBeLessThan(bloco.indexOf('admin.auth.admin.inviteUserByEmail'));
+    expect(bloco.indexOf('await exigirAdminGlobal()')).toBeLessThan(bloco.indexOf('admin.auth.admin.createUser'));
   });
   it('campos fechados, sem senha', () => {
     expect(bloco).toMatch(/soCampos\(corpo, \['acao', 'nome', 'plano', 'admin_nome', 'admin_email', 'max_profissionais', 'max_clientes'\]\)/);
-    expect(bloco).not.toMatch(/password|senha_temporaria/);
-  });
-  it('reenviar convite: admin global com MFA antes da chave de serviço, campos fechados, sem senha', () => {
-    const reenvio = edge.slice(edge.indexOf("if (acao === 'reenviar_convite')"), edge.indexOf("if (acao === 'criar_estabelecimento')"));
-    expect(reenvio.indexOf('await exigirAdminGlobal()')).toBeGreaterThan(-1);
-    expect(reenvio.indexOf('await exigirAdminGlobal()')).toBeLessThan(reenvio.indexOf('admin.from('));
-    expect(reenvio).toMatch(/soCampos\(corpo, \['acao', 'estabelecimento_id'\]\)/);
-    expect(reenvio).toMatch(/email_confirmed_at \|\| conta\.user\.last_sign_in_at/);
-    expect(reenvio).not.toMatch(/password|senha_temporaria/);
+    expect(bloco).not.toMatch(/password|senha_temporaria|inviteUserByEmail/);
     expect(edge).toMatch(/const \{ data: global \} = await comoUsuario\.rpc\('eh_admin_global'\)/);
   });
   it('ações de equipe conferem o estabelecimento antes da chave de serviço', () => {

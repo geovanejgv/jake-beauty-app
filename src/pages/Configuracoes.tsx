@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, KeyRound, LogOut, Moon, Settings, SlidersHorizontal, Sun, UserCircle } from 'lucide-react';
-import AlterarSenhaModal from '../components/AlterarSenhaModal';
+import { Eye, EyeOff, LogOut, Moon, Settings, SlidersHorizontal, Sun, UserCircle } from 'lucide-react';
 import SegurancaMfa from '../components/SegurancaMfa';
 import { useTheme } from '../hooks/useTheme';
 import { Chave, ConfigComissoes } from '../features/comissoes/ConfigComissoes';
@@ -15,7 +14,6 @@ export default function Configuracoes() {
   const { perfil, user, salvarPreferencias, signOut } = useAuth();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
-  const [senhaAberta, setSenhaAberta] = useState(false);
   const [saindo, setSaindo] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const ehAdmin = perfil?.role === 'admin';
@@ -52,6 +50,7 @@ export default function Configuracoes() {
         <p className="text-sm text-slate-600">
           <strong className="text-slate-800">{perfil.name}</strong> · {ROTULO_PAPEL[perfil.role]}{user?.email ? <span className="text-slate-500"> · {user.email}</span> : null}
         </p>
+        <p className="text-xs text-slate-500">O acesso é pela conta Google deste e-mail ("Continuar com Google"). Não há senha no portal.</p>
         <div className="flex items-center gap-3 py-2.5 border-t border-slate-100">
           {theme === 'dark' ? <Moon size={20} className="text-rose-600" /> : <Sun size={20} className="text-rose-600" />}
           <div className="flex-1 min-w-0">
@@ -61,10 +60,6 @@ export default function Configuracoes() {
           <Chave ligado={theme === 'dark'} rotulo="Modo escuro" onChange={() => toggleTheme()} />
         </div>
         <div className="flex flex-col sm:flex-row gap-2 pt-1">
-          <button type="button" onClick={() => setSenhaAberta(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50">
-            <KeyRound size={18} /> Alterar senha
-          </button>
           <button type="button" disabled={saindo} onClick={async () => { setSaindo(true); await signOut(); navigate('/login'); }}
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 text-red-600 font-bold text-sm hover:bg-red-50 disabled:opacity-60">
             <LogOut size={18} /> Sair do sistema
@@ -111,7 +106,6 @@ export default function Configuracoes() {
       </section>
 
       {ehAdmin && <ConfigComissoes onAviso={setAviso} />}
-      {senhaAberta && <AlterarSenhaModal onClose={() => setSenhaAberta(false)} />}
       <Aviso texto={aviso} onFechar={() => setAviso(null)} />
     </div>
   );

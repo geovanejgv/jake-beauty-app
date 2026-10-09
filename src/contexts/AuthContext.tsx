@@ -5,6 +5,8 @@ import { registrarAuditoria } from '../lib/seguranca/auditoria';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { normalizarPreferencias, type Papel, type PreferenciasUi } from '../features/acesso/modulos';
 import type { Plano, Situacao } from '../features/plano/plano';
+import { nivelMfa, type Nivel } from '../features/acesso/mfa';
+import { limparAtividade } from '../features/acesso/inatividade';
 
 export type EstabelecimentoDoPerfil = { id: string; nome: string; plano: Plano; status: Situacao; demo_expira_em: string | null };
 
@@ -12,11 +14,12 @@ export type EstabelecimentoDoPerfil = { id: string; nome: string; plano: Plano; 
 export type Perfil = { id: string; name: string; role: Papel; preferencias_ui: PreferenciasUi; estabelecimento: EstabelecimentoDoPerfil | null };
 
 /**
- * liberado: tem perfil ativo; negado: logou, mas não tem perfil ativo (acesso ainda não
- * liberado: o app não cria perfil sozinho); inativo: o estabelecimento foi desativado ou
- * excluído (o RLS já não mostra nada); erro: falha ao consultar o perfil.
+ * liberado: tem perfil ativo; negado: entrou com o Google, mas não tem perfil ativo (o
+ * app não cria perfil sozinho); inativo: o estabelecimento foi desativado ou excluído
+ * (o RLS já não mostra nada); mfa_pendente: tem autenticador ativo e ainda não digitou o
+ * código nesta sessão (o banco não mostra nada até lá, M-06); erro: falha ao consultar.
  */
-export type SituacaoAcesso = 'carregando' | 'sem_sessao' | 'liberado' | 'negado' | 'inativo' | 'erro';
+export type SituacaoAcesso = 'carregando' | 'sem_sessao' | 'liberado' | 'negado' | 'inativo' | 'mfa_pendente' | 'erro';
 
 interface AuthContextType {
   session: Session | null;
@@ -26,7 +29,11 @@ interface AuthContextType {
   erroAcesso: string | null;
   /** Está na lista de administradores globais (só para o menu; o banco confere com MFA). */
   adminGlobal: boolean;
+  /** Nível da sessão: aal2 = código do autenticador confirmado nesta sessão. */
+  nivel: { atual: Nivel; proximo: Nivel };
   recarregarPerfil: () => void;
+  /** Relê o nível da sessão sem recarregar a tela (depois de cadastrar ou remover autenticador). */
+  atualizarNivel: () => Promise<void>;
   /** Grava as preferências de interface do próprio usuário (menu e rotas). */
   salvarPreferencias: (prefs: PreferenciasUi) => Promise<void>;
   signOut: () => Promise<void>;
@@ -34,8 +41,8 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType>({
-  session: null, user: null, perfil: null, acesso: 'carregando', erroAcesso: null, adminGlobal: false,
-  recarregarPerfil: () => {}, salvarPreferencias: async () => {}, signOut: async () => {}, loading: true,
+  session: null, user: null, perfil: null, acesso: 'carregando', erroAcesso: null, adminGlobal: false, nivel: { atual: 'aal1', proximo: 'aal1' },
+  recarregarPerfil: () => {}, atualizarNivel: async () => {}, salvarPreferencias: async () => {}, signOut: async () => {}, loading: true,
 });
 
 /** Busca o perfil ATIVO do usuário logado. null = sem perfil ativo. */
@@ -71,6 +78,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [acesso, setAcesso] = useState<SituacaoAcesso>('carregando');
   const [erroAcesso, setErroAcesso] = useState<string | null>(null);
   const [adminGlobal, setAdminGlobal] = useState(false);
+  const [nivel, setNivel] = useState<{ atual: Nivel; proximo: Nivel }>({ atual: 'aal1', proximo: 'aal1' });
   // Conferência em segundo plano (ao voltar para a aba): não mostra "carregando".
   const silencioso = useRef(false);
   const perfilRef = useRef<Perfil | null>(null);
@@ -84,10 +92,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((evento, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      // Código confirmado: a sessão virou aal2 e o banco passa a mostrar os dados.
+      if (evento === 'MFA_CHALLENGE_VERIFIED') {
+        silencioso.current = true;
+        setTentativa((n) => n + 1);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -104,8 +117,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     let cancelado = false;
     if (!silencioso.current) setAcesso('carregando');
     silencioso.current = false;
-    buscarPerfilAtivo(userId)
-      .then(async (p) => {
+    nivelMfa()
+      .catch(() => ({ atual: 'aal1' as Nivel, proximo: 'aal1' as Nivel }))
+      .then(async (n) => {
+        if (cancelado) return;
+        setNivel(n);
+        if (n.proximo === 'aal2' && n.atual !== 'aal2') {
+          setPerfil(null);
+          setAcesso('mfa_pendente');
+          return;
+        }
+        const p = await buscarPerfilAtivo(userId);
         const inativo = p ? false : await estabelecimentoInativo().catch(() => false);
         const global = p ? await supabase.rpc('eh_admin_global_cadastrado').then((r) => r.data === true, () => false) : false;
         if (cancelado) return;
@@ -125,6 +147,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [userId, loading, tentativa]);
 
   const recarregarPerfil = useCallback(() => setTentativa((n) => n + 1), []);
+  const atualizarNivel = useCallback(async () => {
+    try { setNivel(await nivelMfa()); } catch { /* mantém o último nível conhecido */ }
+  }, []);
 
   // Estabelecimento desativado com a pessoa já logada: ao voltar para a aba, confere de novo (RF-18).
   useEffect(() => {
@@ -147,12 +172,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = useCallback(async () => {
     await registrarAuditoria('logout');
-    // Revoga a sessão no servidor de autenticação (SES-04); 'local' encerra só este aparelho.
+    // Revoga a sessão no servidor de autenticação (SES-04, L-08); 'local' encerra só este aparelho.
     await supabase.auth.signOut({ scope: 'local' });
+    limparAtividade();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ session, user, perfil, acesso, erroAcesso, adminGlobal, recarregarPerfil, salvarPreferencias, signOut, loading }}>
+    <AuthContext.Provider value={{ session, user, perfil, acesso, erroAcesso, adminGlobal, nivel, recarregarPerfil, atualizarNivel, salvarPreferencias, signOut, loading }}>
       {!loading && children}
     </AuthContext.Provider>
   );

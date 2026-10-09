@@ -104,8 +104,8 @@ export async function salvarMembro(id: string | null, d: DadosMembro): Promise<s
 }
 
 type AcaoAcesso =
-  | { acao: 'criar_acesso'; user_id: string; email: string; senha_temporaria: string }
-  | { acao: 'redefinir_senha'; user_id: string; senha_temporaria: string }
+  | { acao: 'criar_acesso'; user_id: string; email: string }
+  | { acao: 'redefinir_mfa'; user_id: string }
   | { acao: 'desativar' | 'reativar'; user_id: string };
 
 /** Chama a Edge Function admin-usuarios. As mensagens dela já são seguras para a tela. */
@@ -128,12 +128,4 @@ export async function definirAtivo(m: MembroEquipe, ativo: boolean): Promise<voi
   if (m.auth_id) return acaoDeAcesso({ acao: ativo ? 'reativar' : 'desativar', user_id: m.id });
   const { error } = await supabase.from('users').update({ active: ativo }).eq('id', m.id);
   if (error) throw new ErroPublico(mensagemDeErro(error, 'Não foi possível alterar o status.', 'equipe.status'));
-}
-
-/** Senha temporária forte (gerador criptográfico, CRI-06), sem caracteres que confundem. */
-export function gerarSenhaTemporaria(tamanho = 14): string {
-  const alfabeto = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  const bytes = new Uint32Array(tamanho);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => alfabeto[b % alfabeto.length]).join('');
 }

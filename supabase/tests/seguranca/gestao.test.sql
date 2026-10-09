@@ -14,6 +14,8 @@ begin if not coalesce(c, false) then raise exception 'FALHOU: %', msg; end if; r
 create or replace function pg_temp.como(p_sub text) returns void language sql as $$
   select set_config('request.jwt.claim.sub', p_sub, false);
 $$;
+-- As sessões destes testes já concluíram o MFA (aal2); as regras de aal1 estão em login_mfa.test.sql.
+select set_config('request.jwt.claims', '{"aal": "aal2"}', false);
 grant execute on all functions in schema pg_temp to anon, authenticated, service_role;
 
 -- A = administradora; P = profissional 1; Q = profissional 2

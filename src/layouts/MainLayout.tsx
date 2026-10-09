@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, ChevronLeft, ChevronRight, ChevronDown, SquareKanban, Plus, SquareCheckBig, CalendarPlus, UserPlus, Lock, Building2, Gem } from 'lucide-react';
-import AlterarSenhaModal from '../components/AlterarSenhaModal';
+import { Menu, X, ChevronLeft, ChevronRight, ChevronDown, SquareKanban, Plus, SquareCheckBig, CalendarPlus, UserPlus, Lock, Building2, Gem, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
+import { useInatividadeAdmin } from '../hooks/useInatividadeAdmin';
 import { GRUPOS, ROTULO_PAPEL, moduloDaRota, modulosVisiveis, type IdGrupo, type Modulo } from '../features/acesso/modulos';
 import { demoExpirada, diasRestantesDemo, moduloLiberadoNoPlano } from '../features/plano/plano';
 
@@ -12,7 +12,7 @@ const CHAVE_GRUPOS = 'jb-menu-grupos';
 export default function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { perfil, user, adminGlobal } = useAuth();
+  const { perfil, adminGlobal, nivel, signOut } = useAuth();
   // Aplica o tema salvo ao abrir o portal; a troca fica em Configurações.
   useTheme();
 
@@ -20,10 +20,10 @@ export default function MainLayout() {
   // Estado que controla se o menu do PC está largo ou apenas com os ícones
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Primeiro acesso com senha temporária: a troca é obrigatória antes de usar o portal.
-  const trocaObrigatoria = user?.user_metadata?.trocar_senha === true;
-  // Entrou pelo convite por e-mail (nova administradora): define a primeira senha.
-  const definirSenha = user?.user_metadata?.definir_senha === true;
+  // Administradora parada por 30 minutos sai do portal (L-09).
+  useInatividadeAdmin(perfil?.role === 'admin', () => {
+    void signOut().finally(() => navigate('/login?erro=inatividade', { replace: true }));
+  });
   const estabelecimento = perfil?.estabelecimento ?? null;
   const demoVencida = !!estabelecimento && demoExpirada(estabelecimento);
   const diasDemo = estabelecimento ? diasRestantesDemo(estabelecimento) : null;
@@ -270,14 +270,19 @@ export default function MainLayout() {
         </div>
 
         {faixaPlano}
+        {perfil?.role === 'admin' && nivel.atual !== 'aal2' && (
+          <Link to="/configuracoes#seguranca" className="shrink-0 flex items-center justify-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold text-center bg-amber-50 text-amber-800 border-b border-amber-100">
+            <ShieldAlert size={14} className="shrink-0" />
+            {nivel.proximo === 'aal2'
+              ? 'Confirme o código do autenticador para criar acessos, alterar a equipe e ver os logs.'
+              : 'Ative a verificação em duas etapas: é obrigatória para criar acessos, alterar a equipe e ver os logs.'}
+          </Link>
+        )}
 
         {/* Tela que renderiza as páginas (Agenda, Dashboard, etc) */}
         <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 relative">
           <Outlet />
         </main>
-        {definirSenha
-          ? <AlterarSenhaModal obrigatoria definir onClose={() => undefined} />
-          : trocaObrigatoria && <AlterarSenhaModal obrigatoria onClose={() => undefined} />}
       </div>
     </div>
   );

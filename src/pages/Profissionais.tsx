@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Copy, KeyRound, Loader2, Plus, Search, ShieldCheck, ShieldOff, UserCog, UserPlus } from 'lucide-react';
+import { AlertTriangle, Loader2, Plus, Search, ShieldCheck, ShieldOff, UserCog, UserPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { Aviso, Campo, Confirmar, Modal, inputCls } from '../components/ui';
 import {
-  ROTULO_CONTRATO, acaoDeAcesso, definirAtivo, equipeKeys, gerarSenhaTemporaria, listarEquipe, salvarMembro,
+  ROTULO_CONTRATO, acaoDeAcesso, definirAtivo, equipeKeys, listarEquipe, salvarMembro,
   type DadosMembro, type MembroEquipe, type ModeloContrato,
 } from '../features/equipe/api';
 import { ROTULO_PAPEL, type Papel } from '../features/acesso/modulos';
@@ -24,7 +24,7 @@ export default function Profissionais() {
   const [filtro, setFiltro] = useState<Filtro>('ativos');
   const [busca, setBusca] = useState('');
   const [editando, setEditando] = useState<MembroEquipe | 'novo' | null>(null);
-  const [acesso, setAcesso] = useState<{ membro: MembroEquipe; modo: 'criar' | 'redefinir' } | null>(null);
+  const [acesso, setAcesso] = useState<{ membro: MembroEquipe; modo: 'criar' | 'mfa' } | null>(null);
   const [status, setStatus] = useState<{ membro: MembroEquipe; ativo: boolean } | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
@@ -112,10 +112,13 @@ export default function Profissionais() {
                 )}
                 <div className="flex flex-wrap gap-2 mt-auto pt-1">
                   <button type="button" onClick={() => setEditando(m)} className="flex-1 min-w-[90px] text-xs font-bold border border-slate-200 rounded-lg py-2 hover:bg-slate-50">Editar perfil</button>
-                  <button type="button" onClick={() => setAcesso({ membro: m, modo: m.auth_id ? 'redefinir' : 'criar' })} disabled={!m.active}
-                    className="flex-1 min-w-[90px] flex items-center justify-center gap-1 text-xs font-bold border border-indigo-200 text-indigo-700 rounded-lg py-2 hover:bg-indigo-50 disabled:opacity-40">
-                    {m.auth_id ? <><KeyRound size={14} /> Redefinir senha</> : <><UserPlus size={14} /> Criar acesso</>}
-                  </button>
+                  {!(m.auth_id && eu) && (
+                    <button type="button" onClick={() => setAcesso({ membro: m, modo: m.auth_id ? 'mfa' : 'criar' })} disabled={!m.active}
+                      title={m.auth_id ? 'Para quem perdeu o celular ou trocou de aparelho' : undefined}
+                      className="flex-1 min-w-[90px] flex items-center justify-center gap-1 text-xs font-bold border border-indigo-200 text-indigo-700 rounded-lg py-2 hover:bg-indigo-50 disabled:opacity-40">
+                      {m.auth_id ? <><ShieldOff size={14} /> Redefinir 2 etapas</> : <><UserPlus size={14} /> Criar acesso</>}
+                    </button>
+                  )}
                   {!eu && (
                     <button type="button" onClick={() => setStatus({ membro: m, ativo: !m.active })}
                       className={`flex-1 min-w-[90px] flex items-center justify-center gap-1 text-xs font-bold rounded-lg py-2 border ${m.active ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'}`}>
@@ -249,62 +252,52 @@ function EditarMembro({ membro, onClose, onSalvo }: { membro: MembroEquipe | nul
   );
 }
 
-function AcessoModal({ membro, modo, onClose, onFeito }: { membro: MembroEquipe; modo: 'criar' | 'redefinir'; onClose: () => void; onFeito: (msg: string) => void }) {
+function AcessoModal({ membro, modo, onClose, onFeito }: { membro: MembroEquipe; modo: 'criar' | 'mfa'; onClose: () => void; onFeito: (msg: string) => void }) {
   const [email, setEmail] = useState(membro.perfil?.email ?? '');
-  const [senha, setSenha] = useState(() => gerarSenhaTemporaria());
-  const [copiado, setCopiado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const executar = useMutation({
     mutationFn: () => modo === 'criar'
-      ? acaoDeAcesso({ acao: 'criar_acesso', user_id: membro.id, email: email.trim(), senha_temporaria: senha })
-      : acaoDeAcesso({ acao: 'redefinir_senha', user_id: membro.id, senha_temporaria: senha }),
+      ? acaoDeAcesso({ acao: 'criar_acesso', user_id: membro.id, email: email.trim() })
+      : acaoDeAcesso({ acao: 'redefinir_mfa', user_id: membro.id }),
     onSuccess: () => onFeito(modo === 'criar'
-      ? `Acesso criado para ${membro.name}. Entregue a senha temporária pessoalmente; no primeiro login a troca é obrigatória.`
-      : `Senha de ${membro.name} redefinida. No próximo login a troca é obrigatória.`),
+      ? `Acesso criado para ${membro.name}. Ela entra com "Continuar com Google" usando este e-mail.`
+      : `Verificação em duas etapas de ${membro.name} redefinida. No próximo login ela cadastra um novo autenticador.`),
     onError: (e) => setErro(mensagemDeErro(e, 'Não foi possível concluir.', 'equipe.acesso')),
   });
 
-  const copiar = async () => {
-    try { await navigator.clipboard.writeText(senha); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch { setErro('Não foi possível copiar. Selecione e copie a senha manualmente.'); }
-  };
-
   const enviar = (ev: React.FormEvent) => {
     ev.preventDefault();
-    if (modo === 'criar' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) return setErro('Informe um e-mail válido para o login.');
-    if ([...senha].length < 12) return setErro('A senha temporária precisa ter pelo menos 12 caracteres.');
+    if (modo === 'criar' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) return setErro('Informe um e-mail válido da conta Google.');
     setErro(null);
     executar.mutate();
   };
 
   return (
-    <Modal titulo={modo === 'criar' ? `Criar acesso: ${membro.name}` : `Redefinir senha: ${membro.name}`} onClose={onClose}
+    <Modal titulo={modo === 'criar' ? `Criar acesso: ${membro.name}` : `Redefinir 2 etapas: ${membro.name}`} onClose={onClose}
       rodape={
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 font-medium text-sm hover:bg-slate-100">Cancelar</button>
           <button type="submit" form="form-acesso" disabled={executar.isPending} className="px-4 py-2 rounded-lg bg-rose-600 text-white font-bold text-sm disabled:opacity-60">
-            {executar.isPending ? 'Enviando...' : modo === 'criar' ? 'Criar acesso' : 'Redefinir senha'}
+            {executar.isPending ? 'Enviando...' : modo === 'criar' ? 'Criar acesso' : 'Redefinir 2 etapas'}
           </button>
         </div>
       }>
       <form id="form-acesso" onSubmit={enviar} className="space-y-4" noValidate>
-        {modo === 'criar' && (
-          <Campo rotulo="E-mail de login" obrigatorio>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} autoComplete="off" maxLength={254} autoFocus />
-          </Campo>
+        {modo === 'criar' ? (
+          <>
+            <Campo rotulo="E-mail da conta Google" obrigatorio dica={'A pessoa entra com "Continuar com Google" usando este e-mail. Não há senha.'}>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} autoComplete="off" maxLength={254} autoFocus />
+            </Campo>
+            <p className="text-xs text-slate-500">
+              O papel ({ROTULO_PAPEL[membro.role]}) e o status vêm do cadastro do profissional.
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-slate-600">
+            Use quando a pessoa perder o celular ou trocar de aparelho. Os autenticadores dela são removidos e ela cadastra um novo depois de entrar com o Google.
+          </p>
         )}
-        <Campo rotulo="Senha temporária" obrigatorio composto dica="Entregue pessoalmente. No primeiro acesso o sistema obriga a troca por uma senha pessoal.">
-          <div className="flex gap-2">
-            <input value={senha} onChange={(e) => setSenha(e.target.value)} className={`${inputCls} font-mono`} autoComplete="off" spellCheck={false} aria-label="Senha temporária" />
-            <button type="button" onClick={copiar} className="px-3 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-bold flex items-center gap-1" title="Copiar">
-              <Copy size={14} /> {copiado ? 'Copiado' : 'Copiar'}
-            </button>
-            <button type="button" onClick={() => setSenha(gerarSenhaTemporaria())} className="px-3 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-bold">Gerar</button>
-          </div>
-        </Campo>
-        <p className="text-xs text-slate-500">
-          O papel ({ROTULO_PAPEL[membro.role]}) e o status vêm do cadastro do profissional. O login é criado já confirmado, sem depender de e-mail.
-        </p>
         {erro && <p role="alert" className="text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">{erro}</p>}
       </form>
     </Modal>

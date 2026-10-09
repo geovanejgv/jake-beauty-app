@@ -1,18 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Info, Loader2, Mail, Plus, Power, ShieldAlert, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Building2, Info, Loader2, Plus, Power, ShieldAlert, SlidersHorizontal, Trash2 } from 'lucide-react';
 import * as api from '../features/admin-global/api';
 import {
   dataLocal, lerLimite, validarEdicao, validarNovoEstabelecimento,
   type EdicaoEstabelecimento, type EstabelecimentoGlobal, type NovoEstabelecimento,
 } from '../features/admin-global/logic';
 import { LIMITES_PADRAO, PLANOS, ROTULO_PLANO, ROTULO_SITUACAO, demoExpirada, usoLimite, type Plano, type Situacao } from '../features/plano/plano';
-import { confirmarCodigo, fatoresTotp, mensagemMfa, nivelMfa } from '../features/acesso/mfa';
+import { codigoValido, confirmarCodigo, fatoresTotp, mensagemMfa, nivelMfa } from '../features/acesso/mfa';
 import { CampoCodigo } from '../components/SegurancaMfa';
 import { Aviso, Campo, Confirmar, Modal, inputCls } from '../components/ui';
 import { Rodape } from '../features/kanban/components/janelas';
-import { mensagemDeErro } from '../lib/seguranca/erros';
+import { ErroPublico, mensagemDeErro } from '../lib/seguranca/erros';
+import { registrarAuditoria } from '../lib/seguranca/auditoria';
 
 const dataBR = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 const SELO: Record<Situacao, string> = {
@@ -106,24 +107,12 @@ function Painel({ cabecalho }: { cabecalho: React.ReactNode }) {
     onError: (e) => setAviso(mensagemDeErro(e, 'Não foi possível alterar a situação.', 'admin_global')),
     onSettled: () => { setMudarSituacao(null); setExcluindo(null); },
   });
-  const convite = useMutation({
-    mutationFn: (e: EstabelecimentoGlobal) => api.reenviarConvite(e.id),
-    onSuccess: (_d, e) => setAviso(`Convite reenviado para a administradora de "${e.nome}".`),
-    onError: (e) => setAviso(mensagemDeErro(e, 'Não foi possível reenviar o convite.', 'admin_global')),
-  });
 
   const acoes = (e: EstabelecimentoGlobal) => (
     <div className="flex flex-wrap gap-1.5">
       <button type="button" onClick={() => setEditando(e)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50">
         <SlidersHorizontal size={13} /> Plano e limites
       </button>
-      {!e.proprio && e.status === 'ativo' && (
-        <button type="button" disabled={convite.isPending} onClick={() => convite.mutate(e)}
-          title="Para quando o link do convite venceu ou o e-mail não chegou"
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-          {convite.isPending && convite.variables?.id === e.id ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />} Reenviar convite
-        </button>
-      )}
       {!e.proprio && (e.status === 'ativo' ? (
         <button type="button" onClick={() => setMudarSituacao({ e, para: 'desativado' })} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 text-xs font-bold text-amber-700 hover:bg-amber-50">
           <Power size={13} /> Desativar
@@ -224,7 +213,7 @@ function Painel({ cabecalho }: { cabecalho: React.ReactNode }) {
           </>
         )}
 
-      {novo && <NovoModal onClose={() => setNovo(false)} onCriado={async () => { await atualizar(); setAviso('Estabelecimento criado. A administradora recebeu o convite por e-mail para definir a senha.'); }} />}
+      {novo && <NovoModal onClose={() => setNovo(false)} onCriado={async () => { await atualizar(); setAviso('Estabelecimento criado. A administradora entra com "Continuar com Google" usando o e-mail cadastrado.'); }} />}
       {editando && <EditarModal estabelecimento={editando} onClose={() => setEditando(null)} onSalvo={async () => { await atualizar(); setAviso('Plano e limites salvos.'); }} />}
       {mudarSituacao && (
         <Confirmar
@@ -238,7 +227,8 @@ function Painel({ cabecalho }: { cabecalho: React.ReactNode }) {
           onCancelar={() => setMudarSituacao(null)}
         />
       )}
-      {excluindo && <ExcluirModal estabelecimento={excluindo} ocupado={situacao.isPending} onClose={() => setExcluindo(null)} onConfirmar={() => situacao.mutate({ e: excluindo, para: 'excluido' })} />}
+      {excluindo && <ExcluirModal estabelecimento={excluindo} onClose={() => setExcluindo(null)}
+        onExcluido={async () => { setExcluindo(null); await atualizar(); setAviso('Estabelecimento excluído (dados guardados).'); }} />}
       <Aviso texto={aviso} onFechar={() => setAviso(null)} />
     </div>
   );
@@ -316,7 +306,7 @@ function NovoModal({ onClose, onCriado }: { onClose: () => void; onCriado: () =>
         <div className="border-t border-slate-100 pt-4 space-y-3">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Primeira administradora</p>
           <Campo rotulo="Nome" obrigatorio><input value={admNome} maxLength={200} onChange={(e) => setAdmNome(e.target.value)} className={inputCls} /></Campo>
-          <Campo rotulo="E-mail (conta de login)" obrigatorio dica="Ela recebe um convite por e-mail e define a própria senha. A administração global não define senha nem ganha acesso ao estabelecimento.">
+          <Campo rotulo="E-mail da conta Google" obrigatorio dica={'Ela entra com "Continuar com Google" usando este e-mail. Não há senha; a administração global não ganha acesso ao estabelecimento.'}>
             <input type="email" value={admEmail} maxLength={200} onChange={(e) => setAdmEmail(e.target.value)} className={inputCls} />
           </Campo>
         </div>
@@ -364,19 +354,46 @@ function EditarModal({ estabelecimento, onClose, onSalvo }: { estabelecimento: E
   );
 }
 
-/** Exclusão lógica com confirmação digitada (EXCLUIR). */
-function ExcluirModal({ estabelecimento, ocupado, onClose, onConfirmar }: { estabelecimento: EstabelecimentoGlobal; ocupado: boolean; onClose: () => void; onConfirmar: () => void }) {
+/**
+ * Exclusão lógica: "EXCLUIR" digitado e o código do autenticador na hora (M-04). O banco
+ * confere que o código foi confirmado há menos de 5 minutos (claim "amr" do token).
+ */
+function ExcluirModal({ estabelecimento, onClose, onExcluido }: { estabelecimento: EstabelecimentoGlobal; onClose: () => void; onExcluido: () => Promise<void> }) {
   const [texto, setTexto] = useState('');
-  const ok = texto.trim() === 'EXCLUIR';
+  const [codigo, setCodigo] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const ok = texto.trim() === 'EXCLUIR' && codigoValido(codigo);
+  const excluir = async () => {
+    if (!ok) return;
+    setOcupado(true); setErro(null);
+    try {
+      const fator = (await fatoresTotp()).find((f) => f.verificado);
+      if (!fator) throw new ErroPublico('Ative o autenticador em Configurações > Segurança para fazer isto.');
+      try { await confirmarCodigo(fator.id, codigo); } catch (e) {
+        await registrarAuditoria('mfa_falhou', { acao: 'excluir_estabelecimento' });
+        throw new ErroPublico(mensagemMfa((e as { code?: string })?.code) ?? 'Código de segurança inválido ou expirado.');
+      }
+      await api.atualizarEstabelecimento(estabelecimento.id, edicaoDe(estabelecimento, { status: 'excluido' }));
+      await onExcluido();
+    } catch (e) {
+      setErro(mensagemDeErro(e, 'Não foi possível excluir.', 'admin_global'));
+      setOcupado(false);
+    }
+  };
   return (
     <Modal titulo="Excluir estabelecimento" onClose={onClose}
-      rodape={<Rodape onFechar={onClose} onSalvar={() => { if (ok) onConfirmar(); }} ocupado={ocupado} textoSalvar="EXCLUIR" erro={null} />}>
+      rodape={<Rodape onFechar={onClose} onSalvar={() => { void excluir(); }} ocupado={ocupado} textoSalvar="EXCLUIR" erro={erro} />}>
       <div className="space-y-3 text-sm text-slate-700">
         <p>O acesso de <strong>{estabelecimento.nome}</strong> acaba na hora. Os dados ficam guardados e o estabelecimento pode ser reativado.</p>
         <Campo rotulo='Para confirmar, digite EXCLUIR'>
           <input value={texto} onChange={(e) => setTexto(e.target.value)} className={inputCls} aria-label="Confirmação" />
         </Campo>
-        {!ok && texto && <p className="text-xs text-slate-500">Digite exatamente EXCLUIR.</p>}
+        {texto && texto.trim() !== 'EXCLUIR' && <p className="text-xs text-slate-500">Digite exatamente EXCLUIR.</p>}
+        <Campo rotulo="Código do autenticador">
+          <input inputMode="numeric" autoComplete="one-time-code" maxLength={7} value={codigo} onChange={(e) => setCodigo(e.target.value)}
+            className={`${inputCls} font-mono tracking-[0.3em]`} aria-label="Código do autenticador" />
+        </Campo>
       </div>
     </Modal>
   );

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import Dashboard from './pages/Dashboard';
 import Agenda from './pages/Agenda';
@@ -18,18 +18,45 @@ import RelatorioComissoes from './pages/RelatorioComissoes';
 import ImprimirComissoes from './pages/ImprimirComissoes';
 import Plano from './pages/Plano';
 import AdminGlobal from './pages/AdminGlobal';
+import AuthCallback from './pages/AuthCallback';
+import Verificacao from './pages/Verificacao';
+import { registrarAuditoria } from './lib/seguranca/auditoria';
+import { supabase } from './lib/supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { moduloVisivel, rotaInicial, type IdModulo } from './features/acesso/modulos';
 import { moduloLiberadoNoPlano } from './features/plano/plano';
 
-/** Negação por padrão (AUZ-01): sem sessão vai para /login; sem perfil ativo não entra. */
+/**
+ * Negação por padrão (AUZ-01): sem sessão vai para /login (guardando o destino, L-05);
+ * autenticador ativo sem o código desta sessão vê a verificação (M-06); sem perfil
+ * ativo a sessão é encerrada (L-04).
+ */
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, acesso } = useAuth();
+  const location = useLocation();
   if (loading || (user && acesso === 'carregando')) return <div className="h-screen flex items-center justify-center">Carregando...</div>;
-  if (!user) return <Navigate to="/login" />;
+  if (!user) {
+    const destino = `${location.pathname}${location.search}`;
+    return <Navigate to={destino === '/' ? '/login' : `/login?redirectTo=${encodeURIComponent(destino)}`} replace />;
+  }
+  if (acesso === 'mfa_pendente') return <Verificacao />;
   if (acesso === 'inativo') return <EstabelecimentoInativo />;
+  if (acesso === 'negado') return <SemAcesso />;
   if (acesso !== 'liberado') return <AcessoNaoLiberado />;
   return <>{children}</>;
+}
+
+/** Entrou, mas não tem perfil ativo (nunca cadastrado ou desativado): sai na hora (L-04). */
+function SemAcesso() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    void (async () => {
+      await registrarAuditoria('login_negado', { motivo: 'sem_perfil' });
+      await supabase.auth.signOut({ scope: 'local' });
+      navigate('/login?erro=sem-acesso', { replace: true });
+    })();
+  }, [navigate]);
+  return <div className="h-screen flex items-center justify-center">Encerrando a sessão...</div>;
 }
 
 /**
@@ -66,27 +93,23 @@ function Inicio() {
   return perfil ? <Navigate to={rotaInicial(perfil.role, perfil.preferencias_ui)} replace /> : null;
 }
 
-/** Quem já está logado não fica na tela de login. */
+/** Quem já está logado não fica na tela de login (com ?erro= a mensagem aparece). */
 function SomenteSemSessao({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  return user ? <Navigate to="/" replace /> : <>{children}</>;
+  const [params] = useSearchParams();
+  return user && !params.get('erro') ? <Navigate to="/" replace /> : <>{children}</>;
 }
 
-/** Logou, mas não tem perfil ativo em public.users (ou falhou ao conferir). O app não cria perfil sozinho. */
+/** Falhou ao conferir o perfil (rede ou banco). */
 function AcessoNaoLiberado() {
-  const { acesso, erroAcesso, recarregarPerfil, signOut } = useAuth();
-  const erro = acesso === 'erro';
+  const { erroAcesso, recarregarPerfil, signOut } = useAuth();
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center space-y-4">
-        <h1 className="text-2xl font-bold text-slate-900">{erro ? 'Não foi possível conferir seu acesso' : 'Acesso ainda não liberado'}</h1>
-        <p className="text-slate-500 text-sm">
-          {erro ? erroAcesso : 'Sua conta entrou, mas ainda não foi liberada no portal. Peça à administradora para ativar o seu cadastro.'}
-        </p>
+        <h1 className="text-2xl font-bold text-slate-900">Não foi possível conferir seu acesso</h1>
+        <p className="text-slate-500 text-sm">{erroAcesso}</p>
         <div className="flex gap-2 justify-center">
-          {erro && (
-            <button onClick={recarregarPerfil} className="px-4 py-2 rounded-lg bg-slate-200 text-slate-800 font-medium">Tentar de novo</button>
-          )}
+          <button onClick={recarregarPerfil} className="px-4 py-2 rounded-lg bg-slate-200 text-slate-800 font-medium">Tentar de novo</button>
           <button onClick={() => { void signOut(); }} className="px-4 py-2 rounded-lg bg-rose-600 text-white font-medium">Sair</button>
         </div>
       </div>
@@ -100,6 +123,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<SomenteSemSessao><Login /></SomenteSemSessao>} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           
           <Route path="/" element={
             <PrivateRoute>

@@ -2,7 +2,7 @@ import { supabase } from '../supabase';
 import { logger } from './logger';
 
 /**
- * Trilha de auditoria (LOG-05) pelo lado da tela. Quem, quando, IP e navegador são
+ * Trilha de auditoria (LOG-05, A-01 do login) pelo lado da tela. Quem, quando, IP e navegador são
  * gravados pelo próprio banco (função registrar_auditoria, a partir da sessão e
  * dos cabeçalhos da requisição); a tela só informa a ação. Exclusões, alterações
  * de cliente/finanças e mudanças de permissão são gravadas por gatilho no banco,
@@ -11,7 +11,7 @@ import { logger } from './logger';
  * Nunca envie dado pessoal em "detalhes" (LOG-04).
  */
 
-export type AcaoTela = 'login' | 'login_negado' | 'logout';
+export type AcaoTela = 'login' | 'login_negado' | 'logout' | 'mfa_ativado' | 'mfa_verificado' | 'mfa_falhou' | 'mfa_removido';
 
 export async function registrarAuditoria(acao: AcaoTela, detalhes?: Record<string, string | number | boolean | null>) {
   try {
