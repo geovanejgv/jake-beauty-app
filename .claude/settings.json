@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Supabase__apply_migration",
+      "mcp__Supabase__execute_sql",
+      "mcp__github__create_pull_request",
+      "mcp__github__merge_pull_request",
+      "mcp__github__subscribe_pr_activity"
+    ]
+  }
+}
