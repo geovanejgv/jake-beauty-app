@@ -22,7 +22,7 @@ export function erroDoRetorno(busca: string, fragmento: string): string | null {
 /**
  * Retorno do Google (/auth/callback, L-04). O supabase-js troca o código pela sessão
  * (PKCE) ao abrir a página; aqui só se decide o que fazer com ela:
- * - perfil ativo de estabelecimento ativo (ou autenticador a confirmar) -> destino;
+ * - perfil ativo de estabelecimento ativo -> destino;
  * - estabelecimento desativado -> encerra a sessão e explica;
  * - sem perfil ativo -> encerra a sessão na hora, com mensagem neutra.
  */
@@ -45,10 +45,10 @@ export default function AuthCallback() {
       return;
     }
     if (acesso === 'carregando') return;
-    if (acesso === 'liberado' || acesso === 'mfa_pendente') {
+    if (acesso === 'liberado') {
       feito.current = true;
       marcarAtividade(); // login novo começa do zero, sem herdar tempo parado antigo
-      void registrarAuditoria('login', acesso === 'mfa_pendente' ? { mfa_pendente: true } : undefined)
+      void registrarAuditoria('login')
         .finally(() => navigate(retirarDestino(), { replace: true }));
       return;
     }

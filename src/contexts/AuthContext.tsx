@@ -16,10 +16,10 @@ export type Perfil = { id: string; name: string; role: Papel; preferencias_ui: P
 /**
  * liberado: tem perfil ativo; negado: entrou com o Google, mas não tem perfil ativo (o
  * app não cria perfil sozinho); inativo: o estabelecimento foi desativado ou excluído
- * (o RLS já não mostra nada); mfa_pendente: tem autenticador ativo e ainda não digitou o
- * código nesta sessão (o banco não mostra nada até lá, M-06); erro: falha ao consultar.
+ * (o RLS já não mostra nada); erro: falha ao consultar. O código do autenticador não é
+ * pedido no login: só nas ações administrativas, que o banco confere (aal2).
  */
-export type SituacaoAcesso = 'carregando' | 'sem_sessao' | 'liberado' | 'negado' | 'inativo' | 'mfa_pendente' | 'erro';
+export type SituacaoAcesso = 'carregando' | 'sem_sessao' | 'liberado' | 'negado' | 'inativo' | 'erro';
 
 interface AuthContextType {
   session: Session | null;
@@ -122,11 +122,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       .then(async (n) => {
         if (cancelado) return;
         setNivel(n);
-        if (n.proximo === 'aal2' && n.atual !== 'aal2') {
-          setPerfil(null);
-          setAcesso('mfa_pendente');
-          return;
-        }
         const p = await buscarPerfilAtivo(userId);
         const inativo = p ? false : await estabelecimentoInativo().catch(() => false);
         const global = p ? await supabase.rpc('eh_admin_global_cadastrado').then((r) => r.data === true, () => false) : false;

@@ -19,7 +19,6 @@ import ImprimirComissoes from './pages/ImprimirComissoes';
 import Plano from './pages/Plano';
 import AdminGlobal from './pages/AdminGlobal';
 import AuthCallback from './pages/AuthCallback';
-import Verificacao from './pages/Verificacao';
 import { registrarAuditoria } from './lib/seguranca/auditoria';
 import { supabase } from './lib/supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -28,8 +27,7 @@ import { moduloLiberadoNoPlano } from './features/plano/plano';
 
 /**
  * Negação por padrão (AUZ-01): sem sessão vai para /login (guardando o destino, L-05);
- * autenticador ativo sem o código desta sessão vê a verificação (M-06); sem perfil
- * ativo a sessão é encerrada (L-04).
+ * sem perfil ativo a sessão é encerrada (L-04).
  */
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, acesso } = useAuth();
@@ -39,7 +37,6 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
     const destino = `${location.pathname}${location.search}`;
     return <Navigate to={destino === '/' ? '/login' : `/login?redirectTo=${encodeURIComponent(destino)}`} replace />;
   }
-  if (acesso === 'mfa_pendente') return <Verificacao />;
   if (acesso === 'inativo') return <EstabelecimentoInativo />;
   if (acesso === 'negado') return <SemAcesso />;
   if (acesso !== 'liberado') return <AcessoNaoLiberado />;

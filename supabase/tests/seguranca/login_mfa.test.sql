@@ -1,5 +1,4 @@
--- Login pelo Google e MFA no banco: sessão aal1 com autenticador ativo não vê nada,
--- permissões exigem aal2, código recente para excluir estabelecimento e auditoria.
+-- Login pelo Google e MFA no banco: o login não pede código; permissões e logs exigem aal2, código recente para excluir estabelecimento e auditoria.
 -- Rodar com run.sh.
 \set ON_ERROR_STOP 1
 create or replace function pg_temp.espera_erro(p_sql text, p_trecho text) returns void language plpgsql as $$
@@ -40,21 +39,22 @@ insert into public.users (id, auth_id, name, role, active) values
   ('aa000000-0000-0000-0000-0000000000a3', 'a3000000-0000-0000-0000-000000000003', 'Admin A2', 'admin', true);
 insert into public.administradores_globais (user_id) values ('a1000000-0000-0000-0000-000000000001');
 
--- 1) Autenticador ativo e sessão aal1: nada do estabelecimento aparece (M-06)
+-- 1) Login sem código (decisão de 2026-10-09): autenticador ativo e sessão aal1 entram
+--    normalmente; o código só é pedido nas ações administrativas (seções 4, 6 e 8)
 set role authenticated;
 select pg_temp.como('a1000000-0000-0000-0000-000000000001', 'aal1');
-select pg_temp.ok(public.mfa_pendente(), 'com autenticador e aal1 o MFA está pendente');
-select pg_temp.ok(not public.usuario_ativo() and not public.usuario_admin(), 'MFA pendente: sem acesso');
-select pg_temp.ok(public.estabelecimento_atual() is null and public.usuario_atual_id() is null, 'MFA pendente: sem estabelecimento');
-select pg_temp.ok((select count(*) from public.clients) = 0, 'MFA pendente: nenhuma cliente pela API REST');
-select pg_temp.ok((select count(*) from public.users) = 0, 'MFA pendente: nenhum perfil');
+select pg_temp.ok(public.mfa_pendente(), 'com autenticador e aal1 o MFA continua pendente (informativo)');
+select pg_temp.ok(public.usuario_ativo() and public.usuario_admin(), 'aal1 entra sem código');
+select pg_temp.ok(public.estabelecimento_atual() = '5a1ab0e1-0000-4000-8000-000000000001', 'aal1 vê o próprio estabelecimento');
+select pg_temp.ok((select count(*) from public.clients) >= 1, 'aal1 vê as clientes');
+select pg_temp.espera_erro($$update public.users set active = false where id = 'aa000000-0000-0000-0000-0000000000a2'$$, 'mfa_requerido');
+select pg_temp.ok((select count(*) from public.access_logs) = 0, 'aal1 não vê os logs');
 
--- 2) Mesmo usuário depois do código (aal2): acesso normal
+-- 2) Mesmo usuário depois do código (aal2)
 select pg_temp.como('a1000000-0000-0000-0000-000000000001', 'aal2');
-select pg_temp.ok(not public.mfa_pendente() and public.usuario_admin(), 'com aal2 a administradora entra');
-select pg_temp.ok((select count(*) from public.clients) >= 1, 'com aal2 as clientes aparecem');
+select pg_temp.ok(not public.mfa_pendente() and public.usuario_admin(), 'com aal2 nada fica pendente');
 
--- 3) Sem autenticador confirmado (cadastro não concluído conta como sem): aal1 basta
+-- 3) Sem autenticador confirmado (cadastro não concluído conta como sem)
 select pg_temp.como('a2000000-0000-0000-0000-000000000002', 'aal1');
 select pg_temp.ok(not public.mfa_pendente() and public.usuario_ativo(), 'sem autenticador confirmado, aal1 entra');
 
