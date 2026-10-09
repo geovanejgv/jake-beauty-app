@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Info, Loader2, Plus, Power, ShieldAlert, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Building2, Info, Loader2, Mail, Plus, Power, ShieldAlert, SlidersHorizontal, Trash2 } from 'lucide-react';
 import * as api from '../features/admin-global/api';
 import {
   dataLocal, lerLimite, validarEdicao, validarNovoEstabelecimento,
@@ -106,12 +106,24 @@ function Painel({ cabecalho }: { cabecalho: React.ReactNode }) {
     onError: (e) => setAviso(mensagemDeErro(e, 'Não foi possível alterar a situação.', 'admin_global')),
     onSettled: () => { setMudarSituacao(null); setExcluindo(null); },
   });
+  const convite = useMutation({
+    mutationFn: (e: EstabelecimentoGlobal) => api.reenviarConvite(e.id),
+    onSuccess: (_d, e) => setAviso(`Convite reenviado para a administradora de "${e.nome}".`),
+    onError: (e) => setAviso(mensagemDeErro(e, 'Não foi possível reenviar o convite.', 'admin_global')),
+  });
 
   const acoes = (e: EstabelecimentoGlobal) => (
     <div className="flex flex-wrap gap-1.5">
       <button type="button" onClick={() => setEditando(e)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50">
         <SlidersHorizontal size={13} /> Plano e limites
       </button>
+      {!e.proprio && e.status === 'ativo' && (
+        <button type="button" disabled={convite.isPending} onClick={() => convite.mutate(e)}
+          title="Para quando o link do convite venceu ou o e-mail não chegou"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+          {convite.isPending && convite.variables?.id === e.id ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />} Reenviar convite
+        </button>
+      )}
       {!e.proprio && (e.status === 'ativo' ? (
         <button type="button" onClick={() => setMudarSituacao({ e, para: 'desativado' })} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 text-xs font-bold text-amber-700 hover:bg-amber-50">
           <Power size={13} /> Desativar

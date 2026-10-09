@@ -30,7 +30,16 @@ export async function atualizarEstabelecimento(id: string, d: EdicaoEstabelecime
 }
 
 export async function criarEstabelecimento(d: NovoEstabelecimento): Promise<void> {
-  const { error } = await supabase.functions.invoke('admin-usuarios', { body: corpoNovoEstabelecimento(d) });
+  await chamarFuncao(corpoNovoEstabelecimento(d), 'Não foi possível criar o estabelecimento.');
+}
+
+/** Reenvia o convite da administradora que ainda não ativou a conta (link vencido ou e-mail perdido). */
+export async function reenviarConvite(estabelecimentoId: string): Promise<void> {
+  await chamarFuncao({ acao: 'reenviar_convite', estabelecimento_id: estabelecimentoId }, 'Não foi possível reenviar o convite.');
+}
+
+async function chamarFuncao(corpo: Record<string, unknown>, padrao: string): Promise<void> {
+  const { error } = await supabase.functions.invoke('admin-usuarios', { body: corpo });
   if (!error) return;
   const resposta = (error as { context?: Response }).context;
   let mensagem: string | null = null;
@@ -40,5 +49,5 @@ export async function criarEstabelecimento(d: NovoEstabelecimento): Promise<void
       if (typeof j.error === 'string' && j.error.length <= 200) mensagem = j.id ? `${j.error} (código ${j.id})` : j.error;
     }
   } catch { /* corpo ilegível: mensagem genérica */ }
-  throw new ErroPublico(mensagem ?? mensagemDeErro(error, 'Não foi possível criar o estabelecimento.', 'admin_global'));
+  throw new ErroPublico(mensagem ?? mensagemDeErro(error, padrao, 'admin_global'));
 }

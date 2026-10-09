@@ -97,4 +97,5 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
 31. **Edge Function `admin-usuarios` versão 2.** **PUBLICADA em 2026-10-08** (verificação de JWT ligada): ação nova `criar_estabelecimento` e conferência de estabelecimento nas ações de equipe.
 32. **Contato do suporte na página Plano.** Hoje o texto diz "Fale com o suporte do Jake Beauty". Definir o canal (e-mail ou WhatsApp) para exibir na página.
 33. **Contrato com os salões clientes [Confirmar].** Termos de uso, política de privacidade e contrato de operador de dados (o Jake Beauty passa a tratar dados de clientes de outros salões: LGPD, art. 39), prazo de guarda após exclusão e exportação dos dados (art. 18).
+34. **Edge Function `admin-usuarios` versão 3.** **PUBLICADA em 2026-10-09** (verificação de JWT ligada): ação nova `reenviar_convite`, só para administração global com MFA; reenvia o convite apenas a administradora que ainda não confirmou o e-mail nem entrou.
 

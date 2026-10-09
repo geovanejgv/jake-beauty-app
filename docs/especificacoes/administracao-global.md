@@ -41,7 +41,7 @@ O sistema de origem já separava os dados por organização. Este não separava:
 ## 4. Onde está
 
 - Banco: `supabase/migrations/20261017120000_estabelecimentos_admin_global.sql`.
-- Edge Function: `supabase/functions/admin-usuarios/index.ts` (ação `criar_estabelecimento`).
+- Edge Function: `supabase/functions/admin-usuarios/index.ts` (ações `criar_estabelecimento` e `reenviar_convite`).
 - Regras de plano na tela: `src/features/plano/plano.ts`; painel: `src/pages/AdminGlobal.tsx`, `src/features/admin-global/`; página do plano: `src/pages/Plano.tsx`; MFA: `src/features/acesso/mfa.ts`, `src/components/SegurancaMfa.tsx`; faixa e cadeados no menu: `src/layouts/MainLayout.tsx`; bloqueio de estabelecimento inativo: `src/contexts/AuthContext.tsx`, `src/App.tsx`, `src/pages/Login.tsx`.
 - Testes: `supabase/tests/seguranca/estabelecimentos.test.sql` (isolamento, limites, MFA no banco, demonstração vencida, desativação, auditoria), `tests/seguranca/admin-global.test.ts` (seção 8 da especificação), `src/features/plano/plano.test.ts`, `src/features/admin-global/logic.test.ts`.
 
