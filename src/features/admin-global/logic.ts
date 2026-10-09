@@ -92,3 +92,8 @@ export function mensagemPainel(msg: string | null | undefined): string | null {
   if (msg.includes('mfa_codigo_requerido')) return 'Digite o código atual do autenticador para confirmar a exclusão.';
   return null;
 }
+
+/** Excluídos ficam fora da lista, salvo quando pedidos (os dados continuam guardados). */
+export function filtrarExcluidos<T extends { status: string }>(lista: T[], mostrarExcluidos: boolean): T[] {
+  return mostrarExcluidos ? lista : lista.filter((e) => e.status !== 'excluido');
+}

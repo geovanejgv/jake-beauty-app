@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Info, Loader2, Plus, Power, ShieldAlert, SlidersHorizontal, Trash2 } from 'lucide-react';
 import * as api from '../features/admin-global/api';
 import {
-  dataLocal, lerLimite, validarEdicao, validarNovoEstabelecimento,
+  dataLocal, filtrarExcluidos, lerLimite, validarEdicao, validarNovoEstabelecimento,
   type EdicaoEstabelecimento, type EstabelecimentoGlobal, type NovoEstabelecimento,
 } from '../features/admin-global/logic';
 import { LIMITES_PADRAO, PLANOS, ROTULO_PLANO, ROTULO_SITUACAO, demoExpirada, usoLimite, type Plano, type Situacao } from '../features/plano/plano';
@@ -98,6 +98,10 @@ function Painel({ cabecalho }: { cabecalho: React.ReactNode }) {
   const [mudarSituacao, setMudarSituacao] = useState<{ e: EstabelecimentoGlobal; para: Situacao } | null>(null);
   const [excluindo, setExcluindo] = useState<EstabelecimentoGlobal | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [mostrarExcluidos, setMostrarExcluidos] = useState(false);
+  const todos = lista.data ?? [];
+  const excluidos = todos.filter((e) => e.status === 'excluido').length;
+  const visiveis = filtrarExcluidos(todos, mostrarExcluidos);
   const atualizar = () => qc.invalidateQueries({ queryKey: api.chaveEstabelecimentos });
 
   const situacao = useMutation({
@@ -160,6 +164,12 @@ function Painel({ cabecalho }: { cabecalho: React.ReactNode }) {
         : lista.isError ? <p className="text-sm text-rose-600">{mensagemDeErro(lista.error, 'Não foi possível carregar os estabelecimentos.', 'admin_global')}</p>
         : (
           <>
+            {excluidos > 0 && (
+              <label className="flex items-center gap-2 text-sm text-slate-600 select-none">
+                <input type="checkbox" checked={mostrarExcluidos} onChange={(ev) => setMostrarExcluidos(ev.target.checked)} className="accent-rose-600" />
+                Mostrar excluídos ({excluidos})
+              </label>
+            )}
             {/* PC: tabela */}
             <div className="hidden md:block bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
               <table className="w-full text-sm">
@@ -174,7 +184,7 @@ function Painel({ cabecalho }: { cabecalho: React.ReactNode }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {(lista.data ?? []).map((e) => (
+                  {visiveis.map((e) => (
                     <tr key={e.id} className="align-top">
                       <td className="px-4 py-3">
                         <p className="font-bold text-slate-800">{e.nome}{e.proprio && <span className="ml-1.5 text-[11px] font-bold text-rose-600">(o seu)</span>}</p>
@@ -192,7 +202,7 @@ function Painel({ cabecalho }: { cabecalho: React.ReactNode }) {
             </div>
             {/* Celular: cartões */}
             <div className="md:hidden space-y-3">
-              {(lista.data ?? []).map((e) => (
+              {visiveis.map((e) => (
                 <div key={e.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">

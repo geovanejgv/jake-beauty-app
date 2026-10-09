@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { corpoNovoEstabelecimento, dataLocal, fimDemoParaBanco, lerLimite, mensagemPainel, validarEdicao, validarNovoEstabelecimento, type NovoEstabelecimento } from './logic';
+import { corpoNovoEstabelecimento, dataLocal, filtrarExcluidos, fimDemoParaBanco, lerLimite, mensagemPainel, validarEdicao, validarNovoEstabelecimento, type NovoEstabelecimento } from './logic';
 
 const novo: NovoEstabelecimento = { nome: 'Salão B', plano: 'demonstracao', admin_nome: 'Ana', admin_email: 'Ana@Ex.com ', max_profissionais: 2, max_clientes: null };
 
@@ -40,5 +40,15 @@ describe('administração global: edição', () => {
     expect(mensagemPainel('nao_desativa_o_proprio')).toMatch(/próprio/);
     expect(mensagemPainel('so_admin_global')).toMatch(/MFA/);
     expect(mensagemPainel('x')).toBeNull();
+  });
+});
+
+describe('filtrarExcluidos', () => {
+  const lista = [{ id: 'a', status: 'ativo' }, { id: 'b', status: 'excluido' }, { id: 'c', status: 'desativado' }];
+  it('esconde só os excluídos por padrão', () => {
+    expect(filtrarExcluidos(lista, false).map((e) => e.id)).toEqual(['a', 'c']);
+  });
+  it('mostra todos quando pedido', () => {
+    expect(filtrarExcluidos(lista, true)).toHaveLength(3);
   });
 });
