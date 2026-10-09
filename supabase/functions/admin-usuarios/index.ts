@@ -17,7 +17,8 @@
 // - limites do plano viram 403 com mensagem clara (o gatilho do banco é quem barra).
 //
 // Ações (POST JSON): criar_acesso, redefinir_senha, desativar, reativar (administradora
-// do estabelecimento) e criar_estabelecimento (administração global, com MFA concluído).
+// do estabelecimento), criar_estabelecimento e reenviar_convite (administração global,
+// com MFA concluído).
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
@@ -150,12 +151,44 @@ Deno.serve(async (req) => {
     };
 
     // ------------------------------------------------------------ administração global
-    if (acao === 'criar_estabelecimento') {
-      // A guarda vem antes da chave de serviço. eh_admin_global() exige MFA (aal2) no token.
+    // A guarda vem antes da chave de serviço. eh_admin_global() exige MFA (aal2) no token.
+    const exigirAdminGlobal = async () => {
       const { data: cadastrado } = await comoUsuario.rpc('eh_admin_global_cadastrado');
-      if (cadastrado !== true) throw new ErroPublico(403, 'Somente a administração global cria estabelecimentos.');
+      if (cadastrado !== true) throw new ErroPublico(403, 'Somente a administração global faz esta ação.');
       const { data: global } = await comoUsuario.rpc('eh_admin_global');
       if (global !== true) throw new ErroPublico(403, 'Confirme o segundo fator (MFA) para usar a administração global.');
+    };
+
+    if (acao === 'reenviar_convite') {
+      await exigirAdminGlobal();
+      soCampos(corpo, ['acao', 'estabelecimento_id']);
+      const estabelecimentoId = uuid(corpo, 'estabelecimento_id');
+      // Administradoras com login do estabelecimento; reenvia só para quem ainda não ativou a conta.
+      const { data: admins, error: erroAdmins } = await admin.from('users').select('id, auth_id')
+        .eq('estabelecimento_id', estabelecimentoId).eq('role', 'admin').eq('active', true).not('auth_id', 'is', null);
+      if (erroAdmins) throw erroAdmins;
+      let reenviados = 0;
+      for (const a of (admins ?? []) as { id: string; auth_id: string }[]) {
+        const { data: conta, error: erroConta } = await admin.auth.admin.getUserById(a.auth_id);
+        if (erroConta || !conta.user?.email) continue;
+        if (conta.user.email_confirmed_at || conta.user.last_sign_in_at) continue; // já ativou
+        const { error: erroConvite } = await admin.auth.admin.inviteUserByEmail(conta.user.email, {
+          data: { definir_senha: true },
+          redirectTo: origemPermitida(origem) ?? undefined,
+        });
+        if (erroConvite) {
+          console.error(JSON.stringify({ id, aviso: 'falha ao reenviar convite', codigo: erroConvite.status ?? null, erro: mascarar(String(erroConvite.message ?? '')) }));
+          throw new ErroPublico(502, 'Não foi possível reenviar o convite por e-mail. Confira o envio de e-mails (SMTP) do Supabase e tente de novo.');
+        }
+        reenviados++;
+        await auditar('permissao_alterada', a.id, { origem: 'admin_global', convite_reenviado: true }, null, estabelecimentoId);
+      }
+      if (!reenviados) throw new ErroPublico(409, 'Não há convite pendente: a administradora deste estabelecimento já ativou a conta.');
+      return resposta(origem, 200, { ok: true, reenviados });
+    }
+
+    if (acao === 'criar_estabelecimento') {
+      await exigirAdminGlobal();
       // Campos fechados: recusa senha, estabelecimento_id e qualquer outro.
       soCampos(corpo, ['acao', 'nome', 'plano', 'admin_nome', 'admin_email', 'max_profissionais', 'max_clientes']);
       const nome = texto(corpo, 'nome', 2, 200);
