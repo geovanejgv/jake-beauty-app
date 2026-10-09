@@ -1,8 +1,8 @@
 -- =============================================================================
 -- Verificação em duas etapas fora do login (decisão do usuário em 2026-10-09).
 --
--- NÃO APLICADA em produção: aguarda aprovação explícita (DEV-02). Aplicar ANTES do merge
--- da tela que não pede mais o código (a tela antiga funciona com esta migração).
+-- APLICADA em produção em 2026-10-09 (migração mfa_fora_do_login), com autorização
+-- explícita do usuário (DEV-02), ANTES do merge da tela que não pede mais o código.
 --
 -- Antes: quem tinha autenticador ativo não via nenhum dado com a sessão aal1 (as
 -- funções de sessão conferiam mfa_pendente()), e a tela pedia o código logo depois
