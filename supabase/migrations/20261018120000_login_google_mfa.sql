@@ -1,8 +1,9 @@
 -- =============================================================================
 -- Login exclusivamente pelo Google e verificação em duas etapas (MFA) no banco.
 --
--- NÃO APLICADA em produção: aguarda aprovação explícita (DEV-02). Aplicar logo DEPOIS
--- do merge da tela nova (docs/especificacoes/login-google-mfa.md, seção 4).
+-- APLICADA em produção em 2026-10-09, logo depois do merge da tela nova, com
+-- autorização explícita do usuário (DEV-02), em 6 partes (login_google_mfa_1, _2a, _2b,
+-- _2c, _3a e _3b), com o mesmo SQL deste arquivo (a política de logs por alter policy).
 --
 -- Base: docs/especificacoes/login-google-mfa.md (adaptação, para esta SPA, da
 -- especificação "Login com conta Google e verificação em duas etapas").
