@@ -39,6 +39,11 @@ export function mensagemDeErro(e: unknown, padrao = 'Não foi possível concluir
   if (/outro_estabelecimento|referencia_de_outro_estabelecimento|estabelecimento_imutavel|so_admin_global/.test(msg)) {
     return 'Você não tem permissão para esta ação.';
   }
+  // Regras de MFA do banco (M-01, M-04): dizem o que fazer, sem detalhe interno.
+  if (/\bmfa_requerido\b/.test(msg)) {
+    return 'Confirme o código do autenticador em Configurações > Segurança para alterar papel, status ou acesso da equipe.';
+  }
+  if (/\bmfa_codigo_requerido\b/.test(msg)) return 'Digite o código atual do autenticador para confirmar esta ação.';
   if (erro.code === 'P0001' && msg && msg.length <= MAX_MENSAGEM_PROPRIA) return msg;
   if (/JWT|not authenticated|refresh token/i.test(msg) || erro.code === 'PGRST301' || erro.status === 401) {
     return 'Sessão expirada. Entre novamente.';

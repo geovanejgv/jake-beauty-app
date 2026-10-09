@@ -10,6 +10,8 @@ begin
 end $$;
 create or replace function pg_temp.ok(c boolean, msg text) returns void language plpgsql as $$
 begin if not coalesce(c, false) then raise exception 'FALHOU: %', msg; end if; raise notice 'OK %', msg; end $$;
+-- As sessões destes testes já concluíram o MFA (aal2); as regras de aal1 estão em login_mfa.test.sql.
+select set_config('request.jwt.claims', '{"aal": "aal2"}', false);
 grant execute on all functions in schema pg_temp to anon, authenticated, service_role;
 
 -- Pessoas: A = administradora ativa; B = profissional ativa; C = login sem perfil; D = perfil inativo

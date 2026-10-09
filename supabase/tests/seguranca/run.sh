@@ -25,4 +25,5 @@ rodar "${DB}_pacotes" pacotes.test.sql
 rodar "${DB}_kanban_pessoal" kanban_pessoal.test.sql
 rodar "${DB}_kanban_visao" kanban_visao_grupos.test.sql
 rodar "${DB}_estabelecimentos" estabelecimentos.test.sql
+rodar "${DB}_login_mfa" login_mfa.test.sql
 echo "Testes de segurança do banco: OK"

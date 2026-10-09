@@ -89,5 +89,6 @@ export function mensagemPainel(msg: string | null | undefined): string | null {
   if (msg.includes('nao_desativa_o_proprio')) return 'Você não pode desativar nem excluir o seu próprio estabelecimento.';
   if (msg.includes('estabelecimento_nao_encontrado')) return 'Estabelecimento não encontrado.';
   if (msg.includes('so_admin_global')) return 'Confirme o segundo fator (MFA) para usar a administração global.';
+  if (msg.includes('mfa_codigo_requerido')) return 'Digite o código atual do autenticador para confirmar a exclusão.';
   return null;
 }

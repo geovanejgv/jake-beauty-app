@@ -11,10 +11,12 @@ begin
 end $$;
 create or replace function pg_temp.ok(c boolean, msg text) returns void language plpgsql as $$
 begin if not coalesce(c, false) then raise exception 'FALHOU: %', msg; end if; raise notice 'OK %', msg; end $$;
--- Sessão com o nível de autenticação (aal1 = só senha; aal2 = MFA concluído).
+-- Sessão com o nível de autenticação (aal1 = só o login; aal2 = código do autenticador
+-- confirmado agora, registrado na claim "amr").
 create or replace function pg_temp.como(p_sub text, p_aal text default 'aal1') returns void language sql as $$
   select set_config('request.jwt.claim.sub', p_sub, false),
-         set_config('request.jwt.claims', json_build_object('sub', p_sub, 'aal', p_aal)::text, false);
+         set_config('request.jwt.claims', json_build_object('sub', p_sub, 'aal', p_aal,
+           'amr', case when p_aal = 'aal2' then json_build_array(json_build_object('method', 'totp', 'timestamp', extract(epoch from now())::bigint)) end)::text, false);
 $$;
 create or replace function pg_temp.sem_sessao() returns void language sql as $$
   select set_config('request.jwt.claim.sub', '', false), set_config('request.jwt.claims', '', false);
@@ -111,7 +113,7 @@ reset role;
 
 -- 4) Limites do plano (gatilho; vale também sem sessão / service role)
 set role authenticated;
-select pg_temp.como('b1000000-0000-0000-0000-000000000001');
+select pg_temp.como('b1000000-0000-0000-0000-000000000001', 'aal2');
 insert into public.users (auth_id, name, role, active) values ('b2000000-0000-0000-0000-000000000002', 'Pro B', 'professional', true);
 select pg_temp.espera_erro($$insert into public.users (name, role, active) values ('Pro B2', 'professional', true)$$, 'limite_plano_profissional');
 select public.cadastrar_cliente_rapido('Cliente B2', '11999990001');

@@ -3,6 +3,7 @@ do $$ begin if not exists (select 1 from pg_roles where rolname=$q$anon$q$) then
 create extension if not exists "uuid-ossp"; create extension if not exists pgcrypto;
 create schema auth;
 create table auth.users (id uuid primary key, email text);
+create table auth.mfa_factors (id uuid primary key default gen_random_uuid(), user_id uuid not null, status text not null);
 create function auth.uid() returns uuid language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claim.sub', true), ''), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'))::uuid $$;
 grant usage on schema public, auth to anon, authenticated;
 grant execute on function auth.uid() to anon, authenticated;

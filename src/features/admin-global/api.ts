@@ -1,6 +1,7 @@
 // Acesso da administração global. Leitura e edição pelas funções do banco (que conferem
 // admin global + MFA, aal2); criação pela Edge Function admin-usuarios (única com a chave
-// de serviço, necessária para convidar a conta de login da nova administradora).
+// de serviço, necessária para criar a conta de login da nova administradora, sem senha:
+// ela entra com "Continuar com Google").
 import { supabase } from '../../lib/supabase';
 import { ErroPublico, mensagemDeErro } from '../../lib/seguranca/erros';
 import { corpoNovoEstabelecimento, fimDemoParaBanco, mensagemPainel, type EdicaoEstabelecimento, type EstabelecimentoGlobal, type NovoEstabelecimento } from './logic';
@@ -31,11 +32,6 @@ export async function atualizarEstabelecimento(id: string, d: EdicaoEstabelecime
 
 export async function criarEstabelecimento(d: NovoEstabelecimento): Promise<void> {
   await chamarFuncao(corpoNovoEstabelecimento(d), 'Não foi possível criar o estabelecimento.');
-}
-
-/** Reenvia o convite da administradora que ainda não ativou a conta (link vencido ou e-mail perdido). */
-export async function reenviarConvite(estabelecimentoId: string): Promise<void> {
-  await chamarFuncao({ acao: 'reenviar_convite', estabelecimento_id: estabelecimentoId }, 'Não foi possível reenviar o convite.');
 }
 
 async function chamarFuncao(corpo: Record<string, unknown>, padrao: string): Promise<void> {

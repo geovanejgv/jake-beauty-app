@@ -18,6 +18,8 @@ $$;
 create or replace function pg_temp.h(p_dias int, p_hora int) returns timestamptz language sql as $$
   select ((public.hoje_local() + p_dias)::timestamp + make_interval(hours => p_hora)) at time zone 'America/Sao_Paulo';
 $$;
+-- As sessões destes testes já concluíram o MFA (aal2); as regras de aal1 estão em login_mfa.test.sql.
+select set_config('request.jwt.claims', '{"aal": "aal2"}', false);
 grant execute on all functions in schema pg_temp to anon, authenticated, service_role;
 
 -- A = administradora; P e Q = profissionais

@@ -1,8 +1,12 @@
 // Edge Function (Supabase): gestão de acessos da equipe pela administradora.
 //
-// Por que existe: criar login, redefinir senha e bloquear conta exigem a chave de
-// serviço do Supabase, que NUNCA vai para o navegador (AUZ-05). Ela só existe aqui,
-// como variável do próprio ambiente da função (SUPABASE_SERVICE_ROLE_KEY).
+// Por que existe: criar login, redefinir a verificação em duas etapas e bloquear conta
+// exigem a chave de serviço do Supabase, que NUNCA vai para o navegador (AUZ-05). Ela
+// só existe aqui, como variável do próprio ambiente da função (SUPABASE_SERVICE_ROLE_KEY).
+//
+// Login exclusivamente pelo Google (docs/especificacoes/login-google-mfa.md): as contas
+// são criadas SEM senha, só com o e-mail da conta Google (L-11); no primeiro "Continuar
+// com Google" o Supabase liga a identidade Google à conta pelo e-mail confirmado.
 //
 // Segurança:
 // - toda chamada exige sessão válida (o gateway confere o JWT) e a função confere no
@@ -10,14 +14,15 @@
 // - CORS só para as origens do portal (CAB-03);
 // - entrada validada campo a campo, com limites (VAL-01, VAL-02);
 // - resposta de erro genérica com código de correlação (LOG-01), sem senha em log (LOG-04);
-// - cada ação grava a trilha de auditoria com quem fez e de onde (LOG-05).
+// - cada ação grava a trilha de auditoria com quem fez e de onde (LOG-05);
+// - ações da equipe exigem a sessão em aal2, código do autenticador confirmado (M-01).
 //
 // - cada estabelecimento só mexe na própria equipe (a função confere o estabelecimento
 //   do perfil antes de usar a chave de serviço);
 // - limites do plano viram 403 com mensagem clara (o gatilho do banco é quem barra).
 //
-// Ações (POST JSON): criar_acesso, redefinir_senha, desativar, reativar (administradora
-// do estabelecimento), criar_estabelecimento e reenviar_convite (administração global,
+// Ações (POST JSON): criar_acesso, redefinir_mfa, desativar, reativar (administradora
+// do estabelecimento, com MFA concluído) e criar_estabelecimento (administração global,
 // com MFA concluído).
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -29,7 +34,6 @@ const CHAVE_SERVICO = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const ORIGENS_EXTRAS = (Deno.env.get('ORIGENS_PERMITIDAS') ?? '').split(',').map((o) => o.trim()).filter(Boolean);
 const ORIGEM_VERCEL = /^https:\/\/studio-labeli-app(-[a-z0-9-]+)?\.vercel\.app$/;
 
-const SENHA_MIN = 12;
 const PLANOS = ['demonstracao', 'basico', 'premium'];
 
 // Travas do plano gravadas pelos gatilhos do banco -> texto para a tela (403).
@@ -40,7 +44,6 @@ const MENSAGENS_PLANO: Record<string, string> = {
   plano_demonstracao_encerrada: 'O período de demonstração terminou. Esta função volta com um plano Básico ou Premium.',
 };
 const travaDoPlano = (msg: string) => Object.keys(MENSAGENS_PLANO).find((k) => msg.includes(k));
-const SENHA_MAX_BYTES = 72;
 
 type Corpo = Record<string, unknown>;
 
@@ -93,12 +96,6 @@ const uuid = (c: Corpo, campo: string): string => {
 const email = (c: Corpo): string => {
   const v = texto(c, 'email', 5, 254).toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) throw new ErroPublico(400, 'E-mail inválido.');
-  return v;
-};
-const senha = (c: Corpo): string => {
-  const v = c.senha_temporaria;
-  if (typeof v !== 'string' || [...v].length < SENHA_MIN) throw new ErroPublico(400, `A senha temporária precisa ter pelo menos ${SENHA_MIN} caracteres.`);
-  if (new TextEncoder().encode(v).length > SENHA_MAX_BYTES) throw new ErroPublico(400, 'Senha temporária longa demais.');
   return v;
 };
 const limite = (c: Corpo, campo: string, max: number): number | null => {
@@ -159,34 +156,6 @@ Deno.serve(async (req) => {
       if (global !== true) throw new ErroPublico(403, 'Confirme o segundo fator (MFA) para usar a administração global.');
     };
 
-    if (acao === 'reenviar_convite') {
-      await exigirAdminGlobal();
-      soCampos(corpo, ['acao', 'estabelecimento_id']);
-      const estabelecimentoId = uuid(corpo, 'estabelecimento_id');
-      // Administradoras com login do estabelecimento; reenvia só para quem ainda não ativou a conta.
-      const { data: admins, error: erroAdmins } = await admin.from('users').select('id, auth_id')
-        .eq('estabelecimento_id', estabelecimentoId).eq('role', 'admin').eq('active', true).not('auth_id', 'is', null);
-      if (erroAdmins) throw erroAdmins;
-      let reenviados = 0;
-      for (const a of (admins ?? []) as { id: string; auth_id: string }[]) {
-        const { data: conta, error: erroConta } = await admin.auth.admin.getUserById(a.auth_id);
-        if (erroConta || !conta.user?.email) continue;
-        if (conta.user.email_confirmed_at || conta.user.last_sign_in_at) continue; // já ativou
-        const { error: erroConvite } = await admin.auth.admin.inviteUserByEmail(conta.user.email, {
-          data: { definir_senha: true },
-          redirectTo: origemPermitida(origem) ?? undefined,
-        });
-        if (erroConvite) {
-          console.error(JSON.stringify({ id, aviso: 'falha ao reenviar convite', codigo: erroConvite.status ?? null, erro: mascarar(String(erroConvite.message ?? '')) }));
-          throw new ErroPublico(502, 'Não foi possível reenviar o convite por e-mail. Confira o envio de e-mails (SMTP) do Supabase e tente de novo.');
-        }
-        reenviados++;
-        await auditar('permissao_alterada', a.id, { origem: 'admin_global', convite_reenviado: true }, null, estabelecimentoId);
-      }
-      if (!reenviados) throw new ErroPublico(409, 'Não há convite pendente: a administradora deste estabelecimento já ativou a conta.');
-      return resposta(origem, 200, { ok: true, reenviados });
-    }
-
     if (acao === 'criar_estabelecimento') {
       await exigirAdminGlobal();
       // Campos fechados: recusa senha, estabelecimento_id e qualquer outro.
@@ -199,32 +168,28 @@ Deno.serve(async (req) => {
       const maxProf = limite(corpo, 'max_profissionais', 10_000);
       const maxCli = limite(corpo, 'max_clientes', 1_000_000);
 
-      // 1) Conta de login por convite: a pessoa define a própria senha pelo link do e-mail.
-      //    O painel global nunca define senha nem recebe acesso ao estabelecimento.
-      const { data: convite, error: erroConvite } = await admin.auth.admin.inviteUserByEmail(mail, {
-        data: { definir_senha: true },
-        redirectTo: origemPermitida(origem) ?? undefined,
-      });
-      if (erroConvite || !convite.user) {
-        if (erroConvite && /already|registered|exists/i.test(erroConvite.message)) {
+      // 1) Conta de login SEM senha (L-11): ela entra com "Continuar com Google" usando
+      //    este e-mail. O painel global nunca define senha nem recebe acesso ao estabelecimento.
+      const { data: conta, error: erroConta } = await admin.auth.admin.createUser({ email: mail, email_confirm: true });
+      if (erroConta || !conta.user) {
+        if (erroConta && /already|registered|exists/i.test(erroConta.message)) {
           throw new ErroPublico(409, 'Já existe uma conta com este e-mail. Use outro e-mail para a administradora do novo estabelecimento.');
         }
-        console.error(JSON.stringify({ id, aviso: 'falha no convite', codigo: erroConvite?.status ?? null, erro: mascarar(String(erroConvite?.message ?? '')) }));
-        throw new ErroPublico(502, 'Não foi possível enviar o convite por e-mail. Confira o envio de e-mails (SMTP) do Supabase e tente de novo.');
+        throw erroConta ?? new Error('Falha ao criar a conta de login.');
       }
 
       // 2) Estabelecimento, configuração padrão e perfil da administradora, numa transação só.
       const { data: criado, error: erroCriar } = await admin.rpc('estabelecimento_criar', {
         p_nome: nome, p_plano: plano, p_max_profissionais: maxProf, p_max_clientes: maxCli,
-        p_admin_nome: adminNome, p_admin_auth: convite.user.id, p_criado_por: quem.user.id,
+        p_admin_nome: adminNome, p_admin_auth: conta.user.id, p_criado_por: quem.user.id,
       });
       const linha = Array.isArray(criado) ? criado[0] as { estabelecimento_id: string; administradora_id: string } | undefined : undefined;
       if (erroCriar || !linha) {
-        await admin.auth.admin.deleteUser(convite.user.id); // desfaz para não sobrar conta solta
+        await admin.auth.admin.deleteUser(conta.user.id); // desfaz para não sobrar conta solta
         if (erroCriar && /conta_ja_vinculada/.test(erroCriar.message)) throw new ErroPublico(409, 'Esta conta já pertence a um estabelecimento.');
         throw erroCriar ?? new Error('Falha ao criar o estabelecimento.');
       }
-      await auditar('usuario_criado', linha.administradora_id, { origem: 'admin_global', papel: 'admin', convite_enviado: true }, null, linha.estabelecimento_id);
+      await auditar('usuario_criado', linha.administradora_id, { origem: 'admin_global', papel: 'admin', login_google: true }, null, linha.estabelecimento_id);
       return resposta(origem, 200, { ok: true, estabelecimento_id: linha.estabelecimento_id });
     }
 
@@ -232,6 +197,9 @@ Deno.serve(async (req) => {
     const { data: ehAdmin, error: erroPapel } = await comoUsuario.rpc('usuario_admin');
     if (erroPapel) throw erroPapel;
     if (ehAdmin !== true) throw new ErroPublico(403, 'Somente a administradora gerencia acessos.');
+    // Ação administrativa só com o segundo fator confirmado nesta sessão (M-01).
+    const { data: aal2 } = await comoUsuario.rpc('sessao_aal2');
+    if (aal2 !== true) throw new ErroPublico(403, 'Confirme o código do autenticador em Configurações > Segurança para gerenciar acessos.');
     const { data: autorId } = await comoUsuario.rpc('usuario_atual_id');
     const { data: meuEstabelecimento } = await comoUsuario.rpc('estabelecimento_atual');
     if (typeof meuEstabelecimento !== 'string') throw new ErroPublico(403, 'Somente a administradora gerencia acessos.');
@@ -247,16 +215,14 @@ Deno.serve(async (req) => {
     };
 
     if (acao === 'criar_acesso') {
-      // Cria o login de um profissional já cadastrado (com perfil em public.users).
-      soCampos(corpo, ['acao', 'user_id', 'email', 'senha_temporaria']);
+      // Cria o login de um profissional já cadastrado (com perfil em public.users), SEM
+      // senha (L-11): campos fechados, o campo "senha" é recusado.
+      soCampos(corpo, ['acao', 'user_id', 'email']);
       const userId = uuid(corpo, 'user_id');
       const mail = email(corpo);
-      const pass = senha(corpo);
       const perfil = await perfilDe(userId);
-      if (perfil.auth_id) throw new ErroPublico(409, 'Este profissional já tem acesso. Use "redefinir senha".');
-      const { data: criado, error } = await admin.auth.admin.createUser({
-        email: mail, password: pass, email_confirm: true, user_metadata: { trocar_senha: true },
-      });
+      if (perfil.auth_id) throw new ErroPublico(409, 'Este profissional já tem acesso ao sistema.');
+      const { data: criado, error } = await admin.auth.admin.createUser({ email: mail, email_confirm: true });
       if (error || !criado.user) {
         if (error && /already|registered|exists/i.test(error.message)) throw new ErroPublico(409, 'Já existe um login com este e-mail.');
         throw error ?? new Error('Falha ao criar login.');
@@ -272,16 +238,23 @@ Deno.serve(async (req) => {
       return resposta(origem, 200, { ok: true });
     }
 
-    if (acao === 'redefinir_senha') {
-      soCampos(corpo, ['acao', 'user_id', 'senha_temporaria']);
+    if (acao === 'redefinir_mfa') {
+      // Recuperação de quem perdeu o celular (M-08): remove os autenticadores de outra
+      // pessoa do MESMO estabelecimento, nunca de si mesma; auditado.
+      soCampos(corpo, ['acao', 'user_id']);
       const perfil = await perfilDe(uuid(corpo, 'user_id'));
+      if (perfil.auth_id === quem.user.id) throw new ErroPublico(400, 'Para o seu próprio autenticador, use Configurações > Segurança.');
       if (!perfil.auth_id) throw new ErroPublico(409, 'Este profissional ainda não tem acesso ao sistema.');
-      const { error } = await admin.auth.admin.updateUserById(perfil.auth_id, {
-        password: senha(corpo), user_metadata: { trocar_senha: true },
-      });
-      if (error) throw error;
-      await auditarEquipe('permissao_alterada', perfil.id, { senha_redefinida: true });
-      return resposta(origem, 200, { ok: true });
+      const { data: lista, error: erroLista } = await admin.auth.admin.mfa.listFactors({ userId: perfil.auth_id });
+      if (erroLista) throw erroLista;
+      const fatores = lista?.factors ?? [];
+      if (!fatores.length) throw new ErroPublico(400, 'Esta pessoa não tem verificação em duas etapas cadastrada.');
+      for (const f of fatores) {
+        const { error: erroRemover } = await admin.auth.admin.mfa.deleteFactor({ userId: perfil.auth_id, id: f.id });
+        if (erroRemover) throw erroRemover;
+      }
+      await auditarEquipe('mfa_removido', perfil.id, { origem: 'administrador', removidos: fatores.length });
+      return resposta(origem, 200, { ok: true, removidos: fatores.length });
     }
 
     if (acao === 'desativar' || acao === 'reativar') {

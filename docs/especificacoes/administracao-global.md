@@ -32,7 +32,7 @@ O sistema de origem já separava os dados por organização. Este não separava:
 |---|---|---|
 | Rotas de API Next.js | Funções do banco (leitura e edição) + Edge Function `admin-usuarios` (criação) | SPA sem servidor próprio; a Edge Function é a única com chave de serviço |
 | Zod `.strict()` | Validação manual com lista fechada de campos (`soCampos`) e testes | DEP-01: sem dependência nova |
-| Conta do primeiro administrador "sem senha, pelo provedor OAuth" | Convite por e-mail (`inviteUserByEmail`): ela define a própria senha pelo link | O login do portal é por e-mail e senha; o painel global não define senha nem ganha acesso |
+| Conta do primeiro administrador "sem senha, pelo provedor OAuth" | Conta criada sem senha (`createUser` com e-mail confirmado); ela entra com "Continuar com Google" | Desde 2026-10-09 o login é só pelo Google (`login-google-mfa.md`); o painel global não define senha nem ganha acesso |
 | Guarda no servidor (`requireAdminGlobal`) | Banco (`eh_admin_global()` com `aal2`) + Edge Function + tela | Mesma garantia: a API REST não serve de atalho |
 | 403 `escritorio_inativo` na próxima requisição | RLS já não mostra nada; a tela confere a situação ao voltar para a aba e encerra a sessão com a mensagem | SPA fala direto com o banco |
 | Confirmações com `confirm()`/`prompt()` | Janelas próprias; exclusão com "EXCLUIR" digitado | Melhoria 7 da especificação |
@@ -41,7 +41,7 @@ O sistema de origem já separava os dados por organização. Este não separava:
 ## 4. Onde está
 
 - Banco: `supabase/migrations/20261017120000_estabelecimentos_admin_global.sql`.
-- Edge Function: `supabase/functions/admin-usuarios/index.ts` (ações `criar_estabelecimento` e `reenviar_convite`).
+- Edge Function: `supabase/functions/admin-usuarios/index.ts` (ação `criar_estabelecimento`; a conta da administradora nasce sem senha e ela entra pelo Google, ver `login-google-mfa.md`).
 - Regras de plano na tela: `src/features/plano/plano.ts`; painel: `src/pages/AdminGlobal.tsx`, `src/features/admin-global/`; página do plano: `src/pages/Plano.tsx`; MFA: `src/features/acesso/mfa.ts`, `src/components/SegurancaMfa.tsx`; faixa e cadeados no menu: `src/layouts/MainLayout.tsx`; bloqueio de estabelecimento inativo: `src/contexts/AuthContext.tsx`, `src/App.tsx`, `src/pages/Login.tsx`.
 - Testes: `supabase/tests/seguranca/estabelecimentos.test.sql` (isolamento, limites, MFA no banco, demonstração vencida, desativação, auditoria), `tests/seguranca/admin-global.test.ts` (seção 8 da especificação), `src/features/plano/plano.test.ts`, `src/features/admin-global/logic.test.ts`.
 
