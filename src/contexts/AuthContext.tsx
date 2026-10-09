@@ -6,7 +6,6 @@ import { mensagemDeErro } from '../lib/seguranca/erros';
 import { normalizarPreferencias, type Papel, type PreferenciasUi } from '../features/acesso/modulos';
 import type { Plano, Situacao } from '../features/plano/plano';
 import { nivelMfa, type Nivel } from '../features/acesso/mfa';
-import { limparAtividade } from '../features/acesso/inatividade';
 
 export type EstabelecimentoDoPerfil = { id: string; nome: string; plano: Plano; status: Situacao; demo_expira_em: string | null };
 
@@ -169,7 +168,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     await registrarAuditoria('logout');
     // Revoga a sessão no servidor de autenticação (SES-04, L-08); 'local' encerra só este aparelho.
     await supabase.auth.signOut({ scope: 'local' });
-    limparAtividade();
   }, []);
 
   return (

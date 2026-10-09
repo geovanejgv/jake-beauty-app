@@ -8,7 +8,6 @@ import { logger } from '../lib/seguranca/logger';
 /** Mensagens pela query ?erro= (seção 5.3 da especificação). Texto neutro: não diz se a conta existe. */
 export const MENSAGENS_LOGIN: Record<string, string> = {
   'sem-acesso': 'Sua conta ainda não tem acesso. Peça à administradora do estabelecimento para cadastrar seu e-mail.',
-  inatividade: 'Sua sessão foi encerrada depois de 30 minutos sem uso. Entre novamente.',
   falha: 'Não foi possível concluir o login. Tente novamente.',
   limite: 'Muitas tentativas. Aguarde alguns minutos.',
   'estabelecimento-inativo': 'O acesso deste estabelecimento está desativado. Fale com o suporte.',

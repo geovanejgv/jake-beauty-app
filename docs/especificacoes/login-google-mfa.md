@@ -7,7 +7,7 @@ Adaptação, para o Jake Beauty, da especificação "Login com conta Google e ve
 - **Único jeito de entrar:** "Continuar com Google" (`src/pages/Login.tsx`). Não há formulário de e-mail e senha, troca de senha nem convite por e-mail.
 - **Só entra quem foi cadastrado:** a administradora cria o acesso com o e-mail da conta Google da pessoa (Profissionais, "Criar acesso"); a conta nasce **sem senha**. Conta Google desconhecida é recusada pelo Supabase (cadastro aberto desligado) ou, se chegar a entrar, tem a sessão encerrada na hora (`src/pages/AuthCallback.tsx`).
 - **O login não pede o código do autenticador** (decisão do usuário em 2026-10-09, migração `20261019120000_mfa_fora_do_login.sql`): entrou pelo Google, usa o portal. O código é pedido só nas ações administrativas abaixo, que o banco confere (`aal2`). A especificação original (M-06) pedia o código logo depois do login; isso foi retirado a pedido.
-- **Administradora:** criar acesso, mudar papel ou status da equipe, redefinir 2 etapas e ver os logs só com a sessão em `aal2`, conferido no banco e na Edge Function. Parada por 30 minutos, sai do portal.
+- **Administradora:** criar acesso, mudar papel ou status da equipe, redefinir 2 etapas e ver os logs só com a sessão em `aal2`, conferido no banco e na Edge Function.
 - **Ação crítica pede o código na hora:** excluir estabelecimento (painel global) exige o código confirmado há menos de 5 minutos (claim `amr` do token).
 - **Quem perde o celular:** a administradora usa "Redefinir 2 etapas" na tela Profissionais. Se for a única administradora, o suporte remove o fator pelo painel do Supabase (Authentication, Users, usuário, MFA), confirmando a identidade antes.
 
@@ -20,7 +20,7 @@ Adaptação, para o Jake Beauty, da especificação "Login com conta Google e ve
 | Guardas no servidor (`requireUser`, `requireAdmin`, M-01, M-05, M-06) | Banco: `sessao_aal2()`, gatilho `users_b_exige_mfa`, logs com `aal2`; Edge Function confere `sessao_aal2` | Mesma garantia: a API REST não serve de atalho |
 | `/verificacao?redirectTo=` (M-06) | Retirado em 2026-10-09: o login não pede código | Decisão do usuário; AUT-04 continua atendido pelo `aal2` nas ações administrativas |
 | Destino em `redirectTo` da URL de retorno (L-05) | Destino guardado na aba (`sessionStorage`), sempre filtrado por `caminhoInternoSeguro` | A URL de retorno cadastrada no Supabase fica fixa (`/auth/callback`) |
-| Cookie de atividade gravado pelo middleware (L-09, L-10) | Horário do último gesto (clique, toque, tecla) no aparelho; confere a cada 30 s e ao voltar para a aba | Sem middleware. Atualização automática não conta como atividade. Segunda camada: "Inactivity timeout" do Supabase (pendência) |
+| Cookie de atividade gravado pelo middleware (L-09, L-10) | Retirado em 2026-10-09 a pedido do usuário: sem encerramento por inatividade; a sessão do Google fica aberta até sair | Decisão do usuário (SES-07 é recomendação, não requisito crítico) |
 | Limite de tentativas com Upstash (L-06) | Limites do próprio Supabase Auth (login, verificação de MFA) | Sem servidor próprio; sem dependência nova (DEP-01). Pendência de conferir os valores |
 | Origem conferida no middleware (L-07) | Não se aplica: autenticação por cabeçalho `Authorization`, sem cookie (SES-05); a Edge Function confere a origem (CAB-03) | Sem cookie não há requisição forjada |
 | Avisos por e-mail com Resend (M-07) | Notificações de segurança do Supabase Auth (fator de MFA cadastrado ou removido) com SMTP próprio [Confirmar] | Sem segredo novo no projeto (DEV-07); pendência humana |
@@ -33,9 +33,9 @@ Adaptação, para o Jake Beauty, da especificação "Login com conta Google e ve
 
 - Banco: `supabase/migrations/20261018120000_login_google_mfa.sql`.
 - Edge Function: `supabase/functions/admin-usuarios/index.ts` (contas sem senha, `redefinir_mfa`, `aal2` nas ações da equipe).
-- Telas: `src/pages/Login.tsx`, `src/pages/AuthCallback.tsx`, `src/components/SegurancaMfa.tsx` (Configurações > Segurança), `src/pages/Profissionais.tsx`, `src/pages/AdminGlobal.tsx`, `src/layouts/MainLayout.tsx` (faixa de MFA e inatividade), `src/App.tsx`.
-- Regras: `src/lib/seguranca/redirecionamento.ts`, `src/features/acesso/inatividade.ts`, `src/features/acesso/mfa.ts`, `src/hooks/useInatividadeAdmin.ts`, `src/contexts/AuthContext.tsx`.
-- Testes: `tests/seguranca/login-google.test.ts`, `supabase/tests/seguranca/login_mfa.test.sql`, `src/lib/seguranca/redirecionamento.test.ts`, `src/features/acesso/inatividade.test.ts`, `src/features/acesso/mfa.test.ts`.
+- Telas: `src/pages/Login.tsx`, `src/pages/AuthCallback.tsx`, `src/components/SegurancaMfa.tsx` (Configurações > Segurança), `src/pages/Profissionais.tsx`, `src/pages/AdminGlobal.tsx`, `src/layouts/MainLayout.tsx` (faixa de MFA), `src/App.tsx`.
+- Regras: `src/lib/seguranca/redirecionamento.ts`, `src/features/acesso/mfa.ts`, `src/contexts/AuthContext.tsx`.
+- Testes: `tests/seguranca/login-google.test.ts`, `supabase/tests/seguranca/login_mfa.test.sql`, `src/lib/seguranca/redirecionamento.test.ts`, `src/features/acesso/mfa.test.ts`.
 
 ## 4. Ordem de implantação (importante)
 
@@ -50,5 +50,4 @@ Com o login só pelo Google, publicar o portal antes de configurar o Google **tr
 ## 5. Ficou para depois
 
 1. Aviso de login em aparelho novo.
-2. Inatividade também para profissionais, com prazo maior, se a política do salão pedir.
-3. Encerrar todas as sessões da pessoa ao redefinir as 2 etapas (o Supabase só faz isso pelo próprio usuário [Confirmar]); hoje a pessoa perde o `aal2` no próximo login.
+2. Encerrar todas as sessões da pessoa ao redefinir as 2 etapas (o Supabase só faz isso pelo próprio usuário [Confirmar]); hoje a pessoa perde o `aal2` no próximo login.
