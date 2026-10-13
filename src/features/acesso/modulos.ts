@@ -47,7 +47,7 @@ const ADMIN: Papel[] = ['admin'];
 
 export const MODULOS: Modulo[] = [
   { id: 'resumo', rotulo: 'Resumo Diário', caminho: '/dashboard', icone: LayoutDashboard, grupo: 'principal', papeis: ADMIN, ocultavel: true,
-    descricao: 'Faturamento, despesas e atendimentos do período.' },
+    descricao: 'Atendimentos, tarefas, bloqueios e pagamentos do dia, com faturamento e despesas.' },
   { id: 'meu_painel', rotulo: 'Meu Painel', caminho: '/meu-painel', icone: Wallet, grupo: 'principal', papeis: TODOS, ocultavel: true,
     descricao: 'Faturamento do dia, projeção de ganhos e fechamentos para conferir.' },
   { id: 'agenda', rotulo: 'Agenda', caminho: '/agenda', icone: CalendarDays, grupo: 'principal', papeis: TODOS, ocultavel: true,

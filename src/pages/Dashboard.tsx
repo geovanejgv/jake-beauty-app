@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { listarSaldos, listarVendas, pacotesKeys } from '../features/pacotes/api';
+import PainelDoDia from '../features/resumo/PainelDoDia';
 import { TrendingUp, Calendar, Filter, BarChart3, Loader2, DollarSign, CreditCard, X, FileSpreadsheet, Edit2, Trash2, AlertTriangle, Wallet, TrendingDown, Clock, CheckCircle, Package } from 'lucide-react';
 
 export default function Dashboard() {
@@ -236,13 +237,14 @@ export default function Dashboard() {
     },
     onSuccess: () => { 
       queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] }); 
+      queryClient.invalidateQueries({ queryKey: ['resumo', 'pagamentos'] });
       setExpenseModalOpen(false); 
     }
   });
 
   const deleteExpenseMutation = useMutation({
     mutationFn: async (id: string) => { await supabase.from('expenses').delete().eq('id', id); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] }); setExpenseToDelete(null); }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['dashboard-expenses'] }); queryClient.invalidateQueries({ queryKey: ['resumo', 'pagamentos'] }); setExpenseToDelete(null); }
   });
 
   const openNewExpense = () => {
@@ -273,9 +275,13 @@ export default function Dashboard() {
   return (
     <div className="max-w-7xl mx-auto space-y-6 relative">
       <div>
-        <h2 className="text-3xl font-black text-slate-800 tracking-tight">Painel Financeiro</h2>
-        <p className="text-sm text-slate-500 mt-1">Gestão de faturamento, despesas e lucro líquido</p>
+        <h2 className="text-3xl font-black text-slate-800 tracking-tight">Resumo Diário</h2>
+        <p className="text-sm text-slate-500 mt-1">Agenda, tarefas, bloqueios, pagamentos e faturamento do estabelecimento</p>
       </div>
+
+      <PainelDoDia />
+
+      <h3 className="text-xl font-black text-slate-800 pt-2">Faturamento</h3>
 
       {/* Cards Superiores (Faturamento) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
