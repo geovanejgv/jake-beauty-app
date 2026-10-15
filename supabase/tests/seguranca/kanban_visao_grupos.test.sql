@@ -85,6 +85,13 @@ select pg_temp.espera_erro(format($$insert into public.kanban_quadro_grupo (quad
 insert into public.kanban_quadro_grupo (quadro_id, grupo_id) values (:'pessoal', :'g_salao')
   on conflict (user_id, quadro_id) do update set grupo_id = excluded.grupo_id;
 select pg_temp.ok((select grupo_id = :'g_salao' from public.kanban_quadro_grupo where quadro_id = :'pessoal'), 'mover de grupo');
+-- Arquivar no grupo ("Concluídos"): só no vínculo da própria pessoa
+update public.kanban_quadro_grupo set arquivado_em = now() where quadro_id = :'pessoal';
+select pg_temp.ok((select arquivado_em is not null from public.kanban_quadro_grupo where quadro_id = :'pessoal'), 'arquivar quadro no grupo');
+select pg_temp.ok((select count(*) from public.kanban_quadros where id = :'pessoal') = 1, 'arquivar não apaga o quadro');
+update public.kanban_quadro_grupo set arquivado_em = null where quadro_id = :'pessoal';
+select pg_temp.ok((select arquivado_em is null from public.kanban_quadro_grupo where quadro_id = :'pessoal'), 'restaurar quadro arquivado');
+update public.kanban_quadro_grupo set arquivado_em = now() where quadro_id = :'pessoal';
 update public.kanban_grupos set nome = 'Salão e casa' where id = :'g_salao';
 select pg_temp.ok((select count(*) from public.kanban_grupos where nome = 'Salão e casa') = 1, 'renomear grupo');
 select pg_temp.espera_erro($$insert into public.kanban_grupos (nome) values ('   ')$$, 'check');
@@ -96,9 +103,12 @@ select pg_temp.espera_erro(format($$insert into public.kanban_grupos (user_id, n
 insert into public.kanban_grupos (nome) values ('Meu') returning id as g_c \gset
 select pg_temp.espera_erro(format($$insert into public.kanban_quadro_grupo (quadro_id, grupo_id) values (%L, %L)$$, :'pessoal', :'g_c'), 'row-level security');
 update public.kanban_grupos set nome = 'X' where id = :'g_casa';
+update public.kanban_quadro_grupo set arquivado_em = null where quadro_id = :'pessoal';
+select pg_temp.ok((select count(*) from public.kanban_quadro_grupo) = 0, 'outra pessoa não vê os vínculos (nem o arquivamento) alheios');
 delete from public.kanban_grupos where id = :'g_salao';
 reset role;
 select pg_temp.ok((select count(*) from public.kanban_grupos where user_id = 'bb000000-0000-0000-0000-0000000000b1' and nome in ('Casa', 'Salão e casa')) = 2, 'outra pessoa não altera nem exclui grupos alheios');
+select pg_temp.ok((select arquivado_em is not null from public.kanban_quadro_grupo where quadro_id = :'pessoal'), 'outra pessoa não desarquiva o quadro alheio');
 set role authenticated;
 
 select pg_temp.como('bbbbbbbb-0000-0000-0000-000000000002');

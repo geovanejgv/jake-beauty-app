@@ -1,20 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, ChevronDown, ChevronLeft, ChevronsDownUp, ChevronsUpDown, EllipsisVertical, LayoutGrid, LayoutList, List, Rows3, Eye, Folder, FolderInput, FolderPlus, Layers, Loader2, Pencil, Plus, RefreshCw, Share2, SquareKanban, Trash2, UserRound, Users } from 'lucide-react';
+import { Archive, ArchiveRestore, Building2, Check, ChevronDown, ChevronLeft, ChevronsDownUp, ChevronsUpDown, EllipsisVertical, LayoutGrid, LayoutList, List, Rows3, Eye, Folder, FolderInput, FolderPlus, Layers, Loader2, Pencil, Plus, RefreshCw, Share2, SquareKanban, Trash2, UserRound, Users } from 'lucide-react';
 import * as api from '../features/kanban/api';
 import { kanbanKeys, mensagemErro } from '../features/kanban/api';
 import { ErroPublico } from '../lib/seguranca/erros';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  agruparQuadros, idsDaColuna, lerFiltros, passaNoFiltro, podeEditarQuadro, quadrosDaVisao, reordenar, statusDaPosicao, urlFiltros, hojeISO, visaoDoQuadro,
+  agruparQuadros, alternarCartao, alternarColuna, cartaoCompacto, colunaCompacta, definirTodos, idsDaColuna, lerFiltros, passaNoFiltro, podeEditarQuadro, quadrosDaVisao, reordenar, statusDaPosicao, urlFiltros, hojeISO, visaoDoQuadro,
   type Coluna, type EscopoQuadro, type ColunaEdicao, type Filtros, type Grupo, type ItemTarefa, type NovaTarefa, type Pessoa, type Quadro, type SecaoQuadros, type Tarefa,
 } from '../features/kanban/logic';
 import { TaskCard } from '../features/kanban/components/TaskCard';
 import { FilterBar } from '../features/kanban/components/FilterBar';
 import { EditarTarefaModal, EquipeModal, NovaTarefaModal, QuadroModal, type ExtrasQuadro } from '../features/kanban/components/janelas';
 import { GrupoDoQuadroModal, GrupoModal } from '../features/kanban/components/Grupos';
-import { Aviso, Confirmar, Painel, useDensidade, useFormatoQuadros, useToque } from '../features/kanban/components/ui';
+import { Aviso, Confirmar, Painel, useCompactacao, useDensidade, useFormatoQuadros, useToque } from '../features/kanban/components/ui';
 import { CompartilharModal } from '../features/kanban/components/Compartilhar';
 
 // Cores dos quadros pela posição (8 opções)
@@ -86,6 +86,12 @@ export default function Tarefas() {
     try { await api.excluirGrupo(grupoExcluir.id); await atualizarGrupos(); }
     catch (e) { setAviso(mensagemErro(e, 'Não foi possível excluir o grupo.')); }
     finally { setExcluindoGrupo(false); setGrupoExcluir(null); }
+  };
+  // Arquivar no grupo: o quadro vai para a lista "Concluídos" do grupo (só para quem arquivou)
+  const arquivadoNoGrupo = (quadroId: string) => !!vinculos.find((v) => v.quadro_id === quadroId)?.arquivado_em;
+  const arquivarNoGrupo = async (quadroId: string, arquivar: boolean) => {
+    try { await api.arquivarNoGrupo(quadroId, arquivar); await atualizarGrupos(); }
+    catch (e) { setAviso(mensagemErro(e, arquivar ? 'Não foi possível arquivar o quadro.' : 'Não foi possível restaurar o quadro.')); }
   };
   const mudarGrupo = async (quadroId: string, grupoId: string | null) => {
     if (grupoId === grupoDe(quadroId)) return;
@@ -198,7 +204,8 @@ export default function Tarefas() {
           temGrupos={grupos.length > 0}
           onVisao={(v) => setParams(v === 'pessoal' ? { visao: 'pessoal' } : {})}
           onNovoQuadro={abrirNovoQuadro} onEditar={setQuadroEditandoId} onExcluir={pedirExclusao} onCompartilhar={setQuadroCompartilharId}
-          onNovoGrupo={() => setGrupoModal('novo')} onRenomearGrupo={setGrupoModal} onExcluirGrupo={setGrupoExcluir} onGrupoDoQuadro={setGrupoDoQuadroId} />
+          onNovoGrupo={() => setGrupoModal('novo')} onRenomearGrupo={setGrupoModal} onExcluirGrupo={setGrupoExcluir} onGrupoDoQuadro={setGrupoDoQuadroId}
+          temGrupo={(id) => grupoDe(id) !== null} arquivado={arquivadoNoGrupo} onArquivar={arquivarNoGrupo} />
       )}
       {quadroCompartilhar && <CompartilharModal quadro={quadroCompartilhar} pessoas={pessoas.data || []} eu={init.data!} onClose={() => setQuadroCompartilharId(null)} />}
 
@@ -251,14 +258,18 @@ export default function Tarefas() {
 // =============================================================================
 // Tela inicial: só os quadros
 // =============================================================================
-function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovoQuadro, onEditar, onExcluir, onCompartilhar, onNovoGrupo, onRenomearGrupo, onExcluirGrupo, onGrupoDoQuadro }: {
+function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovoQuadro, onEditar, onExcluir, onCompartilhar, onNovoGrupo, onRenomearGrupo, onExcluirGrupo, onGrupoDoQuadro, temGrupo, arquivado, onArquivar }: {
   secoes: SecaoQuadros[]; todos: Quadro[]; colunas: Coluna[]; visao: EscopoQuadro; temGrupos: boolean; onVisao: (v: EscopoQuadro) => void;
   onNovoQuadro: () => void; onEditar: (id: string) => void; onExcluir: (q: Quadro) => void; onCompartilhar: (id: string) => void;
   onNovoGrupo: () => void; onRenomearGrupo: (g: Grupo) => void; onExcluirGrupo: (g: Grupo) => void; onGrupoDoQuadro: (id: string) => void;
+  temGrupo: (id: string) => boolean; arquivado: (id: string) => boolean; onArquivar: (id: string, arquivar: boolean) => void;
 }) {
   const resumo = useQuery({ queryKey: kanbanKeys.resumo, queryFn: api.listarResumo });
   const [menuAberto, setMenuAberto] = useState<string | null>(null);
   const [recolhidos, setRecolhidos] = useState<Set<string>>(() => new Set());
+  // Lista suspensa "Concluídos" de cada grupo: fechada por padrão
+  const [concluidosAbertos, setConcluidosAbertos] = useState<Set<string>>(() => new Set());
+  const alternarConcluidos = (id: string) => setConcluidosAbertos((r) => { const n = new Set(r); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [formato, setFormato] = useFormatoQuadros();
   const porColuna = useMemo(() => {
     const m = new Map<string, number>();
@@ -324,6 +335,15 @@ function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovo
           <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onGrupoDoQuadro(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
             <FolderInput size={14} /> Mover para grupo
           </button>
+          {temGrupo(q.id) && (arquivado(q.id) ? (
+            <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onArquivar(q.id, false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+              <ArchiveRestore size={14} /> Restaurar quadro
+            </button>
+          ) : (
+            <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onArquivar(q.id, true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+              <Archive size={14} /> Arquivar em Concluídos
+            </button>
+          ))}
           {q.gerencia && (
             <button type="button" role="menuitem" onClick={() => { setMenuAberto(null); onCompartilhar(q.id); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
               <Share2 size={14} /> Compartilhar
@@ -411,9 +431,9 @@ function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovo
     </button>
   );
 
-  const conteudo = (quadros: Quadro[], grupo: Grupo | null) => {
+  const conteudo = (quadros: Quadro[], grupo: Grupo | null, temArquivados = false) => {
     const vazio = grupo && quadros.length === 0
-      ? <p className="col-span-full text-sm text-slate-400 py-1">Nenhum quadro neste grupo nesta visão. Use "Mover para grupo" no menu de um quadro.</p>
+      ? <p className="col-span-full text-sm text-slate-400 py-1">{temArquivados ? 'Todos os quadros deste grupo estão em Concluídos.' : 'Nenhum quadro neste grupo nesta visão. Use "Mover para grupo" no menu de um quadro.'}</p>
       : null;
     if (formato === 'lista') {
       return (
@@ -473,7 +493,7 @@ function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovo
         </div>
       </div>
 
-      {secoes.map(({ grupo, quadros }) => {
+      {secoes.map(({ grupo, quadros, arquivados }) => {
         const id = grupo?.id ?? 'sem-grupo';
         const recolhido = recolhidos.has(id);
         return (
@@ -495,7 +515,20 @@ function TelaInicial({ secoes, todos, colunas, visao, temGrupos, onVisao, onNovo
                 )}
               </div>
             )}
-            {!recolhido && conteudo(quadros, grupo)}
+            {!recolhido && conteudo(quadros, grupo, arquivados.length > 0)}
+            {!recolhido && arquivados.length > 0 && (
+              <div className="pl-1">
+                <button type="button" onClick={() => alternarConcluidos(id)} aria-expanded={concluidosAbertos.has(id)}
+                  className="flex items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-rose-600 py-1">
+                  <ChevronDown size={14} className={`shrink-0 transition-transform ${concluidosAbertos.has(id) ? '' : '-rotate-90'}`} />
+                  <Archive size={14} className="shrink-0" /> Concluídos
+                  <span className="text-xs font-semibold text-slate-400">{arquivados.length}</span>
+                </button>
+                {concluidosAbertos.has(id) && (
+                  <ul className="mt-1 bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 opacity-80">{arquivados.map(linha)}</ul>
+                )}
+              </div>
+            )}
           </section>
         );
       })}
@@ -548,12 +581,26 @@ function QuadroAberto(p: QuadroAbertoProps) {
   const somenteVer = !podeEditarQuadro(p.quadro);
   const quadrosEditaveis = p.quadros.filter(podeEditarQuadro);
   const voltar = p.quadro.no_negocio === false ? '/tarefas?visao=pessoal' : '/tarefas';
-  // Visualização compacta: só o título; cada cartão expande sozinho
+  // Visualização geral (detalhada ou compacta) com exceções: cada coluna e cada cartão
+  // compactam ou expandem sozinhos, sem afetar os demais.
   const [densidade, setDensidade] = useDensidade();
-  const compacto = densidade === 'compacta';
-  const [expandidos, setExpandidos] = useState<Set<string>>(() => new Set());
-  const alternarExpandir = (id: string) => setExpandidos((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const mudarDensidade = (d: typeof densidade) => { setDensidade(d); setExpandidos(new Set()); };
+  const geral = densidade === 'compacta';
+  const [compactacao, setCompactacao] = useCompactacao();
+  const compactaColuna = (colunaId: string) => colunaCompacta(compactacao, geral, colunaId);
+  const compactoCartao = (t: Tarefa) => cartaoCompacto(compactacao, geral, t.coluna_id, t.id);
+  const alternarColunaCompacta = (colunaId: string) =>
+    setCompactacao(alternarColuna(compactacao, geral, colunaId, tarefas.filter((t) => t.coluna_id === colunaId).map((t) => t.id)));
+  const alternarExpandir = (t: Tarefa) => setCompactacao(alternarCartao(compactacao, geral, t.coluna_id, t.id));
+  const algumExpandido = visiveis.some((t) => !compactoCartao(t));
+  // Trocar a visualização geral desfaz as exceções deste quadro
+  const mudarDensidade = (d: typeof densidade) => {
+    setDensidade(d);
+    const colunasExc = { ...compactacao.colunas };
+    for (const id of colunaIds) delete colunasExc[id];
+    const cartoesExc = { ...compactacao.cartoes };
+    for (const t of tarefas) delete cartoesExc[t.id];
+    setCompactacao({ colunas: colunasExc, cartoes: cartoesExc });
+  };
   const [arrastando, setArrastando] = useState<string | null>(null);
   const [alvo, setAlvo] = useState<{ coluna: string; antesDe: string | null } | null>(null);
 
@@ -726,11 +773,11 @@ function QuadroAberto(p: QuadroAbertoProps) {
               </button>
             ))}
           </div>
-          {compacto && (
-            <button type="button" onClick={() => setExpandidos(expandidos.size ? new Set() : new Set(tarefas.map((x) => x.id)))}
+          {visiveis.length > 0 && (
+            <button type="button" onClick={() => setCompactacao(definirTodos(compactacao, geral, visiveis, algumExpandido))}
               className="p-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-rose-600"
-              aria-label={expandidos.size ? 'Recolher todas' : 'Expandir todas'} title={expandidos.size ? 'Recolher todas' : 'Expandir todas'}>
-              {expandidos.size ? <ChevronsDownUp size={18} /> : <ChevronsUpDown size={18} />}
+              aria-label={algumExpandido ? 'Recolher todas' : 'Expandir todas'} title={algumExpandido ? 'Recolher todas' : 'Expandir todas'}>
+              {algumExpandido ? <ChevronsDownUp size={18} /> : <ChevronsUpDown size={18} />}
             </button>
           )}
           <button type="button" onClick={atualizar} className="p-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-rose-600" aria-label="Atualizar" title="Atualizar">
@@ -777,12 +824,20 @@ function QuadroAberto(p: QuadroAbertoProps) {
           const lista = visiveisDaColuna(c.id);
           const cor = idx === 0 ? 'bg-indigo-100 text-indigo-700' : idx === colunas.length - 1 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700';
           const indicadorFim = alvo?.coluna === c.id && alvo.antesDe === null && arrastando;
+          const compacto = compactaColuna(c.id);
           return (
             <section key={c.id} aria-label={c.nome}
               className={`w-[85vw] max-w-sm shrink-0 snap-center md:snap-align-none flex flex-col bg-slate-100 rounded-2xl ${poucasColunas ? 'md:w-auto md:max-w-none md:flex-1 md:min-w-[300px]' : 'md:w-[300px] md:max-w-none'}`}>
               <header className="flex items-center justify-between px-3 pt-3 pb-2">
                 <h3 className="text-sm font-bold text-slate-700 truncate">{c.nome}</h3>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${cor}`}>{lista.length}</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => alternarColunaCompacta(c.id)} aria-pressed={compacto}
+                    className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-white"
+                    aria-label={compacto ? `Expandir a coluna ${c.nome}` : `Compactar a coluna ${c.nome}`} title={compacto ? 'Expandir esta coluna' : 'Compactar esta coluna'}>
+                    {compacto ? <LayoutList size={15} /> : <Rows3 size={15} />}
+                  </button>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${cor}`}>{lista.length}</span>
+                </div>
               </header>
               <div
                 onDragOver={(e) => aoArrastarSobreColuna(e, c.id)}
@@ -807,9 +862,9 @@ function QuadroAberto(p: QuadroAbertoProps) {
                         toque={toque}
                         arrastando={arrastando === t.id}
                         somenteLeitura={somenteVer}
-                        compacto={compacto}
-                        expandido={expandidos.has(t.id)}
-                        onAlternarExpandir={() => alternarExpandir(t.id)}
+                        compacto
+                        expandido={!compactoCartao(t)}
+                        onAlternarExpandir={() => alternarExpandir(t)}
                         podeSubir={i > 0}
                         podeDescer={i < lista.length - 1}
                         onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.id); setArrastando(t.id); }}

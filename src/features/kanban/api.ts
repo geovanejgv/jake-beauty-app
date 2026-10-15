@@ -184,7 +184,7 @@ export async function definirVisao(quadro: Quadro, visao: VisaoQuadro): Promise<
 export async function listarGrupos(): Promise<{ grupos: Grupo[]; vinculos: VinculoGrupo[] }> {
   const [grupos, vinculos] = await Promise.all([
     rodar(supabase.from('kanban_grupos').select('id, nome').order('nome')),
-    rodar(supabase.from('kanban_quadro_grupo').select('quadro_id, grupo_id')),
+    rodar(supabase.from('kanban_quadro_grupo').select('quadro_id, grupo_id, arquivado_em')),
   ]);
   return { grupos: (grupos ?? []) as Grupo[], vinculos: (vinculos ?? []) as VinculoGrupo[] };
 }
@@ -209,7 +209,13 @@ export async function definirGrupo(eu: string, quadroId: string, grupoId: string
     await rodar(supabase.from('kanban_quadro_grupo').delete().eq('quadro_id', quadroId));
     return;
   }
-  await rodar(supabase.from('kanban_quadro_grupo').upsert({ user_id: eu, quadro_id: quadroId, grupo_id: grupoId }, { onConflict: 'user_id,quadro_id' }));
+  // Trocar de grupo devolve o quadro aos ativos (sai de "Concluídos").
+  await rodar(supabase.from('kanban_quadro_grupo').upsert({ user_id: eu, quadro_id: quadroId, grupo_id: grupoId, arquivado_em: null }, { onConflict: 'user_id,quadro_id' }));
+}
+
+/** Arquiva o quadro no grupo da pessoa (lista "Concluídos") ou restaura, com false. Só o próprio vínculo (RLS). */
+export async function arquivarNoGrupo(quadroId: string, arquivar: boolean): Promise<void> {
+  await rodar(supabase.from('kanban_quadro_grupo').update({ arquivado_em: arquivar ? new Date().toISOString() : null }).eq('quadro_id', quadroId));
 }
 
 export async function salvarQuadro(id: string, nome: string, colunas: ColunaEdicao[]): Promise<void> {

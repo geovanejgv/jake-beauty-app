@@ -5,6 +5,14 @@ import {
   quadrosDaVisao,
   visaoDoQuadro,
   agruparQuadros,
+  alternarCartao,
+  alternarColuna,
+  cartaoCompacto,
+  colunaCompacta,
+  COMPACTACAO_VAZIA,
+  definirTodos,
+  lerCompactacao,
+  MAX_CARTOES_COMPACTACAO,
   validarNomeGrupo,
   conclusaoParaTimestamp,
   edicaoParaBanco,
@@ -255,7 +263,17 @@ describe('visão do quadro e grupos', () => {
   });
 
   it('agruparQuadros sem grupos: só a seção sem grupo', () => {
-    expect(agruparQuadros([q('a')], [], [])).toEqual([{ grupo: null, quadros: [q('a')] }]);
+    expect(agruparQuadros([q('a')], [], [])).toEqual([{ grupo: null, quadros: [q('a')], arquivados: [] }]);
+  });
+
+  it('agruparQuadros: arquivado no grupo vai para "Concluídos" do grupo', () => {
+    const grupos = [{ id: 'g1', nome: 'Casa' }];
+    const vinculos = [{ quadro_id: 'a', grupo_id: 'g1', arquivado_em: null }, { quadro_id: 'b', grupo_id: 'g1', arquivado_em: '2026-10-15T12:00:00Z' }];
+    const [casa, sem] = agruparQuadros([q('a'), q('b'), q('c')], grupos, vinculos);
+    expect(casa.quadros.map((x) => x.id)).toEqual(['a']);
+    expect(casa.arquivados.map((x) => x.id)).toEqual(['b']);
+    expect(sem.quadros.map((x) => x.id)).toEqual(['c']);
+    expect(sem.arquivados).toEqual([]);
   });
 
   it('validarNomeGrupo: tamanho e repetição', () => {
@@ -265,5 +283,43 @@ describe('visão do quadro e grupos', () => {
     expect(validarNomeGrupo('casa', grupos)).toBe('Já existe um grupo com esse nome.');
     expect(validarNomeGrupo('Casa', grupos, 'g1')).toBeNull();
     expect(validarNomeGrupo('Rotinas', grupos)).toBeNull();
+  });
+});
+
+describe('compactação por coluna e por cartão', () => {
+  it('compactar só uma coluna não muda as outras e solta as exceções dos cartões dela', () => {
+    let c = alternarCartao(COMPACTACAO_VAZIA, false, 'fazendo', 't1');
+    c = alternarCartao(c, false, 'afazer', 't9');
+    c = alternarColuna(c, false, 'fazendo', ['t1', 't2']);
+    expect(colunaCompacta(c, false, 'fazendo')).toBe(true);
+    expect(colunaCompacta(c, false, 'afazer')).toBe(false);
+    expect(cartaoCompacto(c, false, 'fazendo', 't1')).toBe(true);
+    expect(cartaoCompacto(c, false, 'afazer', 't9')).toBe(true);
+    // voltar ao geral remove a exceção
+    expect(alternarColuna(c, false, 'fazendo', []).colunas).toEqual({});
+  });
+
+  it('compactar e expandir um cartão sozinho, sem afetar os outros da coluna', () => {
+    let c = alternarCartao(COMPACTACAO_VAZIA, false, 'col', 't1');
+    expect(cartaoCompacto(c, false, 'col', 't1')).toBe(true);
+    expect(cartaoCompacto(c, false, 'col', 't2')).toBe(false);
+    c = alternarCartao(c, false, 'col', 't1');
+    expect(c.cartoes).toEqual({});
+    // coluna compacta: expandir só um cartão
+    c = alternarColuna(COMPACTACAO_VAZIA, false, 'col', []);
+    c = alternarCartao(c, false, 'col', 't2');
+    expect(cartaoCompacto(c, false, 'col', 't2')).toBe(false);
+    expect(cartaoCompacto(c, false, 'col', 't3')).toBe(true);
+  });
+
+  it('expandir/recolher todas e leitura segura do que foi salvo', () => {
+    const tarefas = [{ id: 't1', coluna_id: 'a' }, { id: 't2', coluna_id: 'b' }];
+    const c = definirTodos(COMPACTACAO_VAZIA, false, tarefas, true);
+    expect(c.cartoes).toEqual({ t1: true, t2: true });
+    expect(definirTodos(c, false, tarefas, false).cartoes).toEqual({});
+    expect(lerCompactacao({ colunas: { a: true, b: 'x' }, cartoes: [1] })).toEqual({ colunas: { a: true }, cartoes: {} });
+    expect(lerCompactacao('lixo')).toEqual(COMPACTACAO_VAZIA);
+    const muitos = Object.fromEntries(Array.from({ length: MAX_CARTOES_COMPACTACAO + 5 }, (_, i) => [`t${i}`, true]));
+    expect(Object.keys(lerCompactacao({ cartoes: muitos }).cartoes)).toHaveLength(MAX_CARTOES_COMPACTACAO);
   });
 });

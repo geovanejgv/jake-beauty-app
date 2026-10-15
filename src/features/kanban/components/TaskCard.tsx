@@ -20,7 +20,7 @@ export interface TaskCardProps {
   arrastando: boolean;
   /** Quadro compartilhado só para visualizar: sem arrastar, mover ou editar. */
   somenteLeitura?: boolean;
-  /** Visualização compacta: só o título; expande para ver o resto. */
+  /** Cartão recolhível: recolhido mostra só o título; `expandido` mostra tudo com o botão de recolher. */
   compacto?: boolean;
   expandido?: boolean;
   onAlternarExpandir?: () => void;

@@ -41,19 +41,87 @@ export function visaoDoQuadro(q: Pick<Quadro, 'escopo' | 'dono_id'>): VisaoQuadr
 
 /** Grupo da tela inicial (organização pessoal: cada pessoa vê só os seus). */
 export type Grupo = { id: string; nome: string };
-export type VinculoGrupo = { quadro_id: string; grupo_id: string };
-export type SecaoQuadros = { grupo: Grupo | null; quadros: Quadro[] };
+export type VinculoGrupo = { quadro_id: string; grupo_id: string; arquivado_em?: string | null };
+/** Seção da tela inicial; `arquivados` são os quadros do grupo na lista "Concluídos" (sempre vazia em "sem grupo"). */
+export type SecaoQuadros = { grupo: Grupo | null; quadros: Quadro[]; arquivados: Quadro[] };
 
-/** Separa os quadros da visão em grupos (por nome) e "sem grupo" sempre no fim; grupos vazios também aparecem. */
+/** Separa os quadros da visão em grupos (por nome) e "sem grupo" sempre no fim; grupos vazios também aparecem.
+ *  Quadro arquivado no grupo vai para `arquivados` daquele grupo. */
 export function agruparQuadros(quadros: Quadro[], grupos: Grupo[], vinculos: VinculoGrupo[]): SecaoQuadros[] {
-  const doQuadro = new Map(vinculos.map((v) => [v.quadro_id, v.grupo_id]));
+  const doQuadro = new Map(vinculos.map((v) => [v.quadro_id, v]));
   const ids = new Set(grupos.map((g) => g.id));
   const secoes: SecaoQuadros[] = [...grupos]
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-    .map((g) => ({ grupo: g, quadros: quadros.filter((q) => doQuadro.get(q.id) === g.id) }));
-  const soltos = quadros.filter((q) => !ids.has(doQuadro.get(q.id) ?? ''));
-  secoes.push({ grupo: null, quadros: soltos });
+    .map((g) => {
+      const doGrupo = quadros.filter((q) => doQuadro.get(q.id)?.grupo_id === g.id);
+      return {
+        grupo: g,
+        quadros: doGrupo.filter((q) => !doQuadro.get(q.id)?.arquivado_em),
+        arquivados: doGrupo.filter((q) => !!doQuadro.get(q.id)?.arquivado_em),
+      };
+    });
+  const soltos = quadros.filter((q) => !ids.has(doQuadro.get(q.id)?.grupo_id ?? ''));
+  secoes.push({ grupo: null, quadros: soltos, arquivados: [] });
   return secoes;
+}
+
+// ---------------------------------------------------------------- compactação por coluna e por cartão
+
+/** Exceções à visualização geral do quadro: por coluna e por cartão (true = compacto). Preferência deste navegador. */
+export type Compactacao = { colunas: Record<string, boolean>; cartoes: Record<string, boolean> };
+export const COMPACTACAO_VAZIA: Compactacao = { colunas: {}, cartoes: {} };
+/** Máximo de exceções de cartão guardadas (as mais antigas saem primeiro). */
+export const MAX_CARTOES_COMPACTACAO = 500;
+
+export const colunaCompacta = (c: Compactacao, geral: boolean, colunaId: string): boolean => c.colunas[colunaId] ?? geral;
+
+export const cartaoCompacto = (c: Compactacao, geral: boolean, colunaId: string, tarefaId: string): boolean =>
+  c.cartoes[tarefaId] ?? colunaCompacta(c, geral, colunaId);
+
+/** Inverte só a coluna; os cartões dela voltam a seguir a coluna. Igual ao geral = sem exceção. */
+export function alternarColuna(c: Compactacao, geral: boolean, colunaId: string, tarefaIdsDaColuna: string[]): Compactacao {
+  const novo = !colunaCompacta(c, geral, colunaId);
+  const colunas = { ...c.colunas };
+  if (novo === geral) delete colunas[colunaId]; else colunas[colunaId] = novo;
+  const cartoes = { ...c.cartoes };
+  for (const id of tarefaIdsDaColuna) delete cartoes[id];
+  return { colunas, cartoes };
+}
+
+function comCartao(cartoes: Record<string, boolean>, tarefaId: string, valor: boolean, daColuna: boolean): Record<string, boolean> {
+  const n = { ...cartoes };
+  delete n[tarefaId];
+  if (valor !== daColuna) n[tarefaId] = valor;
+  return n;
+}
+
+function limitar(cartoes: Record<string, boolean>): Record<string, boolean> {
+  const chaves = Object.keys(cartoes);
+  if (chaves.length <= MAX_CARTOES_COMPACTACAO) return cartoes;
+  return Object.fromEntries(chaves.slice(-MAX_CARTOES_COMPACTACAO).map((k) => [k, cartoes[k]]));
+}
+
+/** Inverte só o cartão; os outros cartões da coluna não mudam. Igual à coluna = sem exceção. */
+export function alternarCartao(c: Compactacao, geral: boolean, colunaId: string, tarefaId: string): Compactacao {
+  const valor = !cartaoCompacto(c, geral, colunaId, tarefaId);
+  return { colunas: c.colunas, cartoes: limitar(comCartao(c.cartoes, tarefaId, valor, colunaCompacta(c, geral, colunaId))) };
+}
+
+/** Expande ou recolhe todos os cartões informados (botão "Expandir/Recolher todas"). */
+export function definirTodos(c: Compactacao, geral: boolean, tarefas: Pick<Tarefa, 'id' | 'coluna_id'>[], compacto: boolean): Compactacao {
+  let cartoes = c.cartoes;
+  for (const t of tarefas) cartoes = comCartao(cartoes, t.id, compacto, colunaCompacta(c, geral, t.coluna_id));
+  return { colunas: c.colunas, cartoes: limitar(cartoes) };
+}
+
+/** Lê a preferência salva aceitando só o formato esperado (o resto é ignorado). */
+export function lerCompactacao(bruto: unknown): Compactacao {
+  const mapa = (x: unknown): Record<string, boolean> => {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return {};
+    return Object.fromEntries(Object.entries(x as Record<string, unknown>).filter((e): e is [string, boolean] => typeof e[1] === 'boolean'));
+  };
+  const o = (bruto && typeof bruto === 'object' ? bruto : {}) as { colunas?: unknown; cartoes?: unknown };
+  return { colunas: mapa(o.colunas), cartoes: limitar(mapa(o.cartoes)) };
 }
 
 export type Compartilhamento = { id: string; quadro_id: string; destino: 'negocio' | 'pessoa'; user_id: string | null; permissao: PermissaoQuadro };

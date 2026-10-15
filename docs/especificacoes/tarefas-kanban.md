@@ -138,7 +138,7 @@ Restrição: `escopo = 'negocio' or dono_id is not null`. Índices: `created_at`
 
 `kanban_grupos`: `id`, `user_id` (padrão `usuario_atual_id()`, FK users `cascade`), `nome` (1 a 40 após `btrim`), `created_at`. Únicos `(user_id, nome)` e `(id, user_id)`.
 
-`kanban_quadro_grupo`: `user_id` (padrão `usuario_atual_id()`), `quadro_id` (FK quadros `cascade`), `grupo_id`. PK `(user_id, quadro_id)` (um quadro fica em no máximo um grupo por pessoa). FK composta `(grupo_id, user_id)` para `kanban_grupos(id, user_id)` com `cascade` (o grupo tem de ser da mesma pessoa; excluir o grupo solta os quadros sem apagá-los).
+`kanban_quadro_grupo`: `user_id` (padrão `usuario_atual_id()`), `quadro_id` (FK quadros `cascade`), `grupo_id`, `arquivado_em` (timestamptz anulável: quadro arquivado no grupo, na lista "Concluídos"; migração `20261020120000_kanban_arquivar_quadro.sql`). PK `(user_id, quadro_id)` (um quadro fica em no máximo um grupo por pessoa). FK composta `(grupo_id, user_id)` para `kanban_grupos(id, user_id)` com `cascade` (o grupo tem de ser da mesma pessoa; excluir o grupo solta os quadros sem apagá-los).
 
 ## 4. Regras de negócio
 
@@ -271,6 +271,7 @@ Restrição: `escopo = 'negocio' or dono_id is not null`. Índices: `created_at`
 - Um quadro fica em no máximo um grupo por pessoa; só pode ser posto em grupo quadro que a pessoa vê.
 - Os grupos aparecem nas duas visões; cada visão mostra só os quadros dela dentro de cada grupo.
 - Excluir grupo: os quadros voltam para "Sem grupo"; nenhum quadro é apagado.
+- Arquivar no grupo: quadro que está num grupo pode ir para a lista suspensa **Concluídos** daquele grupo (fechada por padrão, com a contagem) e voltar com "Restaurar quadro". É pessoal como o grupo (grava `arquivado_em` no vínculo da própria pessoa); o quadro continua aberto e igual para os outros. Trocar de grupo devolve o quadro aos ativos. Grupo só com arquivados mostra "Todos os quadros deste grupo estão em Concluídos.".
 
 ### 4.11 Plano (opcional no outro projeto)
 
@@ -395,14 +396,15 @@ Selos:
 
 Botão de criar no fim da seção "Sem grupo": "Criar quadro do negócio" ou "Criar quadro pessoal" (no compacto, "Novo quadro").
 
-Menu ⋮ de cada quadro: Editar quadro (se pode editar), Mover para grupo, Compartilhar (se gerencia), Excluir quadro (se gerencia). Sem nenhuma ação: "Compartilhado com você só para visualizar.".
+Menu ⋮ de cada quadro: Editar quadro (se pode editar), Mover para grupo, Arquivar em Concluídos ou Restaurar quadro (se está num grupo), Compartilhar (se gerencia), Excluir quadro (se gerencia). Sem nenhuma ação: "Compartilhado com você só para visualizar.".
 
 ### 8.4 Quadro aberto
 
 Cabeçalho:
 - Link "‹ Quadros" (volta para a visão pessoal se o quadro não aparece no negócio).
 - Título "Kanban de tarefas" e **seletor de quadros** (lista de todos os visíveis, com marca no atual, e "Novo quadro").
-- **Visualização dos cartões**: Detalhada | Compacta (lembrada em `localStorage`, chave `jb-kanban-densidade`). Na compacta, botão **Expandir todas / Recolher todas**.
+- **Visualização dos cartões**: Detalhada | Compacta (lembrada em `localStorage`, chave `jb-kanban-densidade`), que vale como padrão do quadro. Botão **Expandir todas / Recolher todas** (com cartões visíveis).
+- **Exceções de compactação** (chave `jb-kanban-compactacao`, até 500 cartões guardados): cada coluna tem no cabeçalho um botão que compacta ou expande só ela; cada cartão compacta ou expande sozinho (seta), em qualquer visualização. Compactar uma coluna faz os cartões dela voltarem a seguir a coluna; trocar a visualização geral desfaz as exceções do quadro.
 - Atualizar (ícone gira enquanto busca).
 - Menu ⋮ "Opções do quadro": Editar quadro (se pode editar), Compartilhar (se gerencia), Equipe (só administradora), Excluir quadro (se gerencia; avisa se for o único do negócio).
 - Botão "+": Tarefa (se pode editar) e Novo quadro.
@@ -428,7 +430,7 @@ Barra de filtros (8.6) e colunas:
 - Observação editável no próprio cartão: clique abre área de texto; sair salva (só se mudou); Esc descarta. Sem observação: botão "Observação".
 - No toque: "Mover para [coluna]" (seletor) e setas subir e descer.
 
-**Compacto** (recolhido): uma linha com alça, título truncado (clicar expande), ponto vermelho se atrasada, ícone de checklist com "feitos/total", **iniciais do responsável** num círculo (duas primeiras palavras, só letras: remove números, emojis e símbolos; sem letras = "?") e seta para expandir. Expandido: igual ao detalhado, com seta para recolher. Cada cartão expande sozinho; trocar a densidade recolhe todos.
+**Compacto** (recolhido): uma linha com alça, título truncado (clicar expande), ponto vermelho se atrasada, ícone de checklist com "feitos/total", **iniciais do responsável** num círculo (duas primeiras palavras, só letras: remove números, emojis e símbolos; sem letras = "?") e seta para expandir. Expandido: igual ao detalhado, com seta para recolher. Cada cartão expande ou recolhe sozinho, também na detalhada; trocar a densidade desfaz as exceções.
 
 ### 8.6 Filtros (barra acima das colunas)
 

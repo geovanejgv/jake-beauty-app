@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { COMPACTACAO_VAZIA, lerCompactacao, type Compactacao } from '../logic';
 
 /** true enquanto a media query casar (atualiza ao girar/redimensionar). */
 export function useMedia(query: string): boolean {
@@ -32,6 +33,19 @@ export function useDensidade(): [Densidade, (d: Densidade) => void] {
     try { localStorage.setItem(CHAVE_DENSIDADE, nova); } catch { /* sem armazenamento: vale só nesta visita */ }
   };
   return [d, mudar];
+}
+
+/** Exceções de compactação por coluna e por cartão. Lembradas neste navegador. */
+const CHAVE_COMPACTACAO = 'jb-kanban-compactacao';
+export function useCompactacao(): [Compactacao, (c: Compactacao) => void] {
+  const [c, setC] = useState<Compactacao>(() => {
+    try { return lerCompactacao(JSON.parse(localStorage.getItem(CHAVE_COMPACTACAO) || '{}')); } catch { return COMPACTACAO_VAZIA; }
+  });
+  const mudar = (nova: Compactacao) => {
+    setC(nova);
+    try { localStorage.setItem(CHAVE_COMPACTACAO, JSON.stringify(nova)); } catch { /* sem armazenamento: vale só nesta visita */ }
+  };
+  return [c, mudar];
 }
 
 /** Formato da tela inicial: cartões, compacto (faixas baixas) ou lista. Lembrado neste navegador. */
