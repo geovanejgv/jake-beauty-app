@@ -23,8 +23,8 @@ export function AniversariantesMes({ clientes, hoje, recolhivel = false }: { cli
     <>
       <span className="w-9 h-9 shrink-0 rounded-xl bg-rose-600 text-white flex items-center justify-center"><Cake size={18} /></span>
       <span className="flex-1 min-w-0 text-left">
-        <span className="block font-black text-slate-800">Aniversariantes de {mes}</span>
-        <span className="block text-xs text-slate-500">
+        <span className="block text-[17px] md:text-base font-black text-slate-900 md:text-slate-800">Aniversariantes de {mes}</span>
+        <span className="block text-sm md:text-xs text-slate-600 md:text-slate-500">
           {lista.length === 0 ? 'Nenhuma cliente faz aniversário este mês.' : `${lista.length} cliente(s)${deHoje ? ` · ${deHoje} hoje` : ''}`}
         </span>
       </span>
@@ -53,8 +53,8 @@ export function AniversariantesMes({ clientes, hoje, recolhivel = false }: { cli
                   <span className="block text-[10px] font-bold uppercase">{mes.slice(0, 3)}</span>
                 </span>
                 <span className="flex-1 min-w-0">
-                  <span className="block text-sm font-bold text-slate-800 truncate" title={cliente.name}>{cliente.name}</span>
-                  <span className="block text-xs text-slate-500">{ehHoje ? 'Hoje!' : passou ? 'Já passou' : `Dia ${dia}`}{idade !== null ? ` · ${idade} anos` : ''}</span>
+                  <span className="block text-[15px] md:text-sm font-bold text-slate-900 md:text-slate-800 truncate" title={cliente.name}>{cliente.name}</span>
+                  <span className="block text-sm md:text-xs text-slate-600 md:text-slate-500">{ehHoje ? 'Hoje!' : passou ? 'Já passou' : `Dia ${dia}`}{idade !== null ? ` · ${idade} anos` : ''}</span>
                 </span>
                 {fone.length >= 10 && (
                   <a href={`https://wa.me/${fone.length > 11 && fone.startsWith('55') ? fone : `55${fone}`}`} target="_blank" rel="noopener noreferrer" title={`Parabenizar ${cliente.name} pelo WhatsApp`} aria-label={`Parabenizar ${cliente.name} pelo WhatsApp`}
