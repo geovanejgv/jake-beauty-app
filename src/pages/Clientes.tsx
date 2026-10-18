@@ -7,15 +7,21 @@ import { COR_SITUACAO, ROTULO_SITUACAO, agruparSaldos, situacaoPacote } from '..
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
-import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package, List, LayoutGrid, CalendarClock, CalendarCheck } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package, List, LayoutGrid, CalendarClock, CalendarCheck, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { clientesKeys, listarGrupos, listarMembros, listarOrigens, listarResumoAtendimentos } from '../features/clientes/api';
-import { PALAVRA_EXCLUSAO, confirmacaoExclusaoValida, contarPorGrupo, gruposPorCliente } from '../features/clientes/logic';
+import { PALAVRA_EXCLUSAO, chaveAniversario, confirmacaoExclusaoValida, contarPorGrupo, gruposPorCliente, ordenarPor, type Direcao } from '../features/clientes/logic';
+import { AniversariantesMes } from '../features/clientes/Aniversariantes';
 import { GruposCartoes } from '../features/clientes/GruposCartoes';
 import { CampoOrigem } from '../features/clientes/CampoOrigem';
 import { GruposClientes } from '../features/clientes/GruposClientes';
 
 type ModoClientes = 'lista' | 'cartoes' | 'grupos';
 const CHAVE_MODO = 'jb-clientes-modo';
+
+type Coluna = 'nome' | 'whatsapp' | 'grupo' | 'ultimo' | 'proximo' | 'origem' | 'aniversario';
+const ROTULO_COLUNA: Record<Coluna, string> = {
+  nome: 'Nome', whatsapp: 'WhatsApp', grupo: 'Grupo', ultimo: 'Último atendimento', proximo: 'Próximo atendimento', origem: 'Origem', aniversario: 'Aniversário',
+};
 
 const TIPOS_HISTORICO: Record<string, string> = { tecnico: 'Técnico', alergia: 'Alergia', preferencia: 'Preferência', observacao: 'Observação' };
 
@@ -123,6 +129,10 @@ export default function Clientes() {
   // Exclusão em duas etapas: 1 = confirmar, 2 = digitar a palavra.
   const [etapaExclusao, setEtapaExclusao] = useState<1 | 2>(1);
   const [textoExclusao, setTextoExclusao] = useState('');
+  // Ordenação: clicar no cabeçalho da coluna (ou escolher no celular e nos cartões).
+  const [ordem, setOrdem] = useState<{ coluna: Coluna; direcao: Direcao }>({ coluna: 'nome', direcao: 'asc' });
+  const ordenarColuna = (coluna: Coluna) =>
+    setOrdem((o) => (o.coluna === coluna ? { coluna, direcao: o.direcao === 'asc' ? 'desc' : 'asc' } : { coluna, direcao: 'asc' }));
 
   // Lista, cartões ou grupos (lembrado neste aparelho; grupos só para a administradora).
   const [modoSalvo, setModoSalvo] = useState<ModoClientes>(() => {
@@ -296,6 +306,50 @@ export default function Clientes() {
     (!grupoFiltro || (gruposDaCliente.get(c.id) ?? []).some((g) => g.id === grupoFiltro))
   );
 
+  const chaveColuna: Record<Coluna, (c: any) => string | number | null | undefined> = {
+    nome: (c) => c.name,
+    whatsapp: (c) => (c.phone ?? '').replace(/\D/g, ''),
+    grupo: (c) => gruposDaCliente.get(c.id)?.[0]?.nome,
+    ultimo: (c) => resumoDaCliente.get(c.id)?.ultimo,
+    proximo: (c) => resumoDaCliente.get(c.id)?.proximo,
+    origem: (c) => nomeOrigem(c.origem_id),
+    aniversario: (c) => chaveAniversario(c.birthday),
+  };
+  const clientesOrdenados = ordenarPor(filteredClients, chaveColuna[ordem.coluna], ordem.direcao);
+  const colunasDisponiveis: Coluna[] = ehAdmin
+    ? ['nome', 'whatsapp', 'grupo', 'ultimo', 'proximo', 'origem', 'aniversario']
+    : ['nome', 'ultimo', 'proximo', 'origem'];
+
+  /** Cabeçalho clicável: ordena pela coluna e alterna crescente/decrescente. */
+  const cabecalho = (coluna: Coluna, classe = '') => {
+    const ativa = ordem.coluna === coluna;
+    const Seta = !ativa ? ArrowUpDown : ordem.direcao === 'asc' ? ArrowUp : ArrowDown;
+    return (
+      <th className={`px-4 xl:px-6 py-3 ${classe}`} aria-sort={ativa ? (ordem.direcao === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <button type="button" onClick={() => ordenarColuna(coluna)} title={`Ordenar por ${ROTULO_COLUNA[coluna].toLowerCase()}`}
+          className={`sem-hover inline-flex items-center gap-1 uppercase font-bold tracking-wide hover:text-rose-600 ${ativa ? 'text-rose-600' : ''}`}>
+          {ROTULO_COLUNA[coluna]} <Seta size={13} className={ativa ? '' : 'opacity-40'} />
+        </button>
+      </th>
+    );
+  };
+
+  /** Ordenação por lista (celular e cartões, onde não há cabeçalho de coluna). */
+  const seletorOrdem = (classe = '') => (
+    <div className={`flex items-center gap-2 ${classe}`}>
+      <label className="text-xs font-bold text-slate-500 whitespace-nowrap" htmlFor="ordem-clientes">Ordenar por</label>
+      <select id="ordem-clientes" value={ordem.coluna} onChange={(e) => setOrdem({ coluna: e.target.value as Coluna, direcao: 'asc' })}
+        className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
+        {colunasDisponiveis.map((c) => <option key={c} value={c}>{ROTULO_COLUNA[c]}</option>)}
+      </select>
+      <button type="button" onClick={() => setOrdem((o) => ({ ...o, direcao: o.direcao === 'asc' ? 'desc' : 'asc' }))}
+        aria-label={ordem.direcao === 'asc' ? 'Ordem crescente; tocar para decrescente' : 'Ordem decrescente; tocar para crescente'}
+        className="sem-hover shrink-0 w-11 h-11 rounded-xl border border-slate-200 bg-white text-slate-600 flex items-center justify-center shadow-sm">
+        {ordem.direcao === 'asc' ? <ArrowUp size={18} /> : <ArrowDown size={18} />}
+      </button>
+    </div>
+  );
+
   const ultimoDe = (id: string) => { const u = resumoDaCliente.get(id)?.ultimo; return u ? dataBR(u) : '-'; };
   const proximoDe = (id: string) => { const p = resumoDaCliente.get(id)?.proximo; return p ? dataHoraBR(p) : '-'; };
   const etiquetasGrupo = (id: string, max = 99) => {
@@ -313,9 +367,9 @@ export default function Clientes() {
   };
   const acoesCliente = (client: any) => (
     <>
-      <button onClick={() => { setAbaHistorico('atendimentos'); setSelectedHistoryClient(client); }} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Ver histórico" aria-label={`Histórico de ${client.name}`}><History size={16} /></button>
-      {ehAdmin && <button onClick={() => openEditModal(client)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Editar" aria-label={`Editar ${client.name}`}><Edit2 size={16} /></button>}
-      {ehAdmin && <button onClick={() => abrirExclusao(client)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir" aria-label={`Excluir ${client.name}`}><Trash2 size={16} /></button>}
+      <button onClick={() => { setAbaHistorico('atendimentos'); setSelectedHistoryClient(client); }} className="p-2.5 md:p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Ver histórico" aria-label={`Histórico de ${client.name}`}><History size={16} /></button>
+      {ehAdmin && <button onClick={() => openEditModal(client)} className="p-2.5 md:p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Editar" aria-label={`Editar ${client.name}`}><Edit2 size={16} /></button>}
+      {ehAdmin && <button onClick={() => abrirExclusao(client)} className="p-2.5 md:p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir" aria-label={`Excluir ${client.name}`}><Trash2 size={16} /></button>}
     </>
   );
 
@@ -331,53 +385,64 @@ export default function Clientes() {
 
   const botaoModo = (m: ModoClientes, rotulo: string, Icone: typeof List) => (
     <button type="button" role="radio" aria-checked={modo === m} onClick={() => trocarModo(m)}
-      className={`sem-hover flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold transition-colors ${modo === m ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-rose-500'}`}>
-      <Icone size={16} /> <span className="hidden sm:inline">{rotulo}</span>
+      className={`sem-hover flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold transition-colors ${modo === m ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-rose-500'}`}>
+      <Icone size={16} /> <span>{rotulo}</span>
     </button>
   );
 
   return (
-    <div className="w-full space-y-6">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-slate-800">Clientes</h2>
-          <p className="text-sm text-slate-500 mt-1">{ehAdmin ? 'Gestão de contatos e histórico de atendimentos' : 'Nome e histórico técnico. O contato das clientes fica com a administração do salão.'}</p>
+    <div className="w-full space-y-4 md:space-y-6">
+      <div className="flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-3 md:gap-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-2xl md:text-3xl font-black text-slate-800">Clientes</h2>
+            <p className="text-xs md:text-sm text-slate-500 mt-1">{ehAdmin ? 'Gestão de contatos e histórico de atendimentos' : 'Nome e histórico técnico. O contato das clientes fica com a administração do salão.'}</p>
+          </div>
+          {ehAdmin && <button onClick={() => { resetForm(); setShowAddModal(true); }} aria-label="Nova cliente" className="xl:hidden shrink-0 bg-rose-600 text-white px-3.5 py-2.5 rounded-xl font-bold hover:bg-rose-700 transition-colors flex items-center gap-1.5 shadow-sm whitespace-nowrap text-sm">
+            <Plus size={18} /> <span className="hidden sm:inline">Nova Cliente</span>
+          </button>}
         </div>
-        <div className="flex flex-wrap w-full xl:w-auto gap-3 items-center">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap w-full xl:w-auto gap-2 md:gap-3 sm:items-center">
           <div role="radiogroup" aria-label="Forma de exibição" className="flex p-1 rounded-xl bg-slate-100">
             {botaoModo('lista', 'Lista', List)}
             {botaoModo('cartoes', 'Cartões', LayoutGrid)}
             {ehAdmin && botaoModo('grupos', 'Grupos', Users)}
           </div>
           {modo !== 'grupos' && <>
-            <div className="relative flex-1 min-w-[12rem] xl:w-72">
+            <div className="relative flex-1 sm:min-w-[12rem] xl:w-72">
               <Search size={18} className="absolute left-3 top-3 text-slate-400" />
               <input
-                type="text"
-                placeholder="Buscar cliente..."
+                type="search"
+                placeholder="Buscar por nome ou telefone..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 aria-label="Buscar cliente"
                 className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm shadow-sm"
               />
             </div>
-            <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)} aria-label="Filtrar por origem" className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
-              <option value="">Todas as origens</option>
-              {origens.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
-              <option value="sem">Sem origem</option>
-            </select>
-            {ehAdmin && grupos.length > 0 && (
-              <select value={grupoFiltro ?? ''} onChange={(e) => setGrupoFiltro(e.target.value || null)} aria-label="Filtrar por grupo" className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
-                <option value="">Todos os grupos</option>
-                {grupos.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
+            <div className={`grid gap-2 ${ehAdmin && grupos.length > 0 ? 'grid-cols-2' : 'grid-cols-1'} sm:flex sm:gap-3`}>
+              <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)} aria-label="Filtrar por origem" className="min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
+                <option value="">Todas as origens</option>
+                {origens.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
+                <option value="sem">Sem origem</option>
               </select>
-            )}
+              {ehAdmin && grupos.length > 0 && (
+                <select value={grupoFiltro ?? ''} onChange={(e) => setGrupoFiltro(e.target.value || null)} aria-label="Filtrar por grupo" className="min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
+                  <option value="">Todos os grupos</option>
+                  {grupos.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
+                </select>
+              )}
+            </div>
           </>}
-          {ehAdmin && <button onClick={() => { resetForm(); setShowAddModal(true); }} className="bg-rose-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-rose-700 transition-colors flex items-center space-x-2 shadow-sm whitespace-nowrap">
-            <Plus size={18} /> <span className="hidden sm:inline">Nova Cliente</span>
+          {ehAdmin && <button onClick={() => { resetForm(); setShowAddModal(true); }} className="hidden xl:flex bg-rose-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-rose-700 transition-colors items-center space-x-2 shadow-sm whitespace-nowrap">
+            <Plus size={18} /> <span>Nova Cliente</span>
           </button>}
         </div>
       </div>
+
+      {ehAdmin && modo !== 'grupos' && <AniversariantesMes clientes={clients as any[]} hoje={dataLocal()} recolhivel />}
+
+      {modo !== 'grupos' && seletorOrdem(modo === 'lista' ? 'md:hidden' : 'sm:max-w-sm')}
 
       {grupoFiltrado && modo !== 'grupos' && (
         <div className="flex flex-wrap items-center gap-3 bg-rose-50 border border-rose-100 rounded-2xl px-4 py-3">
@@ -403,8 +468,8 @@ export default function Clientes() {
         isLoading ? <p className="text-center text-slate-400 py-12">Carregando...</p>
         : filteredClients.length === 0 ? <p className="text-center text-slate-400 py-12">Nenhuma cliente encontrada.</p>
         : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
-            {filteredClients.map((client: any) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3 md:gap-4">
+            {clientesOrdenados.map((client: any) => (
               <div key={client.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 shrink-0 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
@@ -431,19 +496,49 @@ export default function Clientes() {
           </div>
         )
       ) : (
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      <>
+      {/* Celular: lista em blocos, com os mesmos dados da tabela e botões maiores para o toque */}
+      <div className="md:hidden">
+        {isLoading ? <p className="text-center text-slate-400 py-12">Carregando...</p>
+        : clientesOrdenados.length === 0 ? <p className="text-center text-slate-400 py-12">Nenhuma cliente encontrada.</p>
+        : (
+          <ul className="bg-white rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-100 overflow-hidden">
+            {clientesOrdenados.map((client: any) => (
+              <li key={client.id} className="p-3.5 space-y-2.5">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 shrink-0 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[15px] font-bold text-slate-800 leading-snug break-words">{client.name}</p>
+                    <p className="text-sm text-slate-500">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</p>
+                  </div>
+                </div>
+                {ehAdmin && (gruposDaCliente.get(client.id)?.length ?? 0) > 0 && <div className="pl-[3.25rem]">{etiquetasGrupo(client.id)}</div>}
+                <dl className="pl-[3.25rem] grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                  <div><dt className="text-slate-400 flex items-center gap-1"><CalendarCheck size={12} /> Último</dt><dd className="font-semibold text-slate-700">{ultimoDe(client.id)}</dd></div>
+                  <div><dt className="text-slate-400 flex items-center gap-1"><CalendarClock size={12} /> Próximo</dt><dd className="font-semibold text-slate-700">{proximoDe(client.id)}</dd></div>
+                  {nomeOrigem(client.origem_id) && <div><dt className="text-slate-400">Origem</dt><dd className="text-slate-600">{nomeOrigem(client.origem_id)}</dd></div>}
+                  {ehAdmin && client.birthday && <div><dt className="text-slate-400">Aniversário</dt><dd className="text-slate-600">{new Date(client.birthday).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</dd></div>}
+                </dl>
+                <div className="flex justify-end gap-1 -mb-1">{acoesCliente(client)}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-slate-500 bg-slate-50/80 uppercase font-bold border-b border-slate-100">
               <tr>
-                <th className="px-4 xl:px-6 py-4">Nome</th>
-                <th className="px-4 xl:px-6 py-4">WhatsApp</th>
-                {ehAdmin && <th className="px-4 xl:px-6 py-4 hidden md:table-cell">Grupo</th>}
-                <th className="px-4 xl:px-6 py-4 hidden lg:table-cell">Último atendimento</th>
-                <th className="px-4 xl:px-6 py-4 hidden lg:table-cell">Próximo atendimento</th>
-                <th className="px-4 xl:px-6 py-4 hidden xl:table-cell">Origem</th>
-                {ehAdmin && <th className="px-4 xl:px-6 py-4 hidden 2xl:table-cell">Aniversário</th>}
-                <th className="px-4 xl:px-6 py-4 text-right">Ações</th>
+                {cabecalho('nome')}
+                {cabecalho('whatsapp')}
+                {ehAdmin && cabecalho('grupo', 'hidden md:table-cell')}
+                {cabecalho('ultimo', 'hidden lg:table-cell')}
+                {cabecalho('proximo', 'hidden lg:table-cell')}
+                {cabecalho('origem', 'hidden xl:table-cell')}
+                {ehAdmin && cabecalho('aniversario', 'hidden 2xl:table-cell')}
+                <th className="px-4 xl:px-6 py-3 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -452,7 +547,7 @@ export default function Clientes() {
               ) : filteredClients.length === 0 ? (
                 <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-400">Nenhuma cliente encontrada.</td></tr>
               ) : (
-                filteredClients.map((client: any) => (
+                clientesOrdenados.map((client: any) => (
                   <tr key={client.id} className="hover:bg-rose-50/30 transition-colors group">
                     <td className="px-4 xl:px-6 py-3 font-bold text-slate-800">
                       <div className="flex items-center gap-3">
@@ -476,6 +571,7 @@ export default function Clientes() {
           </table>
         </div>
       </div>
+      </>
       )}
 
       {/* MODAL HISTÓRICO */}

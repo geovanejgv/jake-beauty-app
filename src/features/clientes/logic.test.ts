@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { confirmacaoExclusaoValida, contarPorGrupo, diferencaMembros, gruposPorCliente, limparDescricao, limparNome, nomeRepetido } from './logic';
+import { aniversariantesDoMes, chaveAniversario, ordenarPor, confirmacaoExclusaoValida, contarPorGrupo, diferencaMembros, gruposPorCliente, limparDescricao, limparNome, nomeRepetido } from './logic';
 
 describe('limparNome', () => {
   it('tira espaços sobrando e recusa vazio ou longo', () => {
@@ -62,5 +62,39 @@ describe('limparDescricao', () => {
     expect(limparDescricao('  Retorno de novembro  ')).toBe('Retorno de novembro');
     expect(limparDescricao('   ')).toBeNull();
     expect(limparDescricao('x'.repeat(501))).toBe(false);
+  });
+});
+
+describe('ordenarPor', () => {
+  const lista = [{ n: 'beatriz', v: 2 }, { n: 'Ana', v: null }, { n: 'Álvaro', v: 10 }, { n: '', v: 1 }];
+  it('texto em português, sem diferenciar acento, vazios no fim', () => {
+    expect(ordenarPor(lista, (x) => x.n, 'asc').map((x) => x.n)).toEqual(['Álvaro', 'Ana', 'beatriz', '']);
+    expect(ordenarPor(lista, (x) => x.n, 'desc').map((x) => x.n)).toEqual(['beatriz', 'Ana', 'Álvaro', '']);
+  });
+  it('números e vazios no fim nas duas direções', () => {
+    expect(ordenarPor(lista, (x) => x.v, 'asc').map((x) => x.v)).toEqual([1, 2, 10, null]);
+    expect(ordenarPor(lista, (x) => x.v, 'desc').map((x) => x.v)).toEqual([10, 2, 1, null]);
+  });
+});
+
+describe('aniversários', () => {
+  it('chave pelo dia do ano', () => {
+    expect(chaveAniversario('1990-08-17')).toBe(817);
+    expect(chaveAniversario(null)).toBeNull();
+  });
+  it('aniversariantes do mês em ordem de dia, com idade e situação', () => {
+    const clientes = [
+      { id: 'a', birthday: '1990-10-25' },
+      { id: 'b', birthday: '2000-10-18' },
+      { id: 'c', birthday: '1985-10-02' },
+      { id: 'd', birthday: '1990-11-18' },
+      { id: 'e', birthday: null },
+      { id: 'f', birthday: '1800-10-30' },
+    ];
+    const r = aniversariantesDoMes(clientes, '2026-10-18');
+    expect(r.map((x) => x.cliente.id)).toEqual(['c', 'b', 'a', 'f']);
+    expect(r[1]).toMatchObject({ dia: 18, idade: 26, hoje: true, passou: false });
+    expect(r[0]).toMatchObject({ passou: true });
+    expect(r[3].idade).toBeNull();
   });
 });

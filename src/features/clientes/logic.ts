@@ -59,3 +59,48 @@ export function limparDescricao(texto: string, max = 500): string | null | false
   if (!limpo) return null;
   return limpo.length > max ? false : limpo;
 }
+
+export type Direcao = 'asc' | 'desc';
+
+/**
+ * Ordena por uma chave; vazios (null, undefined, '') ficam sempre no fim, nas duas direções.
+ * Texto compara em português, sem diferenciar maiúsculas e acentos.
+ */
+export function ordenarPor<T>(lista: T[], chave: (item: T) => string | number | null | undefined, direcao: Direcao): T[] {
+  const sinal = direcao === 'asc' ? 1 : -1;
+  const vazio = (v: unknown) => v === null || v === undefined || v === '';
+  return [...lista].sort((a, b) => {
+    const va = chave(a);
+    const vb = chave(b);
+    if (vazio(va) || vazio(vb)) return vazio(va) === vazio(vb) ? 0 : vazio(va) ? 1 : -1;
+    const r = typeof va === 'number' && typeof vb === 'number'
+      ? va - vb
+      : String(va).localeCompare(String(vb), 'pt-BR', { sensitivity: 'base', numeric: true });
+    return r * sinal;
+  });
+}
+
+/** Aniversário como MMDD (ex.: 0817), para ordenar pelo dia do ano e não pelo ano de nascimento. */
+export function chaveAniversario(data: string | null | undefined): number | null {
+  const m = /^\d{4}-(\d{2})-(\d{2})/.exec(data ?? '');
+  return m ? Number(m[1]) * 100 + Number(m[2]) : null;
+}
+
+export type Aniversariante<T> = { cliente: T; dia: number; idade: number | null; hoje: boolean; passou: boolean };
+
+/**
+ * Aniversariantes do mês de `hoje` (AAAA-MM-DD), em ordem de dia.
+ * `idade` é a que completa neste ano (null se o ano parece de preenchimento: antes de 1900).
+ */
+export function aniversariantesDoMes<T extends { birthday?: string | null }>(clientes: T[], hoje: string): Aniversariante<T>[] {
+  const [ano, mes, diaHoje] = hoje.split('-').map(Number);
+  const lista: Aniversariante<T>[] = [];
+  for (const c of clientes) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(c.birthday ?? '');
+    if (!m || Number(m[2]) !== mes) continue;
+    const nasc = Number(m[1]);
+    const dia = Number(m[3]);
+    lista.push({ cliente: c, dia, idade: nasc >= 1900 && nasc <= ano ? ano - nasc : null, hoje: dia === diaHoje, passou: dia < diaHoje });
+  }
+  return lista.sort((a, b) => a.dia - b.dia);
+}
