@@ -22,3 +22,40 @@ export function diferencaMembros(atuais: string[], marcadas: string[]) {
     remover: [...a].filter((id) => !m.has(id)),
   };
 }
+
+/** Palavra que a administradora digita na segunda etapa da exclusão de cliente. */
+export const PALAVRA_EXCLUSAO = 'EXCLUIR';
+
+export function confirmacaoExclusaoValida(texto: string): boolean {
+  return texto.trim().toUpperCase() === PALAVRA_EXCLUSAO;
+}
+
+/** Grupos de cada cliente (em ordem alfabética), a partir da lista de membros. */
+export function gruposPorCliente<G extends { id: string; nome: string }>(
+  grupos: G[],
+  membros: { grupo_id: string; cliente_id: string }[],
+): Map<string, G[]> {
+  const porId = new Map(grupos.map((g) => [g.id, g]));
+  const mapa = new Map<string, G[]>();
+  for (const m of membros) {
+    const g = porId.get(m.grupo_id);
+    if (!g) continue;
+    mapa.set(m.cliente_id, [...(mapa.get(m.cliente_id) ?? []), g]);
+  }
+  for (const lista of mapa.values()) lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  return mapa;
+}
+
+/** Quantas clientes há em cada grupo. */
+export function contarPorGrupo(membros: { grupo_id: string }[]): Map<string, number> {
+  const mapa = new Map<string, number>();
+  for (const m of membros) mapa.set(m.grupo_id, (mapa.get(m.grupo_id) ?? 0) + 1);
+  return mapa;
+}
+
+/** Descrição do grupo: sem espaços sobrando nas pontas; vazia vira null; até `max` caracteres. */
+export function limparDescricao(texto: string, max = 500): string | null | false {
+  const limpo = texto.trim();
+  if (!limpo) return null;
+  return limpo.length > max ? false : limpo;
+}

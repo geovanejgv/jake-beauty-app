@@ -93,4 +93,38 @@ select pg_temp.espera_erro($$select public.cadastrar_cliente_rapido('X Outra', '
 select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
 select pg_temp.ok((select birthday = '1990-05-20' and origem_id = :'indicacao' from public.clients where id = :'rapida'), 'aniversário e origem gravados');
 reset role;
+
+-- 6) Descrição do grupo: só a administradora edita; até 500 caracteres
+set role authenticated;
+select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
+update public.grupos_cliente set descricao = 'Clientes de Guaianases para o retorno de novembro' where id = '60000000-0000-0000-0000-000000000001';
+select pg_temp.ok((select descricao like 'Clientes de Guaianases%' from public.grupos_cliente where id = '60000000-0000-0000-0000-000000000001'), 'administradora grava a descrição');
+select pg_temp.espera_erro($$update public.grupos_cliente set descricao = repeat('x', 501) where id = '60000000-0000-0000-0000-000000000001'$$, 'grupos_cliente_descricao_check');
+select pg_temp.como('bbbbbbbb-0000-0000-0000-000000000002');
+update public.grupos_cliente set descricao = 'Mudou' where id = '60000000-0000-0000-0000-000000000001';
+select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
+select pg_temp.ok((select descricao <> 'Mudou' from public.grupos_cliente where id = '60000000-0000-0000-0000-000000000001'), 'profissional não altera a descrição');
+
+-- 7) Último e próximo atendimento por cliente (RLS de appointments vale)
+reset role;
+delete from public.appointments;
+insert into public.appointments (client_id, professional_id, start_time, end_time, status, is_manual_reminder, is_block) values
+  ('c3000000-0000-0000-0000-000000000003', 'bb000000-0000-0000-0000-0000000000b1', now() - interval '10 days', now() - interval '10 days' + interval '1 hour', 'completed', false, false),
+  ('c3000000-0000-0000-0000-000000000003', 'aa000000-0000-0000-0000-0000000000a1', now() - interval '3 days', now() - interval '3 days' + interval '1 hour', 'completed', false, false),
+  ('c3000000-0000-0000-0000-000000000003', 'aa000000-0000-0000-0000-0000000000a1', now() - interval '1 day', now() - interval '1 day' + interval '1 hour', 'cancelled', false, false),
+  ('c3000000-0000-0000-0000-000000000003', 'bb000000-0000-0000-0000-0000000000b1', now() + interval '5 days', now() + interval '5 days' + interval '1 hour', 'scheduled', false, false),
+  ('c3000000-0000-0000-0000-000000000003', 'aa000000-0000-0000-0000-0000000000a1', now() + interval '2 days', now() + interval '2 days' + interval '1 hour', 'confirmed', false, false),
+  ('c3000000-0000-0000-0000-000000000003', 'aa000000-0000-0000-0000-0000000000a1', now() + interval '1 day', now() + interval '1 day' + interval '1 hour', 'scheduled', true, false);
+set role authenticated;
+select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
+select pg_temp.ok((select ultimo::date = (now() - interval '3 days')::date and proximo::date = (now() + interval '2 days')::date
+                     from public.resumo_atendimentos_clientes() where cliente_id = 'c3000000-0000-0000-0000-000000000003'),
+                  'administradora: último sem cancelado, próximo sem lembrete');
+select pg_temp.ok((select count(*) = 1 from public.resumo_atendimentos_clientes()), 'só clientes com atendimento');
+select pg_temp.como('bbbbbbbb-0000-0000-0000-000000000002');
+select pg_temp.ok((select ultimo::date = (now() - interval '10 days')::date and proximo::date = (now() + interval '5 days')::date
+                     from public.resumo_atendimentos_clientes() where cliente_id = 'c3000000-0000-0000-0000-000000000003'),
+                  'profissional: só os atendimentos dela');
+reset role;
+select pg_temp.ok(not has_function_privilege('anon', 'public.resumo_atendimentos_clientes()', 'execute'), 'anon não executa o resumo');
 select 'clientes_grupos: OK';

@@ -3,19 +3,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Plus, Search, Trash2, Users, X } from 'lucide-react';
 import { mensagemDeErro } from '../../lib/seguranca/erros';
 import { clientesKeys, excluirGrupo, listarGrupos, listarMembros, salvarGrupo, type Origem } from './api';
-import { limparNome, nomeRepetido } from './logic';
+import { limparDescricao, limparNome, nomeRepetido } from './logic';
 
 type Cliente = { id: string; name: string; origem_id?: string | null };
 
 /** Grupos de clientes (só administradora): criar, renomear, escolher quem entra e excluir. */
-export function GruposClientes({ clientes, origens, onFechar }: { clientes: Cliente[]; origens: Origem[]; onFechar: () => void }) {
+export function GruposClientes({ clientes, origens, onFechar, grupoInicial }: { clientes: Cliente[]; origens: Origem[]; onFechar: () => void; grupoInicial?: string | null }) {
   const queryClient = useQueryClient();
   const { data: grupos = [] } = useQuery({ queryKey: clientesKeys.grupos, queryFn: listarGrupos });
   const { data: membros = [] } = useQuery({ queryKey: clientesKeys.membros, queryFn: listarMembros });
   // null = lista de grupos; '' = grupo novo; id = editando.
-  const [editando, setEditando] = useState<string | null>(null);
-  const [nome, setNome] = useState('');
-  const [marcadas, setMarcadas] = useState<string[]>([]);
+  // grupoInicial: '' abre direto um grupo novo; um id abre a edição desse grupo.
+  const [editando, setEditando] = useState<string | null>(grupoInicial ?? null);
+  const [nome, setNome] = useState(() => (grupoInicial ? grupos.find((g) => g.id === grupoInicial)?.nome ?? '' : ''));
+  const [descricao, setDescricao] = useState(() => (grupoInicial ? grupos.find((g) => g.id === grupoInicial)?.descricao ?? '' : ''));
+  const [marcadas, setMarcadas] = useState<string[]>(() => (grupoInicial ? membros.filter((m) => m.grupo_id === grupoInicial).map((m) => m.cliente_id) : []));
   const [busca, setBusca] = useState('');
   const [filtroOrigem, setFiltroOrigem] = useState('');
 
@@ -23,6 +25,7 @@ export function GruposClientes({ clientes, origens, onFechar }: { clientes: Clie
   const abrir = (grupoId: string | null) => {
     setEditando(grupoId ?? '');
     setNome(grupoId ? grupos.find((g) => g.id === grupoId)?.nome ?? '' : '');
+    setDescricao(grupoId ? grupos.find((g) => g.id === grupoId)?.descricao ?? '' : '');
     setMarcadas(grupoId ? membrosDe(grupoId) : []);
     setBusca('');
     setFiltroOrigem('');
@@ -32,8 +35,9 @@ export function GruposClientes({ clientes, origens, onFechar }: { clientes: Clie
   const salvar = useMutation({
     mutationFn: async () => {
       const limpo = limparNome(nome, 80);
-      if (!limpo) throw new Error('nome');
-      await salvarGrupo(editando || null, limpo, editando ? membrosDe(editando) : [], marcadas);
+      const desc = limparDescricao(descricao);
+      if (!limpo || desc === false) throw new Error('nome');
+      await salvarGrupo(editando || null, limpo, desc, editando ? membrosDe(editando) : [], marcadas);
     },
     onSuccess: () => { atualizar(); setEditando(null); },
     onError: (e: unknown) => alert(mensagemDeErro(e, 'Não foi possível salvar o grupo.', 'clientes.grupo_salvar')),
@@ -49,6 +53,7 @@ export function GruposClientes({ clientes, origens, onFechar }: { clientes: Clie
     const limpo = limparNome(nome, 80);
     if (!limpo) return alert('Informe o nome do grupo (até 80 caracteres).');
     if (nomeRepetido(limpo, grupos, editando || undefined)) return alert('Já existe um grupo com esse nome.');
+    if (limparDescricao(descricao) === false) return alert('A descrição pode ter até 500 caracteres.');
     salvar.mutate();
   };
 
@@ -88,6 +93,7 @@ export function GruposClientes({ clientes, origens, onFechar }: { clientes: Clie
           <form onSubmit={enviar} className="flex-1 flex flex-col overflow-hidden">
             <div className="p-6 space-y-3 border-b border-slate-100">
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Nome do grupo *</label><input value={nome} onChange={(e) => setNome(e.target.value)} maxLength={80} required placeholder="Ex.: Guaianases, retorno de novembro" className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500" /></div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1">Descrição</label><textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={500} rows={2} placeholder="Para que serve este grupo" className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm resize-none" /></div>
               <div className="flex gap-2">
                 <div className="relative flex-1"><Search size={16} className="absolute left-3 top-2.5 text-slate-400" /><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar cliente..." aria-label="Buscar cliente" className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-rose-500" /></div>
                 <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)} aria-label="Filtrar por origem" className="border border-slate-200 rounded-lg px-2 py-2 text-sm">

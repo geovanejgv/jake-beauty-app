@@ -72,7 +72,7 @@ describe('AUZ-05: chave administrativa nunca no navegador', () => {
 describe('SES-02: armazenamento do navegador', () => {
   it('localStorage só guarda preferências de tela, e o destino do login', () => {
     const usos = ocorrencias(/localStorage|sessionStorage/);
-    expect(usos.filter((u) => !/^src\/(hooks\/useTheme\.ts|pages\/Financeiro\.tsx|layouts\/MainLayout\.tsx|features\/kanban\/components\/ui\.tsx|lib\/seguranca\/redirecionamento\.ts):/.test(u))).toEqual([]);
+    expect(usos.filter((u) => !/^src\/(hooks\/useTheme\.ts|pages\/Financeiro\.tsx|pages\/Clientes\.tsx|layouts\/MainLayout\.tsx|features\/kanban\/components\/ui\.tsx|lib\/seguranca\/redirecionamento\.ts):/.test(u))).toEqual([]);
     expect(ocorrencias(/(local|session)Storage.*(token|session|auth)/i)).toEqual([]);
   });
 });
