@@ -3,7 +3,7 @@ import { AvisoBackup } from '../features/backup/AvisoBackup';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
-import { datasMensais, mesAno, MESES_RECORRENCIA } from '../lib/recorrencia';
+import { datasRecorrentes, diaMesAno, mesAno, vezesValidas, VEZES_MAX, VEZES_MIN, VEZES_PADRAO, type Frequencia } from '../lib/recorrencia';
 import { ArrowUpCircle, ArrowDownCircle, Trash2, Repeat, CheckCircle, Clock, Edit2, X, AlertTriangle, Calendar, Wallet, TrendingUp, TrendingDown, PieChart, ChevronLeft, ChevronRight, LayoutList, Columns, Grid, Plus, Loader2, Camera, Upload, ScanBarcode, Copy, Briefcase, User, Layers } from 'lucide-react';
 
 type Escopo = 'negocio' | 'pessoal';
@@ -65,8 +65,10 @@ export default function Financeiro() {
   const [amount, setAmount] = useState('');
   const [financeDate, setFinanceDate] = useState(todayStr);
   const [category, setCategory] = useState('Geral');
-  // Lançamento novo é mensal por padrão; marcar "Lançamento único" para não repetir
-  const [isSingle, setIsSingle] = useState(false);
+  // Lançamento novo é único por padrão; ligar "Repetir" abre semanal/mensal e quantas vezes
+  const [repetir, setRepetir] = useState(false);
+  const [frequencia, setFrequencia] = useState<Frequencia>('mensal');
+  const [vezes, setVezes] = useState(String(VEZES_PADRAO.mensal));
   // Exclusão/edição de lançamento recorrente: só este ou este e os próximos da série
   const [applyToFollowing, setApplyToFollowing] = useState(false);
   const [notes, setNotes] = useState('');
@@ -183,12 +185,14 @@ export default function Financeiro() {
           notes: notes || null, receiver_name: receiver || null, barcode: barcode || null,
           escopo
         };
-        if (isSingle) {
+        if (!repetir) {
           rows = [{ ...base, finance_date: financeDate, is_recurring: false, recurring_group_id: null }];
         } else {
-          // Recorrente: cria os próximos meses de uma vez, ligados pela mesma série
+          // Recorrente: cria todas as repetições de uma vez, ligadas pela mesma série
+          const quantidade = vezesValidas(vezes);
+          if (!quantidade) throw new Error(`Informe de ${VEZES_MIN} a ${VEZES_MAX} repetições.`);
           const groupId = crypto.randomUUID();
-          rows = datasMensais(financeDate).map((d) => ({ ...base, finance_date: d, is_recurring: true, recurring_group_id: groupId }));
+          rows = datasRecorrentes(financeDate, frequencia, quantidade).map((d) => ({ ...base, finance_date: d, is_recurring: true, recurring_group_id: groupId }));
         }
       }
       const { error } = await supabase.from('personal_finances').insert(rows);
@@ -246,13 +250,20 @@ export default function Financeiro() {
 
   useEffect(() => { setApplyToFollowing(false); }, [editingItem?.id, itemToDelete?.id]);
 
-  const resetForm = () => { setDesc(''); setAmount(''); setNotes(''); setIsSingle(false); setCategory('Geral'); setReceiver(''); setBarcode(''); };
+  const limparRepeticao = () => { setRepetir(false); setFrequencia('mensal'); setVezes(String(VEZES_PADRAO.mensal)); };
+  const escolherFrequencia = (f: Frequencia) => { setFrequencia(f); setVezes(String(VEZES_PADRAO[f])); };
+  const vezesOk = vezesValidas(vezes);
+  const datasDaSerie = repetir && vezesOk ? datasRecorrentes(financeDate || todayStr, frequencia, vezesOk) : [];
+  const rotuloData = frequencia === 'semanal' ? diaMesAno : mesAno;
+  const valorDigitado = parseFloat(String(amount).replace(',', '.')) || 0;
+
+  const resetForm = () => { setDesc(''); setAmount(''); setNotes(''); limparRepeticao(); setCategory('Geral'); setReceiver(''); setBarcode(''); };
 
   const openAddModalForType = (type: 'income' | 'expense', dateStr?: string) => {
     setFinanceType(type);
     setCategory(type === 'income' ? 'Clientes' : 'Fixas');
     setEscopo(escopoPadrao);
-    setIsSingle(false);
+    limparRepeticao();
     if (dateStr) setFinanceDate(dateStr);
     setActionMenuDate(null);
     setShowAddModal(true);
@@ -332,7 +343,7 @@ export default function Financeiro() {
             <h4 className={`font-bold flex items-center space-x-2 text-sm ${textClass}`}>
               <span className="truncate">{item.description}</span>
               <span className="text-[9px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded uppercase font-bold no-underline shrink-0">{rotuloCategoria(item.type, item.category)}</span>
-              {item.is_recurring && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded uppercase font-bold no-underline shrink-0 flex items-center gap-0.5"><Repeat size={9} /> Mensal</span>}
+              {item.is_recurring && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded uppercase font-bold no-underline shrink-0 flex items-center gap-0.5"><Repeat size={9} /> Recorrente</span>}
               {escopoView === 'todos' && (
                 <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold no-underline shrink-0 ${escopoDo(item) === 'negocio' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}`}>
                   {escopoDo(item) === 'negocio' ? 'Negócio' : 'Pessoal'}
@@ -560,7 +571,7 @@ export default function Financeiro() {
               <button onClick={() => { setFinanceType('income'); setCategory('Clientes'); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${financeType === 'income' ? 'bg-emerald-500 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}><ArrowUpCircle size={14}/> Receita</button>
               <button onClick={() => { setFinanceType('expense'); setCategory('Fixas'); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${financeType === 'expense' ? 'bg-rose-500 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}><ArrowDownCircle size={14}/> Despesa</button>
             </div>
-            <form onSubmit={(e) => { e.preventDefault(); addMutation.mutate(); }} className="space-y-4">
+            <form onSubmit={(e) => { e.preventDefault(); if (repetir && !vezesOk) return; addMutation.mutate(); }} className="space-y-4">
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Descrição</label><input required value={desc} onChange={e => setDesc(e.target.value)} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm" placeholder="Ex: Aluguel, Produto..." /></div>
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Valor (R$)</label><input required value={amount} onChange={e => setAmount(e.target.value)} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm font-bold" placeholder="0,00" /></div>
@@ -578,18 +589,37 @@ export default function Financeiro() {
                 </div>
               </div>
               <div><label className="block text-xs font-bold text-slate-500 mb-1">{financeType === 'income' ? 'Origem' : 'Tipo de custo'}</label><select value={category} onChange={e => setCategory(e.target.value)} className="w-full border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm bg-white font-medium">{categoriasDo(financeType).map((c) => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}</select></div>
-              {/* Recorrência: mensal por padrão; marcar para lançar uma única vez */}
-              <div className="rounded-xl border border-slate-200 p-3 space-y-1.5">
+              {/* Recorrência: único por padrão; ao repetir, escolhe semanal ou mensal e quantas vezes */}
+              <div className="rounded-xl border border-slate-200 p-3 space-y-2.5">
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
-                  <input type="checkbox" checked={isSingle} onChange={(e) => setIsSingle(e.target.checked)} className="w-4 h-4 accent-rose-600" />
-                  Lançamento único (não repetir)
+                  <input type="checkbox" checked={repetir} onChange={(e) => setRepetir(e.target.checked)} className="w-4 h-4 accent-rose-600" />
+                  Repetir lançamento (recorrente ou parcelado)
                 </label>
-                <p className={`text-[11px] flex items-center gap-1 ${isSingle ? 'text-slate-400' : 'text-indigo-700 font-semibold'}`}>
-                  <Repeat size={12} className="shrink-0" />
-                  {isSingle
-                    ? 'Será lançado apenas nesta data.'
-                    : `Repete todo mês: ${MESES_RECORRENCIA} lançamentos, de ${mesAno(financeDate || todayStr)} a ${mesAno(datasMensais(financeDate || todayStr).slice(-1)[0])}.`}
-                </p>
+                {!repetir ? (
+                  <p className="text-[11px] text-slate-400 flex items-center gap-1"><Repeat size={12} className="shrink-0" /> Lançamento único: será lançado apenas nesta data.</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                      {(['semanal', 'mensal'] as Frequencia[]).map((f) => (
+                        <button key={f} type="button" onClick={() => escolherFrequencia(f)} aria-pressed={frequencia === f}
+                          className={`py-2 rounded-xl border text-xs font-bold ${frequencia === f ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-200 text-slate-600'}`}>
+                          {f === 'semanal' ? 'Semanal' : 'Mensal'}
+                        </button>
+                      ))}
+                      <label className="block">
+                        <span className="block text-[11px] font-bold text-slate-500 mb-1">Quantas vezes</span>
+                        <input type="number" inputMode="numeric" min={VEZES_MIN} max={VEZES_MAX} step={1} required value={vezes} onChange={(e) => setVezes(e.target.value)}
+                          className="w-20 border p-2 rounded-xl outline-none focus:ring-2 focus:ring-slate-400 text-sm text-center font-bold" />
+                      </label>
+                    </div>
+                    <p className={`text-[11px] flex items-start gap-1 ${vezesOk ? 'text-indigo-700 font-semibold' : 'text-red-600'}`}>
+                      <Repeat size={12} className="shrink-0 mt-0.5" />
+                      {vezesOk
+                        ? `${vezesOk} lançamentos ${frequencia === 'semanal' ? 'semanais' : 'mensais'}${valorDigitado > 0 ? ` de ${formatCurrency(valorDigitado)} (total ${formatCurrency(valorDigitado * vezesOk)})` : ''}, de ${rotuloData(datasDaSerie[0])} a ${rotuloData(datasDaSerie[datasDaSerie.length - 1])}.`
+                        : `Informe de ${VEZES_MIN} a ${VEZES_MAX} vezes.`}
+                    </p>
+                  </>
+                )}
               </div>
               <div className="flex space-x-3 pt-2">
                 <button type="button" onClick={() => setShowAddModal(false)} className="w-1/2 border p-2.5 rounded-xl text-slate-500 font-medium text-sm">Cancelar</button>
@@ -648,7 +678,7 @@ export default function Financeiro() {
               {editingItem.recurring_group_id && (
                 <label className="flex items-start gap-2 text-xs text-slate-600 bg-indigo-50 border border-indigo-100 rounded-xl p-3 cursor-pointer">
                   <input type="checkbox" checked={applyToFollowing} onChange={(e) => setApplyToFollowing(e.target.checked)} className="mt-0.5 w-4 h-4 accent-rose-600" />
-                  <span><strong className="text-indigo-700 flex items-center gap-1"><Repeat size={12} /> Lançamento mensal</strong>Aplicar descrição, valor, controle e tipo também aos próximos meses (datas e baixas não mudam).</span>
+                  <span><strong className="text-indigo-700 flex items-center gap-1"><Repeat size={12} /> Lançamento recorrente</strong>Aplicar descrição, valor, controle e tipo também aos próximos da série (datas e baixas não mudam).</span>
                 </label>
               )}
               <div className="flex space-x-3 pt-2"><button type="button" onClick={() => setEditingItem(null)} className="w-1/2 border p-2.5 rounded-xl text-slate-500 font-medium text-sm">Cancelar</button><button type="submit" disabled={updateMutation.isPending} className="w-1/2 bg-slate-800 hover:bg-slate-900 text-white p-2.5 rounded-xl font-bold text-sm shadow-sm">Atualizar Conta</button></div>
@@ -663,8 +693,8 @@ export default function Financeiro() {
             <div className="flex justify-center text-red-500 mb-2"><AlertTriangle size={48} /></div><h3 className="text-xl font-bold text-slate-800">Excluir Conta?</h3><p className="text-sm text-slate-500">Tem certeza que deseja remover <strong>{itemToDelete.description}</strong> permanentemente?</p>
             {itemToDelete.recurring_group_id ? (
               <div className="space-y-2 pt-4">
-                <p className="text-xs text-indigo-700 font-semibold flex items-center justify-center gap-1"><Repeat size={12} /> Este lançamento se repete todo mês.</p>
-                <button onClick={() => deleteMutation.mutate({ item: itemToDelete, following: false })} disabled={deleteMutation.isPending} className="w-full border border-red-200 text-red-600 hover:bg-red-50 p-2.5 rounded-xl font-bold text-sm">Excluir só este mês</button>
+                <p className="text-xs text-indigo-700 font-semibold flex items-center justify-center gap-1"><Repeat size={12} /> Este lançamento faz parte de uma série recorrente.</p>
+                <button onClick={() => deleteMutation.mutate({ item: itemToDelete, following: false })} disabled={deleteMutation.isPending} className="w-full border border-red-200 text-red-600 hover:bg-red-50 p-2.5 rounded-xl font-bold text-sm">Excluir só este</button>
                 <button onClick={() => deleteMutation.mutate({ item: itemToDelete, following: true })} disabled={deleteMutation.isPending} className="w-full bg-red-600 hover:bg-red-700 text-white p-2.5 rounded-xl font-bold text-sm shadow-sm">Excluir este e os próximos</button>
                 <button onClick={() => setItemToDelete(null)} className="w-full border border-slate-200 bg-slate-50 text-slate-600 p-2.5 rounded-xl font-medium text-sm">Cancelar</button>
               </div>
