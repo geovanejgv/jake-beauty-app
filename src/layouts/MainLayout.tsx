@@ -257,10 +257,11 @@ export default function MainLayout() {
       <img src="/marca/simbolo.png" alt="Controla Miga" className="w-11 h-11 object-contain" />
     </div>
   ) : (
-    <div className="min-w-0 pr-7">
-      <img src="/marca/logo.png" alt="Controla Miga" className="block dark:hidden h-14 w-auto max-w-full object-contain object-left" />
-      <img src="/marca/logo-escuro.png" alt="Controla Miga" className="hidden dark:block h-14 w-auto max-w-full object-contain object-left" />
-      {perfil && <p className="mt-1 text-[11px] text-slate-500 truncate">{perfil.name}</p>}
+    // Centralizado; o recuo igual dos dois lados deixa espaço para o botão de recolher/fechar no canto
+    <div className="min-w-0 px-7 flex flex-col items-center text-center">
+      <img src="/marca/logo.png" alt="Controla Miga" className="block dark:hidden h-14 w-auto max-w-full object-contain" />
+      <img src="/marca/logo-escuro.png" alt="Controla Miga" className="hidden dark:block h-14 w-auto max-w-full object-contain" />
+      {perfil && <p className="mt-1 w-full text-[11px] text-slate-500 truncate">{perfil.name}</p>}
     </div>
   );
 
