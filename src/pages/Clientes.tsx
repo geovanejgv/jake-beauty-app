@@ -335,7 +335,7 @@ export default function Clientes() {
                       </button>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {ehAdmin && <div className="flex items-center justify-end space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {ehAdmin && <div className="flex items-center justify-end space-x-1">
                         <button onClick={() => openEditModal(client)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
                         <button onClick={() => setClientToDelete(client)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
                       </div>}

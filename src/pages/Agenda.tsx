@@ -14,7 +14,8 @@ import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
 import { brl, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
 import { itemParaAbater } from '../features/pacotes/logic';
-import { agendarLembreteGrupo, clientesKeys, listarGrupos, listarMembros } from '../features/clientes/api';
+import { agendarLembreteGrupo, clientesKeys, listarGrupos, listarMembros, listarOrigens } from '../features/clientes/api';
+import { CampoOrigem } from '../features/clientes/CampoOrigem';
 
 /** Erro de agenda: conflito de horário vem com mensagem própria; o resto, genérica com código. */
 const erroAgenda = (e: unknown, padrao: string, origem: string) => mensagemAgenda(e) ?? mensagemDeErro(e, padrao, origem);
@@ -65,6 +66,8 @@ export default function Agenda() {
   const [showNewClientForm, setShowNewClientForm] = useState(false);
   const [newClientName, setNewClientName] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
+  const [newClientBirthday, setNewClientBirthday] = useState('');
+  const [newClientOrigem, setNewClientOrigem] = useState('');
   const [serviceName, setServiceName] = useState('');
   const [servicePrice, setServicePrice] = useState('65,00');
   const [appointmentDate, setAppointmentDate] = useState(todayStr);
@@ -108,6 +111,7 @@ export default function Agenda() {
 
   const { data: gruposClientes = [] } = useQuery({ queryKey: clientesKeys.grupos, queryFn: listarGrupos, enabled: ehAdmin });
   const { data: membrosGrupos = [] } = useQuery({ queryKey: clientesKeys.membros, queryFn: listarMembros, enabled: ehAdmin });
+  const { data: origens = [] } = useQuery({ queryKey: clientesKeys.origens, queryFn: listarOrigens });
   const qtdNoGrupo = (id: string) => membrosGrupos.filter((m) => m.grupo_id === id).length;
 
   // Na agenda, a profissional aparece pelo apelido (cadastro em Profissionais).
@@ -159,9 +163,11 @@ export default function Agenda() {
 
   // Cadastra a cliente na hora e já a seleciona no agendamento
   const addClientMutation = useMutation({
-    mutationFn: async (client: { name: string; phone: string }) => {
+    mutationFn: async (client: { name: string; phone: string; birthday: string; origem: string }) => {
       // Função do banco: cadastra sem dar à profissional leitura da base de clientes.
-      const { data, error } = await supabase.rpc('cadastrar_cliente_rapido', { p_nome: client.name, p_telefone: client.phone });
+      const { data, error } = await supabase.rpc('cadastrar_cliente_rapido', {
+        p_nome: client.name, p_telefone: client.phone, p_aniversario: client.birthday || null, p_origem: client.origem || null,
+      });
       if (error) throw error;
       return { id: data as string, name: client.name, phone: client.phone, contato_visivel: ehAdmin };
     },
@@ -383,12 +389,14 @@ export default function Agenda() {
     setShowNewClientForm(false);
     setNewClientName('');
     setNewClientPhone('');
+    setNewClientBirthday('');
+    setNewClientOrigem('');
   };
 
   const handleSaveNewClient = () => {
     const name = newClientName.trim();
     if (!name) return alert('Informe o nome da cliente.');
-    addClientMutation.mutate({ name, phone: newClientPhone });
+    addClientMutation.mutate({ name, phone: newClientPhone, birthday: newClientBirthday, origem: newClientOrigem });
   };
 
   const openAddModalForType = (type: 'appointment' | 'reminder', dateStr?: string, prof?: string | null, hora?: string) => {
@@ -762,8 +770,29 @@ export default function Agenda() {
             }}
           />
         ) : viewMode === 'day' ? (
-          <div className="flex-1 overflow-y-auto min-h-0 p-3">
-             {filteredEvents.length === 0 ? <div className="text-center text-slate-400 py-12">Livre.</div> : filteredEvents.map((ev: any) => renderEventRow(ev))}
+          // Dia: lembretes (sem horário ocupado) em lista no topo e a grade por horas abaixo.
+          <div className="flex-1 min-h-0 flex flex-col">
+            {filteredEvents.some((ev: any) => ev.is_reminder_event) && (
+              <div className="shrink-0 max-h-48 overflow-y-auto p-3 pb-1 border-b border-slate-200">
+                {filteredEvents.filter((ev: any) => ev.is_reminder_event).map((ev: any) => renderEventRow(ev))}
+              </div>
+            )}
+            <LinhaDoTempo
+              eventos={filteredEvents.filter((ev: any) => !ev.is_reminder_event).map((ev: any) => ({
+                id: ev.id, start_time: ev.start_time, end_time: ev.end_time, status: ev.status, professional_id: ev.professional_id,
+                is_block: ev.is_block, block_reason: ev.block_reason, cliente: ev.clients?.name || 'Cliente', servico: ev.services?.name || 'Procedimento',
+                cor: corCategoria(ev.servicos?.categoria_id),
+              }))}
+              profissionais={[]}
+              mostrarSemProfissional={false}
+              umaColuna={ehAdmin ? (filtroProf && filtroProf !== 'sem' ? nomeProf(filtroProf) : filtroProf === 'sem' ? 'Sem profissional' : 'Todos os profissionais') : nomeProf(perfil?.id)}
+              onNovo={(_, hora) => { openAddModalForType('appointment', selectedDate, undefined, hora); }}
+              onAbrir={(id) => {
+                const ev = filteredEvents.find((x: any) => x.id === id && !x.is_reminder_event);
+                if (!ev) return;
+                if (ev.is_block) openEditBlockModal(ev); else openEditModal(ev);
+              }}
+            />
           </div>
         ) : viewMode === 'week' ? (
           // Celular (abaixo de 768px): semana em duas linhas que dividem a altura da tela,
@@ -784,7 +813,7 @@ export default function Agenda() {
                       const endM = new Date(ev.end_time).getMinutes().toString().padStart(2, '0');
 
                       if (ev.is_block) return (
-                        <div key={`block-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditBlockModal(ev); }} className="p-1 md:p-1.5 rounded border text-[10px] transition-all bg-slate-100 border-slate-300 text-slate-500 opacity-90 cursor-pointer hover:bg-slate-200">
+                        <div key={`block-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditBlockModal(ev); }} className="p-1 md:p-1.5 rounded border text-[10px] transition-all bg-red-500 border-red-700 text-white cursor-pointer hover:bg-red-600">
                           <div className="flex justify-between items-center font-bold mb-0.5"><span className="flex items-center"><Lock size={10} className="mr-1" /> {hour}:{min} - {endH}:{endM}</span></div>
                           <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words max-md:tracking-tight">{ev.block_reason}</p>
                         </div>
@@ -847,7 +876,7 @@ export default function Agenda() {
                         const endH = new Date(ev.end_time).getHours().toString().padStart(2, '0'); const endM = new Date(ev.end_time).getMinutes().toString().padStart(2, '0');
 
                         if (ev.is_block) return (
-                          <div key={`block-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditBlockModal(ev); }} className="p-1 rounded bg-slate-100 border border-slate-200 text-[9px] text-slate-500 truncate flex justify-between items-center cursor-pointer hover:bg-slate-200 transition-colors" title={`${hour}:{min} - ${endH}:{endM} 🔒 ${ev.block_reason}`}>
+                          <div key={`block-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditBlockModal(ev); }} className="p-1 rounded bg-red-500 border border-red-700 text-[9px] text-white truncate flex justify-between items-center cursor-pointer hover:bg-red-600 transition-colors" title={`${hour}:{min} - ${endH}:{endM} 🔒 ${ev.block_reason}`}>
                             <span className="truncate"><span className="font-bold">{hour}:{min}-{endH}:{endM}</span> 🔒 {ev.block_reason}</span>
                           </div>
                         );
@@ -1001,13 +1030,19 @@ export default function Agenda() {
                       placeholder="WhatsApp (11) 99999-9999"
                       className="w-full border bg-white px-3 py-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm"
                     />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><label className="block text-xs font-bold text-slate-500 mb-1">Aniversário</label><input type="date" value={newClientBirthday} max={todayStr} onChange={(e) => setNewClientBirthday(e.target.value)} className="w-full border bg-white p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm" /></div>
+                      {ehAdmin
+                        ? <CampoOrigem origens={origens} valor={newClientOrigem} onChange={setNewClientOrigem} />
+                        : <div><label className="block text-xs font-bold text-slate-500 mb-1">Origem</label><select value={newClientOrigem} onChange={(e) => setNewClientOrigem(e.target.value)} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white"><option value="">Não informada</option>{origens.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}</select></div>}
+                    </div>
                     <div className="flex gap-2">
                       <button type="button" onClick={closeNewClientForm} className="flex-1 border bg-white py-2 rounded-lg text-slate-500 font-medium text-sm">Voltar à busca</button>
                       <button type="button" onClick={handleSaveNewClient} disabled={addClientMutation.isPending || !newClientName.trim()} className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2 rounded-lg font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-1.5">
                         {addClientMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />} Cadastrar
                       </button>
                     </div>
-                    <p className="text-[11px] text-slate-500">Aniversário e observações podem ser completados depois na tela de Clientes.</p>
+                    <p className="text-[11px] text-slate-500">E-mail e observações podem ser completados depois na tela de Clientes.</p>
                   </div>
                 ) : (
                   <><div className="relative"><Search size={16} className="absolute left-3 top-3 text-slate-400" /><input type="text" value={clientSearchTerm} onChange={(e) => setClientSearchTerm(e.target.value)} className="w-full border pl-9 pr-3 py-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm" placeholder="Digite nome ou telefone..." /></div>
