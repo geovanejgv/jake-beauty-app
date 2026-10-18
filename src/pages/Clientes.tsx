@@ -8,6 +8,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package } from 'lucide-react';
+import { clientesKeys, listarOrigens } from '../features/clientes/api';
+import { CampoOrigem } from '../features/clientes/CampoOrigem';
+import { GruposClientes } from '../features/clientes/GruposClientes';
 
 const TIPOS_HISTORICO: Record<string, string> = { tecnico: 'Técnico', alergia: 'Alergia', preferencia: 'Preferência', observacao: 'Observação' };
 
@@ -105,6 +108,9 @@ export default function Clientes() {
   const [notes, setNotes] = useState('');
   const [email, setEmail] = useState('');
   const [lgpd, setLgpd] = useState(false);
+  const [origemId, setOrigemId] = useState('');
+  const [filtroOrigem, setFiltroOrigem] = useState('');
+  const [showGrupos, setShowGrupos] = useState(false);
 
   // Atalho "+ Novo > Cliente" (/clientes?nova=cliente)
   useEffect(() => {
@@ -121,11 +127,14 @@ export default function Clientes() {
     queryFn: async () => {
       const { data, error } = ehAdmin
         ? await supabase.from('clients').select('*').order('name')
-        : await supabase.from('clientes_visiveis').select('id, name, phone, email, contato_visivel').order('name');
+        : await supabase.from('clientes_visiveis').select('id, name, phone, email, contato_visivel, origem_id').order('name');
       if (error) throw error;
       return data || [];
     }
   });
+
+  const { data: origens = [] } = useQuery({ queryKey: clientesKeys.origens, queryFn: listarOrigens });
+  const nomeOrigem = (id?: string | null) => (id ? origens.find((o) => o.id === id)?.nome : undefined);
 
   const { data: clientAppointments = [] } = useQuery({
     queryKey: ['client-appointments', selectedHistoryClient?.id],
@@ -187,7 +196,7 @@ export default function Clientes() {
   });
 
   const resetForm = () => {
-    setName(''); setPhone(''); setBirthday(''); setNotes(''); setEmail(''); setLgpd(false);
+    setName(''); setPhone(''); setBirthday(''); setNotes(''); setEmail(''); setLgpd(false); setOrigemId('');
   };
 
   // Máscara inteligente para o WhatsApp
@@ -207,13 +216,13 @@ export default function Clientes() {
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    addMutation.mutate({ name, phone, birthday: birthday || null, notes, email: email.trim() || null, lgpd_consent: lgpd });
+    addMutation.mutate({ name, phone, birthday: birthday || null, notes, email: email.trim() || null, lgpd_consent: lgpd, origem_id: origemId || null });
   };
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingClient) return;
-    updateMutation.mutate({ id: editingClient.id, data: { name, phone, birthday: birthday || null, notes, email: email.trim() || null, lgpd_consent: lgpd } });
+    updateMutation.mutate({ id: editingClient.id, data: { name, phone, birthday: birthday || null, notes, email: email.trim() || null, lgpd_consent: lgpd, origem_id: origemId || null } });
   };
 
   const openEditModal = (client: any) => {
@@ -233,6 +242,7 @@ export default function Clientes() {
     setNotes(client.notes || '');
     setEmail(client.email || '');
     setLgpd(!!client.lgpd_consent);
+    setOrigemId(client.origem_id || '');
   };
 
   const formatDisplayPhone = (val: string) => {
@@ -244,9 +254,9 @@ export default function Clientes() {
     return val;
   };
 
-  const filteredClients = clients.filter((c: any) => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (c.phone && c.phone.includes(searchTerm))
+  const filteredClients = clients.filter((c: any) =>
+    (c.name.toLowerCase().includes(searchTerm.toLowerCase()) || (c.phone && c.phone.includes(searchTerm))) &&
+    (!filtroOrigem || (filtroOrigem === 'sem' ? !c.origem_id : c.origem_id === filtroOrigem))
   );
 
   const getStatusBadge = (status: string) => {
@@ -266,7 +276,7 @@ export default function Clientes() {
           <h2 className="text-3xl font-black text-slate-800">Clientes</h2>
           <p className="text-sm text-slate-500 mt-1">{ehAdmin ? 'Gestão de contatos e histórico de atendimentos' : 'Nome e histórico técnico. O contato das clientes fica com a administração do salão.'}</p>
         </div>
-        <div className="flex w-full md:w-auto space-x-3">
+        <div className="flex flex-wrap w-full md:w-auto gap-3">
           <div className="relative flex-1 md:w-64">
             <Search size={18} className="absolute left-3 top-3 text-slate-400" />
             <input 
@@ -277,6 +287,14 @@ export default function Clientes() {
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm shadow-sm"
             />
           </div>
+          <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)} aria-label="Filtrar por origem" className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
+            <option value="">Todas as origens</option>
+            {origens.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
+            <option value="sem">Sem origem</option>
+          </select>
+          {ehAdmin && <button onClick={() => setShowGrupos(true)} className="bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-bold hover:bg-rose-50 transition-colors flex items-center space-x-2 shadow-sm whitespace-nowrap">
+            <Users size={18} /> <span className="hidden sm:inline">Grupos</span>
+          </button>}
           {ehAdmin && <button onClick={() => { resetForm(); setShowAddModal(true); }} className="bg-rose-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-rose-700 transition-colors flex items-center space-x-2 shadow-sm whitespace-nowrap">
             <Plus size={18} /> <span className="hidden sm:inline">Nova Cliente</span>
           </button>}
@@ -290,6 +308,7 @@ export default function Clientes() {
               <tr>
                 <th className="px-6 py-4">Nome</th>
                 <th className="px-6 py-4">WhatsApp</th>
+                <th className="px-6 py-4 hidden sm:table-cell">Origem</th>
                 {ehAdmin && <th className="px-6 py-4 hidden md:table-cell">Aniversário</th>}
                 <th className="px-6 py-4 text-center">Histórico</th>
                 <th className="px-6 py-4 text-right">Ações</th>
@@ -297,9 +316,9 @@ export default function Clientes() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400">Carregando...</td></tr>
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400">Carregando...</td></tr>
               ) : filteredClients.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400">Nenhuma cliente encontrada.</td></tr>
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400">Nenhuma cliente encontrada.</td></tr>
               ) : (
                 filteredClients.map((client: any) => (
                   <tr key={client.id} className="hover:bg-rose-50/30 transition-colors group">
@@ -308,6 +327,7 @@ export default function Clientes() {
                       {client.name}
                     </td>
                     <td className="px-6 py-4 text-slate-600 font-medium">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</td>
+                    <td className="px-6 py-4 text-slate-500 hidden sm:table-cell">{nomeOrigem(client.origem_id) ?? '-'}</td>
                     {ehAdmin && <td className="px-6 py-4 text-slate-500 hidden md:table-cell">{client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-'}</td>}
                     <td className="px-6 py-4 text-center">
                       <button onClick={() => { setAbaHistorico('atendimentos'); setSelectedHistoryClient(client); }} className="text-slate-400 hover:text-rose-600 p-2 rounded-lg hover:bg-rose-50 transition-colors" title="Ver Histórico">
@@ -393,6 +413,7 @@ export default function Clientes() {
                 </div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Aniversário</label><input type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm" /></div>
               </div>
+              <CampoOrigem origens={origens} valor={origemId} onChange={setOrigemId} />
               <div><label className="block text-xs font-bold text-slate-500 mb-1">E-mail</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={254} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500" /></div>
               <label className="flex items-start gap-2 text-xs text-slate-600"><input type="checkbox" checked={lgpd} onChange={(e) => setLgpd(e.target.checked)} className="w-4 h-4 mt-0.5 accent-rose-600" /><span><ShieldCheck size={12} className="inline text-emerald-600" /> A cliente autorizou o uso dos dados para agendamento e contato (LGPD).</span></label>
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Observações (Alergias, preferências...)</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm resize-none" /></div>
@@ -419,6 +440,7 @@ export default function Clientes() {
                 </div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Aniversário</label><input type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm" /></div>
               </div>
+              <CampoOrigem origens={origens} valor={origemId} onChange={setOrigemId} />
               <div><label className="block text-xs font-bold text-slate-500 mb-1">E-mail</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={254} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500" /></div>
               <label className="flex items-start gap-2 text-xs text-slate-600"><input type="checkbox" checked={lgpd} onChange={(e) => setLgpd(e.target.checked)} className="w-4 h-4 mt-0.5 accent-rose-600" /><span><ShieldCheck size={12} className="inline text-emerald-600" /> A cliente autorizou o uso dos dados para agendamento e contato (LGPD).</span></label>
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Observações</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm resize-none" /></div>
@@ -430,6 +452,8 @@ export default function Clientes() {
           </div>
         </div>
       )}
+
+      {showGrupos && <GruposClientes clientes={clients as any[]} origens={origens} onFechar={() => setShowGrupos(false)} />}
 
       {/* MODAL EXCLUIR */}
       {clientToDelete && (
