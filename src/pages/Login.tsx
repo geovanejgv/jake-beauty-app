@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CalendarClock, ShieldCheck, Sparkles, Users, Wallet, type LucideIcon } from 'lucide-react';
+import { CalendarClock, ShieldCheck, Users, Wallet, type LucideIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { guardarDestino } from '../lib/seguranca/redirecionamento';
 import { logger } from '../lib/seguranca/logger';
@@ -74,14 +74,9 @@ export default function Login() {
     >
       {/* Marca */}
       <header className="relative flex flex-col items-center pt-8 sm:pt-10 px-4">
-        <div className="flex items-center gap-4">
-          <span className="grid place-items-center w-14 h-14 sm:w-16 sm:h-16 rounded-2xl border border-[#f4a6bd]/40 bg-[#e11d48]/10 shadow-[0_0_40px_rgba(225,29,72,0.25)]">
-            <Sparkles className="text-[#f4a6bd]" size={28} aria-hidden="true" />
-          </span>
-          <div>
-            <p className="font-serif text-4xl sm:text-5xl font-bold leading-none text-[#f4a6bd]">Jake Beauty</p>
-            <p className="mt-2 text-[11px] sm:text-xs font-semibold tracking-[0.35em] text-[#d9a7b8]">GESTÃO DE SALÃO</p>
-          </div>
+        <div className="flex flex-col items-center">
+          <img src="/marca/logo-escuro.png" alt="Controla Miga" className="h-24 sm:h-32 w-auto drop-shadow-[0_0_30px_rgba(231,32,103,0.25)]" />
+          <p className="mt-3 text-[11px] sm:text-xs font-semibold tracking-[0.35em] text-[#d9a7b8]">GESTÃO DE SALÃO</p>
         </div>
         <div className="mt-5 h-px w-72 max-w-full bg-gradient-to-r from-transparent via-[#f4a6bd]/50 to-transparent" />
       </header>

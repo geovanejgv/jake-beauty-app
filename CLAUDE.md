@@ -1,6 +1,6 @@
-# Jake Beauty (Studio Labeli)
+# Controla Miga
 
-Portal do estúdio: SPA Vite + React 18 + TypeScript + Tailwind, dados no Supabase (Postgres com RLS, Auth), deploy na Vercel.
+Portal de gestão de salão (marca Controla Miga, antes Jake Beauty / Studio Labeli; logotipos em `public/marca/`): SPA Vite + React 18 + TypeScript + Tailwind, dados no Supabase (Postgres com RLS, Auth), deploy na Vercel.
 
 ## Estrutura
 
