@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Menu, X, ChevronDown, ChevronUp, Lock, Building2, Gem, ShieldAlert, PanelLeftClose, PanelLeftOpen,
-  Sparkles, Settings, UserRound, LogOut,
+  Sparkles, Settings, UserRound, LogOut, Smartphone,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { GRUPOS, ROTULO_PAPEL, moduloDaRota, modulosVisiveis, type IdGrupo, type Modulo } from '../features/acesso/modulos';
+import { modoComputadorNoCelular } from '../features/acesso/visual';
 import { ROTULO_PLANO, demoExpirada, diasRestantesDemo, moduloLiberadoNoPlano } from '../features/plano/plano';
 
 const CHAVE_GRUPOS = 'jb-menu-grupos';
@@ -21,6 +22,29 @@ export default function MainLayout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   // Estado que controla se o menu do PC está largo ou apenas com os ícones
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // Celular aberto como computador (Site para computador ou zoom reduzido): avisa como voltar ao
+  // layout de celular, porque nesse modo o navegador ignora a configuração de tela do portal.
+  const CHAVE_AVISO_CELULAR = 'jb-aviso-modo-computador';
+  const [avisoCelular, setAvisoCelular] = useState(false);
+  useEffect(() => {
+    let dispensado = false;
+    try { dispensado = localStorage.getItem(CHAVE_AVISO_CELULAR) === '1'; } catch { /* preferência de tela */ }
+    if (dispensado) return;
+    const conferir = () => setAvisoCelular(modoComputadorNoCelular({
+      toque: window.matchMedia?.('(pointer: coarse)').matches ?? false,
+      telaLargura: window.screen?.width ?? 0,
+      janelaLargura: window.innerWidth,
+      escala: window.visualViewport?.scale ?? 1,
+    }));
+    conferir();
+    window.addEventListener('resize', conferir);
+    return () => window.removeEventListener('resize', conferir);
+  }, []);
+  const dispensarAvisoCelular = () => {
+    setAvisoCelular(false);
+    try { localStorage.setItem(CHAVE_AVISO_CELULAR, '1'); } catch { /* preferência de tela; pode falhar */ }
+  };
 
   const estabelecimento = perfil?.estabelecimento ?? null;
   const demoVencida = !!estabelecimento && demoExpirada(estabelecimento);
@@ -75,13 +99,15 @@ export default function MainLayout() {
   }, [menuConta]);
 
   // Classes comuns dos itens: o ativo ganha fundo e borda rosa, como no modelo de referência.
-  const classeItem = (isActive: boolean, compacto: boolean, extra = '') =>
+  // grande: gaveta do celular, com letra maior e altura de toque de 48px.
+  const classeItem = (isActive: boolean, compacto: boolean, extra = '', grande = false) =>
     `flex items-center rounded-xl border transition-all duration-200 group ${
       isActive ? 'bg-rose-50 border-rose-200 text-rose-600 font-bold shadow-sm' : 'border-transparent text-slate-600 font-medium hover:bg-slate-50 hover:text-rose-500'
-    } ${compacto ? 'justify-center py-2.5' : `gap-3 py-2 ${extra || 'px-3'}`}`;
+    } ${compacto ? 'justify-center py-2.5' : `${grande ? 'gap-3.5 min-h-[48px] py-2.5' : 'gap-3 py-2'} ${extra || 'px-3'}`}`;
 
   /** Itens do menu: módulos soltos, grupos com setinha e, abaixo do divisor, os itens de sistema. */
-  const renderNav = (compacto: boolean) => {
+  const renderNav = (compacto: boolean, grande = false) => {
+    const texto = grande ? 'text-base' : 'text-sm';
     const link = (m: Modulo, recuado: boolean, discreto = false) => {
       const Icon = m.icone;
       const isActive = ativo(m);
@@ -94,10 +120,10 @@ export default function MainLayout() {
           title={compacto ? m.rotulo : undefined}
           aria-current={isActive ? 'page' : undefined}
           onClick={() => setIsMobileMenuOpen(false)}
-          className={`${classeItem(isActive, compacto, recuado ? 'pl-10 pr-3' : '')} ${discreto && !isActive ? 'text-slate-400' : ''}`}
+          className={`${classeItem(isActive, compacto, recuado ? (grande ? 'pl-11 pr-3' : 'pl-10 pr-3') : '', grande)} ${discreto && !isActive ? (grande ? 'text-slate-500' : 'text-slate-400') : ''}`}
         >
-          <Icon size={recuado ? 16 : 20} className={`shrink-0 ${isActive ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
-          {!compacto && <span className={`flex-1 text-sm leading-tight ${recuado ? 'min-w-0' : 'whitespace-nowrap'} ${bloqueado ? 'opacity-60' : ''}`}>{m.rotulo}</span>}
+          <Icon size={grande ? (recuado ? 20 : 22) : (recuado ? 16 : 20)} className={`shrink-0 ${isActive ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
+          {!compacto && <span className={`flex-1 ${texto} leading-tight ${recuado ? 'min-w-0' : 'whitespace-nowrap'} ${bloqueado ? 'opacity-60' : ''}`}>{m.rotulo}</span>}
           {!compacto && bloqueado && <Lock size={14} className="shrink-0 text-slate-400" aria-label="Requer plano" />}
         </Link>
       );
@@ -118,11 +144,11 @@ export default function MainLayout() {
             type="button"
             onClick={() => alternarGrupo(g.id)}
             aria-expanded={aberto}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border border-transparent text-sm transition-colors group ${temAtivo ? 'text-rose-600 font-bold' : 'text-slate-600 font-medium hover:bg-slate-50 hover:text-rose-500'}`}
+            className={`w-full flex items-center px-3 rounded-xl border border-transparent ${grande ? 'gap-3.5 min-h-[48px] py-2.5 text-base' : 'gap-3 py-2 text-sm'} transition-colors group ${temAtivo ? 'text-rose-600 font-bold' : 'text-slate-600 font-medium hover:bg-slate-50 hover:text-rose-500'}`}
           >
-            <GIcon size={20} className={`shrink-0 ${temAtivo ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
+            <GIcon size={grande ? 22 : 20} className={`shrink-0 ${temAtivo ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
             <span className="flex-1 text-left whitespace-nowrap">{g.rotulo}</span>
-            <ChevronDown size={16} className={`shrink-0 text-rose-400 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+            <ChevronDown size={grande ? 20 : 16} className={`shrink-0 text-rose-400 transition-transform ${aberto ? 'rotate-180' : ''}`} />
           </button>
           {aberto && <div className="space-y-1">{itens.map((m) => link(m, true))}</div>}
         </div>
@@ -135,9 +161,9 @@ export default function MainLayout() {
     const linkGlobal = adminGlobal && (
       <Link key="admin-global" to="/admin-global" title={compacto ? 'Administração global' : undefined} onClick={() => setIsMobileMenuOpen(false)}
         aria-current={emGlobal ? 'page' : undefined}
-        className={`${classeItem(emGlobal, compacto)} ${emGlobal ? '' : 'text-slate-400'}`}>
-        <Building2 size={20} className={`shrink-0 ${emGlobal ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
-        {!compacto && <span className="text-sm leading-tight whitespace-nowrap">Administração global</span>}
+        className={`${classeItem(emGlobal, compacto, '', grande)} ${emGlobal ? '' : grande ? 'text-slate-500' : 'text-slate-400'}`}>
+        <Building2 size={grande ? 22 : 20} className={`shrink-0 ${emGlobal ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
+        {!compacto && <span className={`${texto} leading-tight whitespace-nowrap`}>Administração global</span>}
       </Link>
     );
     const rodapeNav = (sistema.length > 0 || linkGlobal) && (
@@ -165,7 +191,7 @@ export default function MainLayout() {
   );
 
   /** Cartão da conta no rodapé: a setinha abre o menu com perfil, configurações e sair. */
-  const cartaoConta = (compacto: boolean, indice: number) => perfil && (
+  const cartaoConta = (compacto: boolean, indice: number, grande = false) => perfil && (
     <div ref={(el) => { refsConta.current[indice] = el; }} className="relative shrink-0 border-t border-slate-100 p-3">
       {menuConta && (
         <div
@@ -182,16 +208,16 @@ export default function MainLayout() {
             </div>
           </div>
           <div className="p-1.5">
-            <Link role="menuitem" to="/configuracoes#conta" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 hover:text-rose-500">
+            <Link role="menuitem" to="/configuracoes#conta" className={`flex items-center gap-3 px-3 rounded-lg text-slate-700 hover:bg-slate-50 hover:text-rose-500 ${grande ? 'min-h-[48px] text-base' : 'py-2 text-sm'}`}>
               <UserRound size={18} className="text-slate-400" /> Meu perfil
             </Link>
-            <Link role="menuitem" to="/configuracoes" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 hover:text-rose-500">
+            <Link role="menuitem" to="/configuracoes" className={`flex items-center gap-3 px-3 rounded-lg text-slate-700 hover:bg-slate-50 hover:text-rose-500 ${grande ? 'min-h-[48px] text-base' : 'py-2 text-sm'}`}>
               <Settings size={18} className="text-slate-400" /> Configurações
             </Link>
           </div>
           <div className="p-1.5 border-t border-slate-100">
             <button role="menuitem" type="button" onClick={sairDoSistema}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-bold text-red-600 hover:bg-red-50">
+              className={`w-full flex items-center gap-3 px-3 rounded-lg font-bold text-red-600 hover:bg-red-50 ${grande ? 'min-h-[48px] text-base' : 'py-2 text-sm'}`}>
               <LogOut size={18} /> Sair
             </button>
           </div>
@@ -211,7 +237,7 @@ export default function MainLayout() {
         {!compacto && (
           <>
             <span className="flex-1 min-w-0">
-              <span className="block text-sm font-bold text-slate-800 truncate">{perfil.name}</span>
+              <span className={`block font-bold text-slate-800 truncate ${grande ? 'text-base' : 'text-sm'}`}>{perfil.name}</span>
               <span className="flex items-center gap-1.5 min-w-0">
                 <span className="text-xs text-slate-500 truncate">{ROTULO_PAPEL[perfil.role]}</span>
                 {seloPlano}
@@ -311,7 +337,7 @@ export default function MainLayout() {
           />
 
           <aside
-            className={`glass glass-forte absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-white flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
+            className={`glass glass-forte absolute inset-y-0 left-0 w-80 max-w-[88vw] bg-white flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
           >
             <div className="relative px-4 pt-5 pb-4 border-b border-slate-100 shrink-0">
               <button onClick={() => setIsMobileMenuOpen(false)} className="absolute top-3 right-2 p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" aria-label="Fechar menu">
@@ -321,13 +347,23 @@ export default function MainLayout() {
             </div>
 
             <nav aria-label="Menu principal" className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-              {renderNav(false)}
+              {renderNav(false, true)}
             </nav>
 
-            {cartaoConta(false, 1)}
+            {cartaoConta(false, 1, true)}
           </aside>
         </div>
 
+        {avisoCelular && (
+          <div role="alert" className="shrink-0 bg-rose-600 text-white px-6 py-6 flex items-start gap-5 text-[34px] leading-snug">
+            <Smartphone size={56} className="shrink-0 mt-1" />
+            <div className="flex-1 min-w-0">
+              <p className="font-black">O celular está abrindo a versão de computador, por isso as letras ficam pequenas.</p>
+              <p className="mt-2">No Chrome, toque nos três pontinhos (⋮) e <strong>desmarque "Site para computador"</strong>. Se continuar pequeno, volte o zoom da página para 100% em Configurações do Chrome &gt; Acessibilidade.</p>
+            </div>
+            <button type="button" onClick={dispensarAvisoCelular} aria-label="Fechar aviso" className="shrink-0 p-3 rounded-2xl hover:bg-white/15"><X size={48} /></button>
+          </div>
+        )}
         {faixaPlano}
         {perfil?.role === 'admin' && nivel.atual !== 'aal2' && (
           <Link to="/configuracoes#seguranca" className="shrink-0 flex items-center justify-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold text-center bg-amber-50 text-amber-800 border-b border-amber-100">
