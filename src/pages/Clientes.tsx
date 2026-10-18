@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { brl, dataBR, dataHoraBR, dataLocal, isoParaBR } from '../lib/formatos';
+import { brl, dataBR, dataHoraBR, dataLocal, formatarTelefone, isoParaBR } from '../lib/formatos';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
 import { COR_SITUACAO, ROTULO_SITUACAO, agruparSaldos, situacaoPacote } from '../features/pacotes/logic';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +14,8 @@ import { AniversariantesMes } from '../features/clientes/Aniversariantes';
 import { GruposCartoes } from '../features/clientes/GruposCartoes';
 import { CampoOrigem } from '../features/clientes/CampoOrigem';
 import { GruposClientes } from '../features/clientes/GruposClientes';
+import { buscarLead, leadsKeys, vincularCliente } from '../features/leads/api';
+import { AvisoBackup } from '../features/backup/AvisoBackup';
 
 type ModoClientes = 'lista' | 'cartoes' | 'grupos';
 const CHAVE_MODO = 'jb-clientes-modo';
@@ -120,6 +122,9 @@ export default function Clientes() {
   // Profissional: só nome e contato mascarado (view clientes_visiveis), sem editar (risco de fuga de base).
   const ehAdmin = perfil?.role === 'admin';
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  // Cadastro vindo de um lead que fechou: ao salvar, o lead fica vinculado à nova cliente.
+  const [leadOrigem, setLeadOrigem] = useState<string | null>(null);
   const [abaHistorico, setAbaHistorico] = useState<'atendimentos' | 'tecnico' | 'pacotes'>('atendimentos');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -166,7 +171,19 @@ export default function Clientes() {
     if (searchParams.get('nova') !== 'cliente' || !ehAdmin) return;
     resetForm();
     setShowAddModal(true);
+    // /clientes?nova=cliente&lead=<id>: preenche com o nome e o contato do lead (o RLS só deixa a administradora ler).
+    const leadId = searchParams.get('lead');
+    if (leadId && /^[0-9a-f-]{36}$/i.test(leadId)) {
+      buscarLead(leadId).then((l) => {
+        if (!l) return;
+        setName(l.nome);
+        setPhone(formatarTelefone(l.telefone));
+        setEmail(l.email ?? '');
+        setLeadOrigem(l.id);
+      }).catch((e) => alert(mensagemDeErro(e, 'Não foi possível abrir os dados do lead.', 'clientes.lead')));
+    }
     searchParams.delete('nova');
+    searchParams.delete('lead');
     setSearchParams(searchParams, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, ehAdmin]);
@@ -181,6 +198,17 @@ export default function Clientes() {
       return data || [];
     }
   });
+
+  // /clientes?cliente=<id> (vindo do lead): abre o histórico da cliente.
+  useEffect(() => {
+    const id = searchParams.get('cliente');
+    if (!id || !clients.length) return;
+    const c = (clients as any[]).find((x) => x.id === id);
+    if (c) { setAbaHistorico('atendimentos'); setSelectedHistoryClient(c); }
+    searchParams.delete('cliente');
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients, searchParams]);
 
   const { data: origens = [] } = useQuery({ queryKey: clientesKeys.origens, queryFn: listarOrigens });
   const nomeOrigem = (id?: string | null) => (id ? origens.find((o) => o.id === id)?.nome : undefined);
@@ -211,13 +239,19 @@ export default function Clientes() {
   // MUTAÇÕES COM AVISO DE ERRO (Alertas)
   const addMutation = useMutation({
     mutationFn: async (clientData: any) => {
-      const { error } = await supabase.from('clients').insert([clientData]);
+      const { data, error } = await supabase.from('clients').insert([clientData]).select('id').single();
       if (error) throw error;
+      if (leadOrigem) await vincularCliente(leadOrigem, (data as { id: string }).id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] });
       setShowAddModal(false);
       resetForm();
+      if (leadOrigem) {
+        setLeadOrigem(null);
+        queryClient.invalidateQueries({ queryKey: leadsKeys.lista });
+        navigate('/leads');
+      }
     },
     onError: (error: any) => {
       alert(mensagemDeErro(error, 'Ops! Não foi possível salvar.', 'clientes.salvar'));
@@ -509,6 +543,8 @@ export default function Clientes() {
         </div>
       </div>
 
+      <AvisoBackup tipo="clientes" />
+
       {ehAdmin && modo !== 'grupos' && <AniversariantesMes clientes={clients as any[]} hoje={dataLocal()} recolhivel />}
 
       {modo !== 'grupos' && seletorOrdem(modo === 'lista' ? (colunasAbaixo.length ? 'sm:max-w-sm' : 'md:hidden') : 'sm:max-w-sm')}
@@ -713,7 +749,8 @@ export default function Clientes() {
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
-            <div className="flex justify-between items-center"><h3 className="text-xl font-bold text-slate-800">Nova Cliente</h3><button onClick={() => { setShowAddModal(false); resetForm(); }} className="text-slate-400 hover:text-slate-600"><X size={20} /></button></div>
+            <div className="flex justify-between items-center"><h3 className="text-xl font-bold text-slate-800">Nova Cliente</h3><button onClick={() => { setShowAddModal(false); resetForm(); setLeadOrigem(null); }} className="text-slate-400 hover:text-slate-600"><X size={20} /></button></div>
+            {leadOrigem && <p className="text-xs text-rose-600 -mt-2">Dados trazidos do lead. Ao salvar, o lead fica vinculado a esta cliente.</p>}
             <form onSubmit={handleAddSubmit} className="space-y-4">
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Nome Completo *</label><input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500" /></div>
               <div className="grid grid-cols-2 gap-4">
@@ -728,7 +765,7 @@ export default function Clientes() {
               <label className="flex items-start gap-2 text-xs text-slate-600"><input type="checkbox" checked={lgpd} onChange={(e) => setLgpd(e.target.checked)} className="w-4 h-4 mt-0.5 accent-rose-600" /><span><ShieldCheck size={12} className="inline text-emerald-600" /> A cliente autorizou o uso dos dados para agendamento e contato (LGPD).</span></label>
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Observações (Alergias, preferências...)</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm resize-none" /></div>
               <div className="flex space-x-3 pt-2">
-                <button type="button" onClick={() => { setShowAddModal(false); resetForm(); }} className="w-1/2 border p-2.5 rounded-xl text-slate-500 font-medium">Cancelar</button>
+                <button type="button" onClick={() => { setShowAddModal(false); resetForm(); setLeadOrigem(null); }} className="w-1/2 border p-2.5 rounded-xl text-slate-500 font-medium">Cancelar</button>
                 <button type="submit" disabled={addMutation.isPending} className="w-1/2 bg-rose-600 text-white p-2.5 rounded-xl font-bold disabled:bg-rose-400">{addMutation.isPending ? 'Salvando...' : 'Salvar Cliente'}</button>
               </div>
             </form>

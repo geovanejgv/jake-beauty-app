@@ -27,4 +27,5 @@ rodar "${DB}_kanban_visao" kanban_visao_grupos.test.sql
 rodar "${DB}_estabelecimentos" estabelecimentos.test.sql
 rodar "${DB}_login_mfa" login_mfa.test.sql
 rodar "${DB}_clientes_grupos" clientes_grupos.test.sql
+rodar "${DB}_leads_backup" leads_backup.test.sql
 echo "Testes de segurança do banco: OK"

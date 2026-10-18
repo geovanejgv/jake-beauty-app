@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { AvisoBackup } from '../features/backup/AvisoBackup';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus, Users, BadgeCheck, Package } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -700,10 +701,12 @@ export default function Agenda() {
 
   return (
     <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3">
+      <div className="shrink-0 empty:hidden"><AvisoBackup tipo="agenda" exibir="faixa" /></div>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 shrink-0">
         <div className="hidden md:block"><h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Agenda Conectada</h2>{!ehAdmin && perfil && <p className="text-xs text-slate-500 mt-1">Sua agenda, {perfil.name.split(' ')[0]}</p>}</div>
         
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <AvisoBackup tipo="agenda" exibir="botao" />
           <div className="bg-slate-200 p-0.5 rounded-lg flex items-center space-x-0.5">
             <button onClick={() => setViewMode('day')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'day' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><LayoutList size={12} /> <span>Dia</span></button>
             <button onClick={() => setViewMode('week')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'week' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><Columns size={12} /> <span>Semana</span></button>
