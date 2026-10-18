@@ -1,3 +1,6 @@
+const TONS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+const escala = (nome) => Object.fromEntries(TONS.map((t) => [t, `rgb(var(--${nome}-${t}) / <alpha-value>)`]));
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: 'class',
@@ -8,7 +11,10 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      // Rosa e ardósia vêm de variáveis CSS (src/index.css) para os visuais do portal.
+      colors: { rose: escala('rose'), slate: escala('slate') },
+    },
   },
   plugins: [],
 }

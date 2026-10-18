@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, LogOut, Moon, Settings, SlidersHorizontal, Sun, UserCircle } from 'lucide-react';
+import { Check, Eye, EyeOff, LogOut, Moon, Palette, Settings, SlidersHorizontal, Sun, UserCircle } from 'lucide-react';
 import SegurancaMfa from '../components/SegurancaMfa';
 import { useTheme } from '../hooks/useTheme';
+import { OPCOES_VISUAL } from '../features/acesso/visual';
 import { Chave, ConfigComissoes } from '../features/comissoes/ConfigComissoes';
 import { useAuth } from '../contexts/AuthContext';
 import { mensagemDeErro } from '../lib/seguranca/erros';
@@ -14,7 +15,7 @@ export default function Configuracoes() {
   const { perfil, user, salvarPreferencias, signOut } = useAuth();
   const navigate = useNavigate();
   const { hash } = useLocation();
-  const { theme, toggleTheme } = useTheme();
+  const { visual, setVisual } = useTheme();
   const [saindo, setSaindo] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const ehAdmin = perfil?.role === 'admin';
@@ -57,13 +58,47 @@ export default function Configuracoes() {
           <strong className="text-slate-800">{perfil.name}</strong> · {ROTULO_PAPEL[perfil.role]}{user?.email ? <span className="text-slate-500"> · {user.email}</span> : null}
         </p>
         <p className="text-xs text-slate-500">O acesso é pela conta Google deste e-mail ("Continuar com Google"). Não há senha no portal.</p>
-        <div className="flex items-center gap-3 py-2.5 border-t border-slate-100">
-          {theme === 'dark' ? <Moon size={20} className="text-rose-600" /> : <Sun size={20} className="text-rose-600" />}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-slate-800">Modo escuro</p>
-            <p className="text-xs text-slate-500">Vale para este aparelho.</p>
+        <div className="pt-3 border-t border-slate-100 space-y-3">
+          <div className="flex items-center gap-2">
+            <Palette size={20} className="text-rose-600" />
+            <div className="min-w-0">
+              <p id="titulo-visual" className="text-sm font-semibold text-slate-800">Visual</p>
+              <p className="text-xs text-slate-500">Cores do portal. Vale para este aparelho.</p>
+            </div>
           </div>
-          <Chave ligado={theme === 'dark'} rotulo="Modo escuro" onChange={() => toggleTheme()} />
+          <div role="radiogroup" aria-labelledby="titulo-visual" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {OPCOES_VISUAL.map((o) => {
+              const marcado = visual === o.id;
+              const [fundo, painel, destaque, texto] = o.amostras;
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={marcado}
+                  onClick={() => setVisual(o.id)}
+                  className={`sem-hover-card text-left rounded-xl border-2 p-3 flex items-center gap-3 transition-colors ${marcado ? 'border-rose-500 bg-rose-50' : 'border-slate-200 hover:border-rose-300'}`}
+                >
+                  {/* Prévia: fundo, painel com linha de texto e botão na cor de destaque */}
+                  <span className="shrink-0 w-16 h-12 rounded-lg p-1.5 flex flex-col justify-between border border-black/10" style={{ background: fundo }} aria-hidden="true">
+                    <span className="block h-2 w-10 rounded" style={{ background: painel }} />
+                    <span className="flex items-center gap-1">
+                      <span className="block h-1.5 w-6 rounded" style={{ background: texto }} />
+                      <span className="block h-2.5 w-4 rounded" style={{ background: destaque }} />
+                    </span>
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
+                      {o.escuro ? <Moon size={14} className="text-slate-400" /> : <Sun size={14} className="text-slate-400" />}
+                      {o.rotulo}
+                    </span>
+                    <span className="block text-xs text-slate-500">{o.descricao}</span>
+                  </span>
+                  {marcado && <Check size={18} className="shrink-0 text-rose-600" aria-hidden="true" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 pt-1">
           <button type="button" disabled={saindo} onClick={async () => { setSaindo(true); await signOut(); navigate('/login'); }}
