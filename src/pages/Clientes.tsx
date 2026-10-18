@@ -112,7 +112,7 @@ export default function Clientes() {
   const [filtroOrigem, setFiltroOrigem] = useState('');
   const [showGrupos, setShowGrupos] = useState(false);
 
-  // Atalho "+ Novo > Cliente" (/clientes?nova=cliente)
+  // Atalho por endereço: /clientes?nova=cliente abre o cadastro
   useEffect(() => {
     if (searchParams.get('nova') !== 'cliente' || !ehAdmin) return;
     resetForm();

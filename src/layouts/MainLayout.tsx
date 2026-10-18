@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, ChevronLeft, ChevronRight, ChevronDown, SquareKanban, Plus, SquareCheckBig, CalendarPlus, UserPlus, Lock, Building2, Gem, ShieldAlert } from 'lucide-react';
+import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Menu, X, ChevronLeft, ChevronRight, ChevronDown, Lock, Building2, Gem, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { GRUPOS, ROTULO_PAPEL, moduloDaRota, modulosVisiveis, type IdGrupo, type Modulo } from '../features/acesso/modulos';
@@ -10,7 +10,6 @@ const CHAVE_GRUPOS = 'jb-menu-grupos';
 
 export default function MainLayout() {
   const location = useLocation();
-  const navigate = useNavigate();
   const { perfil, adminGlobal, nivel } = useAuth();
   // Aplica o tema salvo ao abrir o portal; a troca fica em Configurações.
   useTheme();
@@ -52,32 +51,6 @@ export default function MainLayout() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isMobileMenuOpen]);
-
-  // Botão + global: atalhos de criação (abre a tela já com a janela aberta)
-  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
-  useEffect(() => { setIsQuickAddOpen(false); }, [location.pathname, location.search]);
-  const visivel = (id: Modulo['id']) => modulos.some((m) => m.id === id);
-  const quickAddItems = [
-    ...(visivel('agenda') ? [{ label: 'Agendamento', icon: CalendarPlus, to: '/agenda?novo=agendamento' }] : []),
-    ...(visivel('clientes') && papel === 'admin' ? [{ label: 'Cliente', icon: UserPlus, to: '/clientes?nova=cliente' }] : []),
-    ...(visivel('tarefas') ? [
-      { label: 'Tarefa', icon: SquareCheckBig, to: '/tarefas?nova=tarefa' },
-      { label: 'Novo quadro', icon: SquareKanban, to: '/tarefas?nova=quadro' },
-    ] : []),
-  ];
-  const quickAddMenu = (alignClass: string) => isQuickAddOpen && (
-    <>
-      <div className="fixed inset-0 z-40" onClick={() => setIsQuickAddOpen(false)} />
-      <div role="menu" className={`absolute z-50 top-full mt-2 ${alignClass} w-48 bg-white border border-slate-200 rounded-xl shadow-xl p-1`}>
-        {quickAddItems.map((item) => (
-          <button key={item.to} type="button" role="menuitem" onClick={() => { setIsQuickAddOpen(false); navigate(item.to); }}
-            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-600">
-            <item.icon size={16} /> {item.label}
-          </button>
-        ))}
-      </div>
-    </>
-  );
 
   const ativo = (m: Modulo) => moduloAtual?.id === m.id;
 
@@ -174,24 +147,6 @@ export default function MainLayout() {
           {!isCollapsed && perfil && <p className="text-[11px] text-slate-500 truncate max-w-full">{perfil.name} · {ROTULO_PAPEL[perfil.role]}</p>}
         </div>
 
-        {/* Botão + global (atalhos de criação) */}
-        {quickAddItems.length > 0 && (
-          <div className="relative px-3 pt-4">
-            <button
-              type="button"
-              onClick={() => setIsQuickAddOpen(!isQuickAddOpen)}
-              title={isCollapsed ? 'Novo' : ''}
-              aria-haspopup="menu"
-              aria-expanded={isQuickAddOpen}
-              className={`flex items-center w-full bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-sm transition-colors font-bold ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
-            >
-              <Plus size={22} className="shrink-0" />
-              {!isCollapsed && <span className="whitespace-nowrap">Novo</span>}
-            </button>
-            {quickAddMenu('left-3')}
-          </div>
-        )}
-
         {/* Links de Navegação */}
         <nav aria-label="Menu principal" className="flex-1 px-3 py-5 space-y-2 overflow-y-auto overflow-x-hidden custom-scrollbar">
           {renderNav('lateral')}
@@ -228,14 +183,6 @@ export default function MainLayout() {
               <h1 className="text-lg font-black text-rose-600 leading-tight">Jake Beauty</h1>
               {moduloAtual && <p className="text-xs text-slate-500 truncate leading-tight">{moduloAtual.rotulo}</p>}
             </div>
-          </div>
-          <div className="relative flex items-center">
-            {quickAddItems.length > 0 && (
-              <button onClick={() => setIsQuickAddOpen(!isQuickAddOpen)} className="ml-1 p-2 bg-rose-600 text-white rounded-lg" aria-label="Novo" aria-haspopup="menu" aria-expanded={isQuickAddOpen}>
-                <Plus size={22} />
-              </button>
-            )}
-            {quickAddMenu('right-0')}
           </div>
         </header>
 
