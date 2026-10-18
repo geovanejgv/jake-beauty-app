@@ -271,7 +271,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 relative">
+    <div className="w-full space-y-6 relative">
       <div>
         <h2 className="text-3xl font-black text-slate-800 tracking-tight">Painel Financeiro</h2>
         <p className="text-sm text-slate-500 mt-1">Gestão de faturamento, despesas e lucro líquido</p>

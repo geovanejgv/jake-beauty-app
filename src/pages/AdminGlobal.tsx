@@ -148,7 +148,7 @@ function Painel({ cabecalho }: { cabecalho: React.ReactNode }) {
   const ilimitado = (e: EstabelecimentoGlobal, v: number | null) => (e.plano === 'premium' ? null : v);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-12">
+    <div className="w-full space-y-6 pb-12">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
         {cabecalho}
         <button type="button" onClick={() => setNovo(true)} className="self-start inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 text-white font-bold text-sm shadow-sm">

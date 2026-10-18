@@ -37,7 +37,7 @@ export default function Plano() {
   ];
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-12">
+    <div className="w-full space-y-6 pb-12">
       <div>
         <h2 className="text-2xl md:text-3xl font-black text-slate-800 flex items-center gap-2"><Gem className="text-rose-600" /> Plano</h2>
         <p className="text-sm text-slate-500 mt-1">{p.nome}</p>

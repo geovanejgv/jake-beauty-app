@@ -30,7 +30,7 @@ export default function PagamentoProfissionais() {
   const [aberto, setAberto] = useState<Fechamento | null>(null);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-5 pb-12">
+    <div className="w-full space-y-5 pb-12">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl md:text-3xl font-black text-slate-800 flex items-center gap-2"><HandCoins className="text-rose-600" /> Pagamento de profissionais</h2>
@@ -88,7 +88,7 @@ function Lancamento({ de, ate, setDe, setAte, onNovo }: { de: string; ate: strin
   return (
     <div className="space-y-4">
       <Periodo de={de} ate={ate} setDe={setDe} setAte={setAte} />
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 grid gap-4 md:grid-cols-[1fr_auto_1fr_auto_2fr] md:items-center max-w-4xl mx-auto">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 grid gap-4 md:grid-cols-[1fr_auto_1fr_auto_2fr] md:items-center">
         <div><p className="text-xs text-slate-500">Total em comissões</p><p className="text-lg font-black text-slate-800">{brl(total.comissoes)}</p></div>
         <ArrowRight className="hidden md:block text-slate-400" />
         <div><p className="text-xs text-slate-500">Total em gorjetas</p><p className="text-lg font-black text-slate-800">{brl(total.gorjetas)}</p></div>
