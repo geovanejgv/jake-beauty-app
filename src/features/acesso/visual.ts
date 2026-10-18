@@ -39,3 +39,16 @@ export function lerVisual(salvo: string | null, sistemaEscuro: boolean): Visual 
 export function opcaoVisual(v: Visual): OpcaoVisual {
   return OPCOES_VISUAL.find((o) => o.id === v)!;
 }
+
+/**
+ * Celular abrindo o portal como computador ("Site para computador" no Chrome, ou zoom da página
+ * reduzido): a página é montada com ~980px e encolhida, então tudo fica pequeno e o layout de
+ * celular não entra. Sinais: tela de toque estreita com janela bem mais larga que a tela, ou a
+ * página já aberta encolhida (escala do visualViewport baixa).
+ */
+export function modoComputadorNoCelular(t: { toque: boolean; telaLargura: number; janelaLargura: number; escala: number }): boolean {
+  if (!t.toque) return false;
+  const janelaMaiorQueTela = t.telaLargura > 0 && t.telaLargura < 600 && t.janelaLargura >= t.telaLargura * 1.5;
+  const paginaEncolhida = t.escala > 0 && t.escala < 0.7 && t.janelaLargura >= 700;
+  return janelaMaiorQueTela || paginaEncolhida;
+}
