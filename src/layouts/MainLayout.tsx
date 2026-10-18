@@ -365,7 +365,8 @@ export default function MainLayout() {
           </div>
         )}
         {faixaPlano}
-        {perfil?.role === 'admin' && nivel.atual !== 'aal2' && (
+        {/* Aviso do autenticador só em Configurações, onde fica a seção de segurança. */}
+        {perfil?.role === 'admin' && nivel.atual !== 'aal2' && location.pathname.startsWith('/configuracoes') && (
           <Link to="/configuracoes#seguranca" className="shrink-0 flex items-center justify-center gap-2 px-4 py-2 text-xs sm:text-sm font-semibold text-center bg-amber-50 text-amber-800 border-b border-amber-100">
             <ShieldAlert size={14} className="shrink-0" />
             {nivel.proximo === 'aal2'
