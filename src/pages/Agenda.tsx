@@ -14,6 +14,7 @@ import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
 import { brl, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
 import { itemParaAbater } from '../features/pacotes/logic';
+import { agendarLembreteGrupo, clientesKeys, listarGrupos, listarMembros } from '../features/clientes/api';
 
 /** Erro de agenda: conflito de horário vem com mensagem própria; o resto, genérica com código. */
 const erroAgenda = (e: unknown, padrao: string, origem: string) => mensagemAgenda(e) ?? mensagemDeErro(e, padrao, origem);
@@ -69,6 +70,9 @@ export default function Agenda() {
   const [appointmentDate, setAppointmentDate] = useState(todayStr);
   const [appointmentTime, setAppointmentTime] = useState('09:00');
   const [isRecurring, setIsRecurring] = useState(false);
+  // Lembrete para um grupo inteiro de clientes (só administradora).
+  const [paraGrupo, setParaGrupo] = useState(false);
+  const [grupoLembrete, setGrupoLembrete] = useState('');
 
   const [blockDate, setBlockDate] = useState(todayStr);
   const [blockStartTime, setBlockStartTime] = useState('12:00');
@@ -101,6 +105,10 @@ export default function Agenda() {
       return data || [];
     }
   });
+
+  const { data: gruposClientes = [] } = useQuery({ queryKey: clientesKeys.grupos, queryFn: listarGrupos, enabled: ehAdmin });
+  const { data: membrosGrupos = [] } = useQuery({ queryKey: clientesKeys.membros, queryFn: listarMembros, enabled: ehAdmin });
+  const qtdNoGrupo = (id: string) => membrosGrupos.filter((m) => m.grupo_id === id).length;
 
   // Na agenda, a profissional aparece pelo apelido (cadastro em Profissionais).
   const { data: equipeBruta = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos });
@@ -226,6 +234,19 @@ export default function Agenda() {
       setNovoConfirmado(false);
     },
     onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível agendar.', 'agenda.agendar'))
+  });
+
+  const lembreteGrupoMutation = useMutation({
+    mutationFn: agendarLembreteGrupo,
+    onSuccess: (qtd) => {
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] });
+      setShowAddModal(false);
+      setServiceName('');
+      setIsRecurring(false);
+      setNovoServico('');
+      alert(qtd ? `Lembrete agendado para ${qtd} cliente(s) do grupo.` : 'O grupo está sem clientes: nenhum lembrete foi criado.');
+    },
+    onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível agendar o lembrete do grupo.', 'agenda.lembrete_grupo'))
   });
 
   const addBlockMutation = useMutation({
@@ -380,6 +401,8 @@ export default function Agenda() {
     setUsarPacote(true);
     if (hora) setAppointmentTime(hora);
     setIsRecurring(false);
+    setParaGrupo(false);
+    setGrupoLembrete('');
     if (dateStr) setAppointmentDate(dateStr);
     setActionMenuDate(null);
     setShowAddModal(true);
@@ -410,6 +433,20 @@ export default function Agenda() {
 
   const handleAddSubmit = (e: React.FormEvent) => { 
     e.preventDefault(); 
+    if (appointmentType === 'reminder' && paraGrupo) {
+      if (!grupoLembrete) return alert('Escolha o grupo.');
+      const doCatalogo = novoServico && novoServico !== 'avulso' ? novoServico : null;
+      const texto = doCatalogo ? servicosCatalogo.find((x) => x.id === doCatalogo)?.nome ?? null : serviceName.trim();
+      if (!texto) return alert('Informe o procedimento.');
+      return lembreteGrupoMutation.mutate({
+        grupo: grupoLembrete,
+        inicio: new Date(`${appointmentDate}T${appointmentTime}:00`).toISOString(),
+        profissional: novoProf || null,
+        servico: doCatalogo,
+        texto,
+        recorrente: isRecurring,
+      });
+    }
     if (!selectedClient) return alert("Selecione uma cliente."); 
     const professional_id = ehAdmin ? novoProf : perfil?.id ?? '';
     if (appointmentType === 'appointment') {
@@ -915,6 +952,21 @@ export default function Agenda() {
             </div>
 
             <form onSubmit={handleAddSubmit} className="space-y-4">
+              {appointmentType === 'reminder' && ehAdmin && (
+                <div className="flex bg-indigo-50 p-1 rounded-lg" role="group" aria-label="Lembrete para">
+                  <button type="button" onClick={() => setParaGrupo(false)} className={`flex-1 py-1.5 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${!paraGrupo ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500'}`}><User size={12} /> Uma cliente</button>
+                  <button type="button" onClick={() => setParaGrupo(true)} className={`flex-1 py-1.5 text-xs font-bold rounded-md flex items-center justify-center gap-1 ${paraGrupo ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500'}`}><Users size={12} /> Um grupo</button>
+                </div>
+              )}
+              {appointmentType === 'reminder' && paraGrupo ? (
+                <div><label className="block text-xs font-bold text-slate-500 mb-1">Grupo *</label>
+                  <select value={grupoLembrete} onChange={(e) => setGrupoLembrete(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white">
+                    <option value="">Selecione</option>
+                    {gruposClientes.map((g) => <option key={g.id} value={g.id}>{g.nome} ({qtdNoGrupo(g.id)} cliente{qtdNoGrupo(g.id) === 1 ? '' : 's'})</option>)}
+                  </select>
+                  <p className="text-[11px] text-slate-500 mt-1">{gruposClientes.length ? 'Cada cliente do grupo recebe um lembrete nesta data.' : 'Crie grupos em Clientes > Grupos.'}</p>
+                </div>
+              ) : (
               <div className="relative">
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-bold text-slate-500">{showNewClientForm ? 'Nova Cliente' : 'Cliente *'}</label>
@@ -971,6 +1023,7 @@ export default function Agenda() {
                   </>
                 )}
               </div>
+              )}
               {selectedClient && appointmentType === 'appointment' && saldosCliente.some((l) => l.disponiveis > 0) && (
                 <div className="flex flex-wrap gap-1.5 -mt-2" aria-label="Pacotes da cliente">
                   {saldosCliente.filter((l) => l.disponiveis > 0).map((l) => (
@@ -1040,7 +1093,7 @@ export default function Agenda() {
 
               <div className="flex space-x-3 pt-2">
                 <button type="button" onClick={() => setShowAddModal(false)} className="w-1/2 border p-2.5 rounded-lg text-slate-500 font-medium">Cancelar</button>
-                <button type="submit" disabled={addAppointmentMutation.isPending || !selectedClient} className={`w-1/2 text-white p-2.5 rounded-lg font-bold disabled:opacity-50 transition-colors ${appointmentType === 'reminder' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-rose-600 hover:bg-rose-700'}`}>Salvar {appointmentType === 'reminder' ? 'Lembrete' : ''}</button>
+                <button type="submit" disabled={addAppointmentMutation.isPending || lembreteGrupoMutation.isPending || (appointmentType === 'reminder' && paraGrupo ? !grupoLembrete : !selectedClient)} className={`w-1/2 text-white p-2.5 rounded-lg font-bold disabled:opacity-50 transition-colors ${appointmentType === 'reminder' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-rose-600 hover:bg-rose-700'}`}>Salvar {appointmentType === 'reminder' ? 'Lembrete' : ''}</button>
               </div>
             </form>
           </div>
