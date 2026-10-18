@@ -82,5 +82,15 @@ select pg_temp.ok((select count(*) = 2 from public.appointments where start_time
 select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
 delete from public.origens_cliente where id = :'guaianases';
 select pg_temp.ok((select count(*) = 2 from public.clients where id in ('c1000000-0000-0000-0000-000000000001', 'c2000000-0000-0000-0000-000000000002') and origem_id is null), 'clientes ficam sem origem');
+
+-- 5) Cadastro rápido pela Agenda com aniversário e origem (profissional também usa)
+select id as indicacao from public.origens_cliente where nome = 'Indicação' \gset
+select pg_temp.como('bbbbbbbb-0000-0000-0000-000000000002');
+select public.cadastrar_cliente_rapido('Cliente Rápida', '(11) 90000-0009', '1990-05-20', :'indicacao') as rapida \gset
+select pg_temp.ok(public.cadastrar_cliente_rapido('Só Nome', '') is not null, 'chamada antiga com 2 parâmetros continua valendo');
+select pg_temp.espera_erro($$select public.cadastrar_cliente_rapido('X Futura', '', current_date + 1, null)$$, 'aniversário inválida');
+select pg_temp.espera_erro($$select public.cadastrar_cliente_rapido('X Outra', '', null, '0b000000-0000-0000-0000-0000000000b2')$$, 'Origem inválida');
+select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
+select pg_temp.ok((select birthday = '1990-05-20' and origem_id = :'indicacao' from public.clients where id = :'rapida'), 'aniversário e origem gravados');
 reset role;
 select 'clientes_grupos: OK';
