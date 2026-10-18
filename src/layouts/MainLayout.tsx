@@ -1,16 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Menu, X, ChevronLeft, ChevronRight, ChevronDown, Lock, Building2, Gem, ShieldAlert } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Menu, X, ChevronDown, ChevronUp, Lock, Building2, Gem, ShieldAlert, PanelLeftClose, PanelLeftOpen,
+  Sparkles, Settings, UserRound, LogOut,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { GRUPOS, ROTULO_PAPEL, moduloDaRota, modulosVisiveis, type IdGrupo, type Modulo } from '../features/acesso/modulos';
-import { demoExpirada, diasRestantesDemo, moduloLiberadoNoPlano } from '../features/plano/plano';
+import { ROTULO_PLANO, demoExpirada, diasRestantesDemo, moduloLiberadoNoPlano } from '../features/plano/plano';
 
 const CHAVE_GRUPOS = 'jb-menu-grupos';
 
 export default function MainLayout() {
   const location = useLocation();
-  const { perfil, adminGlobal, nivel } = useAuth();
+  const navigate = useNavigate();
+  const { perfil, user, adminGlobal, nivel, signOut } = useAuth();
   // Aplica o tema salvo ao abrir o portal; a troca fica em Configurações.
   useTheme();
 
@@ -53,11 +57,32 @@ export default function MainLayout() {
   }, [isMobileMenuOpen]);
 
   const ativo = (m: Modulo) => moduloAtual?.id === m.id;
+  const sairDoSistema = async () => { setMenuConta(false); await signOut(); navigate('/login'); };
 
-  /** Itens do menu agrupados como no sistema de referência (Meu Estabelecimento, Financeiro, Relatórios). */
-  const renderNav = (modo: 'lateral' | 'gaveta') => {
-    const compacto = modo === 'lateral' && isCollapsed;
-    const link = (m: Modulo, recuado: boolean) => {
+  // Menu da conta (rodapé): fecha ao trocar de tela, com Esc ou com clique fora.
+  const [menuConta, setMenuConta] = useState(false);
+  const refsConta = useRef<(HTMLDivElement | null)[]>([]);
+  useEffect(() => { setMenuConta(false); }, [location.pathname]);
+  useEffect(() => {
+    if (!menuConta) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuConta(false); };
+    const onClique = (e: MouseEvent) => {
+      if (!refsConta.current.some((el) => el?.contains(e.target as Node))) setMenuConta(false);
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClique);
+    return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClique); };
+  }, [menuConta]);
+
+  // Classes comuns dos itens: o ativo ganha fundo e borda rosa, como no modelo de referência.
+  const classeItem = (isActive: boolean, compacto: boolean, extra = '') =>
+    `flex items-center rounded-xl border transition-all duration-200 group ${
+      isActive ? 'bg-rose-50 border-rose-200 text-rose-600 font-bold shadow-sm' : 'border-transparent text-slate-600 font-medium hover:bg-slate-50 hover:text-rose-500'
+    } ${compacto ? 'justify-center py-2.5' : `gap-3 py-2 ${extra || 'px-3'}`}`;
+
+  /** Itens do menu: módulos soltos, grupos com setinha e, abaixo do divisor, os itens de sistema. */
+  const renderNav = (compacto: boolean) => {
+    const link = (m: Modulo, recuado: boolean, discreto = false) => {
       const Icon = m.icone;
       const isActive = ativo(m);
       // Demonstração vencida: o item fica com cadeado e leva à página do plano.
@@ -66,29 +91,19 @@ export default function MainLayout() {
         <Link
           key={m.id}
           to={bloqueado ? '/plano' : m.caminho}
-          title={compacto ? m.rotulo : ''}
+          title={compacto ? m.rotulo : undefined}
           aria-current={isActive ? 'page' : undefined}
           onClick={() => setIsMobileMenuOpen(false)}
-          className={`flex items-center rounded-xl transition-all duration-200 group ${
-            isActive ? 'bg-rose-50 text-rose-600 font-bold' : `${modo === 'gaveta' ? 'text-slate-700 font-medium' : 'text-slate-500'} hover:bg-slate-50 hover:text-rose-500`
-          } ${compacto ? 'justify-center py-3' : `${recuado ? 'pl-9 pr-3' : 'px-4'} py-2.5 space-x-3`}`}
+          className={`${classeItem(isActive, compacto, recuado ? 'pl-10 pr-3' : '')} ${discreto && !isActive ? 'text-slate-400' : ''}`}
         >
-          <Icon size={recuado ? 18 : 22} className={`shrink-0 ${isActive ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
-          {!compacto && <span className={`text-sm leading-tight ${recuado ? 'min-w-0' : 'whitespace-nowrap'} ${bloqueado ? 'opacity-60' : ''}`}>{m.rotulo}</span>}
-          {!compacto && bloqueado && <Lock size={14} className="ml-auto shrink-0 text-slate-400" aria-label="Requer plano" />}
+          <Icon size={recuado ? 16 : 20} className={`shrink-0 ${isActive ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
+          {!compacto && <span className={`flex-1 text-sm leading-tight ${recuado ? 'min-w-0' : 'whitespace-nowrap'} ${bloqueado ? 'opacity-60' : ''}`}>{m.rotulo}</span>}
+          {!compacto && bloqueado && <Lock size={14} className="shrink-0 text-slate-400" aria-label="Requer plano" />}
         </Link>
       );
     };
 
-    const linkGlobal = adminGlobal && (
-      <Link key="admin-global" to="/admin-global" title={compacto ? 'Administração global' : ''} onClick={() => setIsMobileMenuOpen(false)}
-        aria-current={location.pathname.startsWith('/admin-global') ? 'page' : undefined}
-        className={`flex items-center rounded-xl transition-all duration-200 group ${location.pathname.startsWith('/admin-global') ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-500 hover:bg-slate-50 hover:text-rose-500'} ${compacto ? 'justify-center py-3' : 'px-4 py-2.5 space-x-3'}`}>
-        <Building2 size={22} className="shrink-0" />
-        {!compacto && <span className="text-sm leading-tight whitespace-nowrap">Administração global</span>}
-      </Link>
-    );
-    return [...GRUPOS.map((g) => {
+    const grupos = GRUPOS.filter((g) => g.id !== 'sistema').map((g) => {
       const itens = modulos.filter((m) => m.grupo === g.id);
       if (!itens.length) return null;
       if (!g.rotulo || compacto) {
@@ -103,17 +118,128 @@ export default function MainLayout() {
             type="button"
             onClick={() => alternarGrupo(g.id)}
             aria-expanded={aberto}
-            className={`w-full flex items-center px-4 py-2.5 rounded-xl text-sm space-x-3 transition-colors ${temAtivo ? 'text-rose-600 font-bold' : 'text-slate-600 font-semibold hover:bg-slate-50'}`}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border border-transparent text-sm transition-colors group ${temAtivo ? 'text-rose-600 font-bold' : 'text-slate-600 font-medium hover:bg-slate-50 hover:text-rose-500'}`}
           >
-            <GIcon size={22} className={`shrink-0 ${temAtivo ? 'text-rose-600' : 'text-slate-400'}`} />
+            <GIcon size={20} className={`shrink-0 ${temAtivo ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
             <span className="flex-1 text-left whitespace-nowrap">{g.rotulo}</span>
-            <ChevronDown size={16} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+            <ChevronDown size={16} className={`shrink-0 text-rose-400 transition-transform ${aberto ? 'rotate-180' : ''}`} />
           </button>
           {aberto && <div className="space-y-1">{itens.map((m) => link(m, true))}</div>}
         </div>
       );
-    }), linkGlobal];
+    });
+
+    // Configurações sai do menu: fica no menu da conta, no rodapé.
+    const sistema = modulos.filter((m) => m.grupo === 'sistema' && m.id !== 'configuracoes');
+    const emGlobal = location.pathname.startsWith('/admin-global');
+    const linkGlobal = adminGlobal && (
+      <Link key="admin-global" to="/admin-global" title={compacto ? 'Administração global' : undefined} onClick={() => setIsMobileMenuOpen(false)}
+        aria-current={emGlobal ? 'page' : undefined}
+        className={`${classeItem(emGlobal, compacto)} ${emGlobal ? '' : 'text-slate-400'}`}>
+        <Building2 size={20} className={`shrink-0 ${emGlobal ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-500'}`} />
+        {!compacto && <span className="text-sm leading-tight whitespace-nowrap">Administração global</span>}
+      </Link>
+    );
+    const rodapeNav = (sistema.length > 0 || linkGlobal) && (
+      <div key="sistema" className="pt-3 mt-3 border-t border-slate-100 space-y-1">
+        {sistema.map((m) => link(m, false, true))}
+        {linkGlobal}
+      </div>
+    );
+    return [...grupos, rodapeNav];
   };
+
+  const iniciais = (perfil?.name ?? '')
+    .split(/\s+/).filter(Boolean)
+    .map((p, i, arr) => (i === 0 || i === arr.length - 1 ? p[0] : ''))
+    .join('').toUpperCase() || 'JB';
+  const avatar = (tamanho: string) => (
+    <span className={`${tamanho} shrink-0 rounded-full border-2 border-rose-400 bg-rose-50 text-rose-600 font-black flex items-center justify-center`} aria-hidden="true">
+      {iniciais}
+    </span>
+  );
+  const seloPlano = estabelecimento && (
+    <span className="px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 text-[10px] font-black uppercase tracking-wide">
+      {ROTULO_PLANO[estabelecimento.plano]}
+    </span>
+  );
+
+  /** Cartão da conta no rodapé: a setinha abre o menu com perfil, configurações e sair. */
+  const cartaoConta = (compacto: boolean, indice: number) => perfil && (
+    <div ref={(el) => { refsConta.current[indice] = el; }} className="relative shrink-0 border-t border-slate-100 p-3">
+      {menuConta && (
+        <div
+          role="menu"
+          aria-label="Menu da conta"
+          className={`absolute z-40 w-64 rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden ${compacto ? 'left-full bottom-3 ml-2' : 'left-3 right-3 bottom-full mb-2 w-auto'}`}
+        >
+          <div className="flex items-center gap-3 p-4 border-b border-slate-100">
+            {avatar('w-11 h-11 text-sm')}
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-slate-800 truncate">{perfil.name}</p>
+              {user?.email && <p className="text-xs text-slate-500 truncate">{user.email}</p>}
+              <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-600 text-[11px] font-bold">{ROTULO_PAPEL[perfil.role]}</span>
+            </div>
+          </div>
+          <div className="p-1.5">
+            <Link role="menuitem" to="/configuracoes#conta" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 hover:text-rose-500">
+              <UserRound size={18} className="text-slate-400" /> Meu perfil
+            </Link>
+            <Link role="menuitem" to="/configuracoes" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 hover:text-rose-500">
+              <Settings size={18} className="text-slate-400" /> Configurações
+            </Link>
+          </div>
+          <div className="p-1.5 border-t border-slate-100">
+            <button role="menuitem" type="button" onClick={sairDoSistema}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-bold text-red-600 hover:bg-red-50">
+              <LogOut size={18} /> Sair
+            </button>
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setMenuConta((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={menuConta}
+        aria-label="Abrir menu da conta"
+        title={compacto ? perfil.name : undefined}
+        className={`w-full flex items-center rounded-xl hover:bg-slate-50 transition-colors ${compacto ? 'justify-center p-1' : 'gap-3 p-2 text-left'}`}
+      >
+        {avatar('w-10 h-10 text-sm')}
+        {!compacto && (
+          <>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-bold text-slate-800 truncate">{perfil.name}</span>
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="text-xs text-slate-500 truncate">{ROTULO_PAPEL[perfil.role]}</span>
+                {seloPlano}
+              </span>
+            </span>
+            <ChevronUp size={16} className={`shrink-0 text-rose-400 transition-transform ${menuConta ? '' : 'rotate-180'}`} />
+          </>
+        )}
+      </button>
+      {!compacto && <p className="mt-2 px-2 text-[10px] text-slate-400">Jake Beauty v1.0</p>}
+    </div>
+  );
+
+  /** Topo: marca, estabelecimento e quem está conectado. */
+  const marca = (compacto: boolean) => (
+    <div className={`flex items-center min-w-0 ${compacto ? 'justify-center' : 'gap-3'}`}>
+      <span className="w-10 h-10 shrink-0 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-sm" aria-hidden="true">
+        <Sparkles size={20} />
+      </span>
+      {!compacto && (
+        <div className="min-w-0">
+          <p className="text-base font-black tracking-[0.18em] text-slate-800 leading-tight uppercase">Jake Beauty</p>
+          <p className="text-[10px] font-bold tracking-[0.2em] text-rose-600 uppercase truncate">{estabelecimento?.nome ?? 'Studio'}</p>
+          {perfil && <p className="text-[11px] text-slate-500 truncate">{perfil.name}</p>}
+        </div>
+      )}
+    </div>
+  );
 
   // Faixa da demonstração (RF-10): dias restantes; vencida, explica o que segue funcionando.
   const faixaPlano = estabelecimento?.plano === 'demonstracao' && estabelecimento.demo_expira_em && (
@@ -125,13 +251,6 @@ export default function MainLayout() {
     </Link>
   );
 
-  const identificacao = perfil && (
-    <div className="min-w-0">
-      <p className="text-sm font-bold text-slate-800 truncate">{perfil.name}</p>
-      <p className="text-[11px] font-semibold text-rose-600 truncate">{ROTULO_PAPEL[perfil.role]}</p>
-    </div>
-  );
-
   return (
     <div className="app-shell flex h-screen font-sans overflow-hidden">
 
@@ -139,30 +258,27 @@ export default function MainLayout() {
       <aside
         className={`glass hidden lg:flex flex-col bg-white border-r border-slate-200 shadow-sm transition-all duration-300 ease-in-out z-20 ${isCollapsed ? 'w-20' : 'w-64'}`}
       >
-        {/* Topo / Logo */}
-        <div className="h-20 flex flex-col items-center justify-center border-b border-slate-100 shrink-0 px-3">
-          <h1 className={`font-black text-rose-600 transition-all duration-300 ${isCollapsed ? 'text-xl' : 'text-2xl'}`}>
-            {isCollapsed ? 'JB' : 'Jake Beauty'}
-          </h1>
-          {!isCollapsed && perfil && <p className="text-[11px] text-slate-500 truncate max-w-full">{perfil.name} · {ROTULO_PAPEL[perfil.role]}</p>}
+        {/* Topo: marca e botão de recolher no canto, como no modelo */}
+        <div className={`relative shrink-0 border-b border-slate-100 ${isCollapsed ? 'px-3 pt-12 pb-4' : 'px-4 pt-5 pb-4'}`}>
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className={`absolute top-3 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-rose-500 ${isCollapsed ? 'left-1/2 -translate-x-1/2' : 'right-2'}`}
+            title={isCollapsed ? 'Expandir menu' : 'Recolher menu'}
+            aria-label={isCollapsed ? 'Expandir menu' : 'Recolher menu'}
+          >
+            {isCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
+          {marca(isCollapsed)}
         </div>
 
         {/* Links de Navegação */}
-        <nav aria-label="Menu principal" className="flex-1 px-3 py-5 space-y-2 overflow-y-auto overflow-x-hidden custom-scrollbar">
-          {renderNav('lateral')}
+        <nav aria-label="Menu principal" className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
+          {renderNav(isCollapsed)}
         </nav>
 
-        {/* Rodapé: recolher menu (tema, senha e sair ficam em Configurações) */}
-        <div className="p-4 border-t border-slate-100 space-y-2 shrink-0">
-          <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className={`flex items-center w-full text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors ${isCollapsed ? 'justify-center py-3' : 'px-4 py-3 space-x-3'}`}
-            title={isCollapsed ? "Expandir Menu" : "Recolher Menu"}
-          >
-            {isCollapsed ? <ChevronRight size={22} className="shrink-0" /> : <ChevronLeft size={22} className="shrink-0" />}
-            {!isCollapsed && <span className="whitespace-nowrap font-bold">Recolher Menu</span>}
-          </button>
-        </div>
+        {/* Rodapé: conta (perfil, configurações e sair na setinha) */}
+        {cartaoConta(isCollapsed, 0)}
       </aside>
 
       {/* CABEÇALHO MOBILE E ÁREA PRINCIPAL */}
@@ -197,17 +313,18 @@ export default function MainLayout() {
           <aside
             className={`glass glass-forte absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-white flex flex-col transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
           >
-            <div className="h-16 px-4 flex items-center justify-between border-b border-slate-100 shrink-0 gap-2">
-              {identificacao ?? <h2 className="text-xl font-black text-rose-600">Jake Beauty</h2>}
-              <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg shrink-0" aria-label="Fechar menu">
-                <X size={24} />
+            <div className="relative px-4 pt-5 pb-4 border-b border-slate-100 shrink-0">
+              <button onClick={() => setIsMobileMenuOpen(false)} className="absolute top-3 right-2 p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" aria-label="Fechar menu">
+                <X size={20} />
               </button>
+              {marca(false)}
             </div>
 
-            <nav aria-label="Menu principal" className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
-              {renderNav('gaveta')}
+            <nav aria-label="Menu principal" className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+              {renderNav(false)}
             </nav>
 
+            {cartaoConta(false, 1)}
           </aside>
         </div>
 

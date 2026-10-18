@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, LogOut, Moon, Settings, SlidersHorizontal, Sun, UserCircle } from 'lucide-react';
 import SegurancaMfa from '../components/SegurancaMfa';
 import { useTheme } from '../hooks/useTheme';
@@ -13,6 +13,7 @@ import { Aviso } from '../components/ui';
 export default function Configuracoes() {
   const { perfil, user, salvarPreferencias, signOut } = useAuth();
   const navigate = useNavigate();
+  const { hash } = useLocation();
   const { theme, toggleTheme } = useTheme();
   const [saindo, setSaindo] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -33,6 +34,11 @@ export default function Configuracoes() {
     salvarInterface.mutate(lista);
   };
 
+  // Atalhos do menu da conta (#conta, #seguranca) rolam até a seção certa.
+  useEffect(() => {
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [hash, perfil]);
+
   if (!perfil) return null;
 
   return (
@@ -42,7 +48,7 @@ export default function Configuracoes() {
         <p className="text-sm text-slate-500 mt-1">Conta, aparência e preferências da sua interface{ehAdmin ? ', e regras de comissão do salão' : ''}.</p>
       </div>
 
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4" aria-labelledby="titulo-conta">
+      <section id="conta" className="scroll-mt-4 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4" aria-labelledby="titulo-conta">
         <div className="flex items-center gap-2">
           <UserCircle size={18} className="text-rose-600" />
           <h3 id="titulo-conta" className="font-bold text-slate-800">Conta e aparência</h3>
@@ -67,7 +73,7 @@ export default function Configuracoes() {
         </div>
       </section>
 
-      <div id="seguranca"><SegurancaMfa onAviso={setAviso} /></div>
+      <div id="seguranca" className="scroll-mt-4"><SegurancaMfa onAviso={setAviso} /></div>
 
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4" aria-labelledby="titulo-interface">
         <div className="flex items-center gap-2">
