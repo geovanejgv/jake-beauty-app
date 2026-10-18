@@ -20,7 +20,7 @@ export default function Servicos() {
   const { data: servicos = [], isLoading: c2 } = useQuery({ queryKey: catalogoKeys.servicos, queryFn: listarServicos });
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5 pb-12">
+    <div className="w-full space-y-5 pb-12">
       <div>
         <h2 className="text-2xl md:text-3xl font-black text-slate-800 flex items-center gap-2"><Scissors className="text-rose-600" /> Serviços</h2>
         <p className="text-sm text-slate-500 mt-1">Catálogo base do salão e o que cada profissional oferece, com preço, tempo e comissão próprios.</p>

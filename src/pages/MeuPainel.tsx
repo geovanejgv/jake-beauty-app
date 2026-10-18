@@ -98,7 +98,7 @@ export default function MeuPainel() {
   ];
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5 pb-12">
+    <div className="w-full space-y-5 pb-12">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl md:text-3xl font-black text-slate-800 flex items-center gap-2"><Wallet className="text-rose-600" /> Meu Painel</h2>

@@ -59,7 +59,7 @@ export default function Pacotes() {
   const detalhe = pacotes.find((p) => p.pacote_id === aberto) ?? null;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-5 pb-12">
+    <div className="w-full space-y-5 pb-12">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl md:text-3xl font-black text-slate-800 flex items-center gap-2"><Package className="text-rose-600" /> Pacotes</h2>
