@@ -7,7 +7,7 @@ import { COR_SITUACAO, ROTULO_SITUACAO, agruparSaldos, situacaoPacote } from '..
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
-import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package, List, LayoutGrid, CalendarClock, CalendarCheck, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Phone, Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package, List, LayoutGrid, CalendarClock, CalendarCheck, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { clientesKeys, listarGrupos, listarMembros, listarOrigens, listarResumoAtendimentos } from '../features/clientes/api';
 import { PALAVRA_EXCLUSAO, chaveAniversario, confirmacaoExclusaoValida, contarPorGrupo, gruposPorCliente, ordenarPor, type Direcao } from '../features/clientes/logic';
 import { AniversariantesMes } from '../features/clientes/Aniversariantes';
@@ -337,7 +337,7 @@ export default function Clientes() {
   /** Ordenação por lista (celular e cartões, onde não há cabeçalho de coluna). */
   const seletorOrdem = (classe = '') => (
     <div className={`flex items-center gap-2 ${classe}`}>
-      <label className="text-xs font-bold text-slate-500 whitespace-nowrap" htmlFor="ordem-clientes">Ordenar por</label>
+      <label className="text-sm md:text-xs font-bold text-slate-600 md:text-slate-500 whitespace-nowrap" htmlFor="ordem-clientes">Ordenar por</label>
       <select id="ordem-clientes" value={ordem.coluna} onChange={(e) => setOrdem({ coluna: e.target.value as Coluna, direcao: 'asc' })}
         className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
         {colunasDisponiveis.map((c) => <option key={c} value={c}>{ROTULO_COLUNA[c]}</option>)}
@@ -352,14 +352,14 @@ export default function Clientes() {
 
   const ultimoDe = (id: string) => { const u = resumoDaCliente.get(id)?.ultimo; return u ? dataBR(u) : '-'; };
   const proximoDe = (id: string) => { const p = resumoDaCliente.get(id)?.proximo; return p ? dataHoraBR(p) : '-'; };
-  const etiquetasGrupo = (id: string, max = 99) => {
+  const etiquetasGrupo = (id: string, max = 99, grande = false) => {
     const lista = gruposDaCliente.get(id) ?? [];
     if (!lista.length) return <span className="text-slate-400">-</span>;
     return (
       <span className="flex flex-wrap gap-1">
         {lista.slice(0, max).map((g) => (
           <button key={g.id} type="button" onClick={() => { setGrupoFiltro(g.id); if (modo === 'grupos') trocarModo('lista'); }} title={`Ver clientes do grupo ${g.nome}`}
-            className="sem-hover px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-100 text-[11px] font-bold hover:bg-rose-100 max-w-[12rem] truncate">{g.nome}</button>
+            className={`sem-hover rounded-full bg-rose-50 text-rose-700 border border-rose-100 font-bold hover:bg-rose-100 truncate ${grande ? 'px-3 py-1 text-[13px] max-w-full' : 'px-2 py-0.5 text-[11px] max-w-[12rem]'}`}>{g.nome}</button>
         ))}
         {lista.length > max && <span className="text-[11px] text-slate-400">+{lista.length - max}</span>}
       </span>
@@ -371,6 +371,24 @@ export default function Clientes() {
       {ehAdmin && <button onClick={() => openEditModal(client)} className="p-2.5 md:p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Editar" aria-label={`Editar ${client.name}`}><Edit2 size={16} /></button>}
       {ehAdmin && <button onClick={() => abrirExclusao(client)} className="p-2.5 md:p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir" aria-label={`Excluir ${client.name}`}><Trash2 size={16} /></button>}
     </>
+  );
+
+  /** Ações com texto e altura de toque (44px), para o celular. */
+  const acoesGrandes = (client: any) => (
+    <div className={`grid gap-2 ${ehAdmin ? 'grid-cols-3' : 'grid-cols-1'}`}>
+      <button type="button" onClick={() => { setAbaHistorico('atendimentos'); setSelectedHistoryClient(client); }}
+        className="sem-hover h-11 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-semibold flex items-center justify-center gap-1.5 active:bg-slate-100">
+        <History size={17} /> Histórico
+      </button>
+      {ehAdmin && <button type="button" onClick={() => openEditModal(client)}
+        className="sem-hover h-11 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-semibold flex items-center justify-center gap-1.5 active:bg-slate-100">
+        <Edit2 size={17} /> Editar
+      </button>}
+      {ehAdmin && <button type="button" onClick={() => abrirExclusao(client)}
+        className="sem-hover h-11 rounded-xl border border-red-100 bg-white text-red-600 text-sm font-semibold flex items-center justify-center gap-1.5 active:bg-red-50">
+        <Trash2 size={17} /> Excluir
+      </button>}
+    </div>
   );
 
   const getStatusBadge = (status: string) => {
@@ -396,7 +414,7 @@ export default function Clientes() {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-2xl md:text-3xl font-black text-slate-800">Clientes</h2>
-            <p className="text-xs md:text-sm text-slate-500 mt-1">{ehAdmin ? 'Gestão de contatos e histórico de atendimentos' : 'Nome e histórico técnico. O contato das clientes fica com a administração do salão.'}</p>
+            <p className="text-sm text-slate-600 md:text-slate-500 mt-1">{ehAdmin ? 'Gestão de contatos e histórico de atendimentos' : 'Nome e histórico técnico. O contato das clientes fica com a administração do salão.'}</p>
           </div>
           {ehAdmin && <button onClick={() => { resetForm(); setShowAddModal(true); }} aria-label="Nova cliente" className="xl:hidden shrink-0 bg-rose-600 text-white px-3.5 py-2.5 rounded-xl font-bold hover:bg-rose-700 transition-colors flex items-center gap-1.5 shadow-sm whitespace-nowrap text-sm">
             <Plus size={18} /> <span className="hidden sm:inline">Nova Cliente</span>
@@ -474,54 +492,68 @@ export default function Clientes() {
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 shrink-0 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-slate-800 truncate" title={client.name}>{client.name}</p>
-                    <p className="text-sm text-slate-500">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</p>
+                    <p className="text-[17px] md:text-base font-bold text-slate-900 md:text-slate-800 truncate" title={client.name}>{client.name}</p>
+                    <p className="text-[15px] md:text-sm text-slate-600 md:text-slate-500">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</p>
                   </div>
                 </div>
-                {ehAdmin && (
+                {ehAdmin && (gruposDaCliente.get(client.id)?.length ?? 0) > 0 && (
                   <div>
-                    <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Grupos</p>
-                    {etiquetasGrupo(client.id)}
+                    <p className="text-xs md:text-[10px] font-bold uppercase text-slate-500 md:text-slate-400 mb-1">Grupos</p>
+                    {etiquetasGrupo(client.id, 99, true)}
                   </div>
                 )}
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5 text-sm md:text-xs [&_dt]:text-slate-500 [&_dd]:text-slate-800">
                   <div><dt className="text-slate-400 flex items-center gap-1"><CalendarCheck size={12} /> Último</dt><dd className="font-semibold text-slate-700">{ultimoDe(client.id)}</dd></div>
                   <div><dt className="text-slate-400 flex items-center gap-1"><CalendarClock size={12} /> Próximo</dt><dd className="font-semibold text-slate-700">{proximoDe(client.id)}</dd></div>
                   <div><dt className="text-slate-400">Origem</dt><dd className="text-slate-600">{nomeOrigem(client.origem_id) ?? '-'}</dd></div>
                   {ehAdmin && <div><dt className="text-slate-400">Aniversário</dt><dd className="text-slate-600">{client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</dd></div>}
                 </dl>
-                <div className="mt-auto pt-2 border-t border-slate-100 flex justify-end gap-1">{acoesCliente(client)}</div>
+                <div className="mt-auto md:hidden">{acoesGrandes(client)}</div>
+                <div className="mt-auto pt-2 border-t border-slate-100 hidden md:flex justify-end gap-1">{acoesCliente(client)}</div>
               </div>
             ))}
           </div>
         )
       ) : (
       <>
-      {/* Celular: lista em blocos, com os mesmos dados da tabela e botões maiores para o toque */}
+      {/* Celular: um cartão por cliente, letras maiores e linhas de rótulo e valor na largura toda */}
       <div className="md:hidden">
-        {isLoading ? <p className="text-center text-slate-400 py-12">Carregando...</p>
-        : clientesOrdenados.length === 0 ? <p className="text-center text-slate-400 py-12">Nenhuma cliente encontrada.</p>
+        {isLoading ? <p className="text-center text-base text-slate-500 py-12">Carregando...</p>
+        : clientesOrdenados.length === 0 ? <p className="text-center text-base text-slate-500 py-12">Nenhuma cliente encontrada.</p>
         : (
-          <ul className="bg-white rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-100 overflow-hidden">
-            {clientesOrdenados.map((client: any) => (
-              <li key={client.id} className="p-3.5 space-y-2.5">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 shrink-0 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[15px] font-bold text-slate-800 leading-snug break-words">{client.name}</p>
-                    <p className="text-sm text-slate-500">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</p>
+          <ul className="space-y-3">
+            {clientesOrdenados.map((client: any) => {
+              const origem = nomeOrigem(client.origem_id);
+              const linhas: [string, React.ReactNode, string][] = [
+                ['Último atendimento', ultimoDe(client.id), 'ultimo'],
+                ['Próximo atendimento', proximoDe(client.id), 'proximo'],
+                ...(origem ? [['Origem', origem, 'origem'] as [string, React.ReactNode, string]] : []),
+                ...(ehAdmin && client.birthday ? [['Aniversário', new Date(client.birthday).toLocaleDateString('pt-BR', { timeZone: 'UTC' }), 'aniversario'] as [string, React.ReactNode, string]] : []),
+              ];
+              return (
+                <li key={client.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 shrink-0 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-sm uppercase" aria-hidden="true">{client.name.substring(0, 2)}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[17px] font-bold text-slate-900 leading-snug break-words">{client.name}</p>
+                      <p className="text-[15px] text-slate-600 flex items-center gap-1.5 mt-0.5">
+                        {ehAdmin ? <><Phone size={14} className="shrink-0 text-slate-500" /> {formatDisplayPhone(client.phone)}</> : <><Lock size={14} className="shrink-0" /> {client.phone || '-'}</>}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                {ehAdmin && (gruposDaCliente.get(client.id)?.length ?? 0) > 0 && <div className="pl-[3.25rem]">{etiquetasGrupo(client.id)}</div>}
-                <dl className="pl-[3.25rem] grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                  <div><dt className="text-slate-400 flex items-center gap-1"><CalendarCheck size={12} /> Último</dt><dd className="font-semibold text-slate-700">{ultimoDe(client.id)}</dd></div>
-                  <div><dt className="text-slate-400 flex items-center gap-1"><CalendarClock size={12} /> Próximo</dt><dd className="font-semibold text-slate-700">{proximoDe(client.id)}</dd></div>
-                  {nomeOrigem(client.origem_id) && <div><dt className="text-slate-400">Origem</dt><dd className="text-slate-600">{nomeOrigem(client.origem_id)}</dd></div>}
-                  {ehAdmin && client.birthday && <div><dt className="text-slate-400">Aniversário</dt><dd className="text-slate-600">{new Date(client.birthday).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</dd></div>}
-                </dl>
-                <div className="flex justify-end gap-1 -mb-1">{acoesCliente(client)}</div>
-              </li>
-            ))}
+                  {ehAdmin && (gruposDaCliente.get(client.id)?.length ?? 0) > 0 && etiquetasGrupo(client.id, 99, true)}
+                  <dl className="rounded-xl bg-slate-50 border border-slate-100 divide-y divide-slate-100">
+                    {linhas.map(([rotulo, valor, chave]) => (
+                      <div key={chave} className="flex items-baseline justify-between gap-3 px-3 py-2.5 text-[15px]">
+                        <dt className="text-slate-600">{rotulo}</dt>
+                        <dd className={`text-right font-semibold ${valor === '-' ? 'text-slate-400' : 'text-slate-900'}`}>{valor}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {acoesGrandes(client)}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
