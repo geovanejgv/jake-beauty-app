@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { diaLocal, fluxoKeys, listarAtendimentosConcluidos, listarDespesas, receitasDoFluxo } from '../features/fluxo-caixa/api';
 import { ehTotalMes, fluxoDoMes, lancamentoTotalMes, limitesDoMes } from '../features/fluxo-caixa/logic';
 import { listarVendas, pacotesKeys } from '../features/pacotes/api';
+import { detalharIndicador, recebido, type Indicador } from '../features/financas/indicadores';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
@@ -49,6 +50,8 @@ export default function Financeiro() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
   const [itemToDelete, setItemToDelete] = useState<any>(null);
+  // Caixa clicada (Caixa Real, Projeção, Receitas, Despesas): abre o detalhamento do mês
+  const [indicadorAberto, setIndicadorAberto] = useState<Indicador | null>(null);
   const [actionMenuDate, setActionMenuDate] = useState<string | null>(null);
 
   // ESTADOS DO ESCANER INTELIGENTE
@@ -455,18 +458,18 @@ export default function Financeiro() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4 shrink-0">
-        <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+        <button type="button" onClick={() => setIndicadorAberto('caixa')} title="Ver detalhes para conferência" className="text-left bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between hover:border-rose-300 hover:shadow-md transition-all">
           <div><p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Caixa Real</p><p className={`text-base md:text-xl font-black ${metrics.netRealCash >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(metrics.netRealCash)}</p></div><div className="bg-slate-50 p-2 md:p-3 rounded-lg text-slate-600 hidden sm:block"><Wallet size={20} /></div>
-        </div>
-        <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+        </button>
+        <button type="button" onClick={() => setIndicadorAberto('projecao')} title="Ver detalhes para conferência" className="text-left bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between hover:border-rose-300 hover:shadow-md transition-all">
           <div><p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Projeção Mês</p><p className={`text-base md:text-xl font-black ${metrics.netProjected >= 0 ? 'text-slate-800' : 'text-red-600'}`}>{formatCurrency(metrics.netProjected)}</p></div><div className="bg-slate-50 p-2 md:p-3 rounded-lg text-slate-600 hidden sm:block"><PieChart size={20} /></div>
-        </div>
-        <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+        </button>
+        <button type="button" onClick={() => setIndicadorAberto('receitas')} title="Ver detalhes para conferência" className="text-left bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between hover:border-rose-300 hover:shadow-md transition-all">
           <div><p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Receitas</p><p className="text-base md:text-xl font-black text-emerald-600">{formatCurrency(metrics.receivedIncomes)} <span className="text-[10px] md:text-xs font-normal text-slate-400 block sm:inline">/ {formatCurrency(metrics.totalIncomes)}</span></p></div><div className="bg-emerald-50 p-2 md:p-3 rounded-lg text-emerald-600 hidden sm:block"><TrendingUp size={20} /></div>
-        </div>
-        <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+        </button>
+        <button type="button" onClick={() => setIndicadorAberto('despesas')} title="Ver detalhes para conferência" className="text-left bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between hover:border-rose-300 hover:shadow-md transition-all">
           <div><p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Despesas</p><p className="text-base md:text-xl font-black text-rose-600">{formatCurrency(metrics.paidExpenses)} <span className="text-[10px] md:text-xs font-normal text-slate-400 block sm:inline">/ {formatCurrency(metrics.totalExpenses)}</span></p><p className="text-[10px] md:text-[11px] text-slate-500 mt-0.5">Fixos {formatCurrency(metrics.fixedExpenses)} · Variáveis {formatCurrency(metrics.variableExpenses)}{metrics.otherExpenses > 0 ? ` · Outros ${formatCurrency(metrics.otherExpenses)}` : ''}</p></div><div className="bg-rose-50 p-2 md:p-3 rounded-lg text-rose-600 hidden sm:block"><TrendingDown size={20} /></div>
-        </div>
+        </button>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col min-h-0 overflow-hidden w-full">
@@ -677,6 +680,65 @@ export default function Financeiro() {
           </div>
         </div>
       )}
+
+      {indicadorAberto && (() => {
+        const d = detalharIndicador(scopedRecords.filter((r: any) => r.finance_date?.startsWith(currentMonthStr)), indicadorAberto);
+        const mesRotulo = new Date(currentMonthStr + '-01T12:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50" onClick={() => setIndicadorAberto(null)}>
+            <div role="dialog" aria-modal="true" aria-label={d.titulo} onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90dvh] flex flex-col">
+              <div className="flex items-start justify-between gap-3 p-4 sm:p-5 border-b border-slate-100">
+                <div className="min-w-0">
+                  <h3 className="text-lg sm:text-xl font-bold text-slate-800">{d.titulo} <span className="text-sm font-medium text-slate-400">({mesRotulo}{escopoView !== 'todos' ? ` · ${escopoView === 'negocio' ? 'Negócio' : 'Pessoal'}` : ''})</span></h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{d.explicacao}</p>
+                </div>
+                <button onClick={() => setIndicadorAberto(null)} className="text-slate-400 hover:text-slate-600 shrink-0" aria-label="Fechar"><X size={20} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-4">
+                {d.secoes.length === 0 && <p className="text-center text-slate-400 py-8 text-sm">Nenhum lançamento neste mês.</p>}
+                {d.secoes.map((sec) => (
+                  <section key={sec.titulo}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">{sec.titulo} <span className="font-medium normal-case tracking-normal">({sec.itens.length})</span></h4>
+                      <span className={`text-sm font-black ${sec.sinal < 0 || indicadorAberto === 'despesas' ? 'text-rose-600' : 'text-emerald-600'}`}>{sec.sinal < 0 ? '- ' : ''}{formatCurrency(sec.total)}</span>
+                    </div>
+                    {sec.itens.length === 0 ? <p className="text-xs text-slate-400 italic px-1">Nenhum.</p> : (
+                      <ul className="divide-y divide-slate-100 border border-slate-100 rounded-xl">
+                        {sec.itens.map((item: any) => {
+                          const ok = recebido(item); const isInc = item.type === 'income';
+                          return (
+                            <li key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                              <span className="text-xs text-slate-400 w-12 shrink-0">{item.finance_date.slice(8, 10)}/{item.finance_date.slice(5, 7)}</span>
+                              <span className="flex-1 min-w-[8rem] font-semibold text-slate-700 truncate">{item.description}
+                                <span className="ml-1.5 text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase font-bold align-middle">{ehTotalMes(item) ? 'Automático' : rotuloCategoria(item.type, item.category)}</span>
+                              </span>
+                              <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${ok ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{ok ? (isInc ? 'Recebido' : 'Pago') : (isInc ? 'A receber' : 'A pagar')}</span>
+                              <span className={`font-black w-28 text-right ${isInc ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(Number(item.amount) || 0)}</span>
+                              {ehTotalMes(item) ? (
+                                <Link to="/dashboard" className="text-[11px] font-bold text-indigo-600 hover:underline">Ver no Resumo Diário</Link>
+                              ) : (
+                                <span className="flex gap-1">
+                                  <button type="button" onClick={() => toggleStatusMutation.mutate({ id: item.id, currentStatus: !!item.is_completed })} title={item.is_completed ? 'Desfazer baixa' : (isInc ? 'Marcar como recebido' : 'Marcar como pago')}
+                                    className="p-1.5 border border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-lg">{item.is_completed ? <X size={14} /> : <CheckCircle size={14} />}</button>
+                                  <button type="button" onClick={() => setEditingItem(item)} title="Editar" className="p-1.5 border border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-lg"><Edit2 size={14} /></button>
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </section>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-3 p-4 sm:p-5 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+                <span className="font-black text-slate-800 uppercase text-sm">{indicadorAberto === 'receitas' || indicadorAberto === 'despesas' ? 'Total' : 'Resultado'}</span>
+                <span className={`text-xl font-black ${indicadorAberto === 'despesas' ? 'text-rose-600' : d.resultado >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(d.resultado)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {editingItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
