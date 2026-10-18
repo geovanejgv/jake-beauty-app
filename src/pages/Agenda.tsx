@@ -152,7 +152,7 @@ export default function Agenda() {
   const itemPacote = appointmentType === 'appointment' ? itemParaAbater(saldosCliente, novoServico) : null;
   const comPacote = !!itemPacote && usarPacote;
 
-  // Atalho do botão "+ Novo > Agendamento" (/agenda?novo=agendamento)
+  // Atalho por endereço: /agenda?novo=agendamento abre o agendamento
   useEffect(() => {
     if (searchParams.get('novo') !== 'agendamento') return;
     openAddModalForType('appointment', todayStr);
