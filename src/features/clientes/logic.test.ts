@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aniversariantesDoMes, chaveAniversario, ordenarPor, confirmacaoExclusaoValida, contarPorGrupo, diferencaMembros, gruposPorCliente, limparDescricao, limparNome, nomeRepetido } from './logic';
+import { colunasQueCabem, aniversariantesDoMes, chaveAniversario, ordenarPor, confirmacaoExclusaoValida, contarPorGrupo, diferencaMembros, gruposPorCliente, limparDescricao, limparNome, nomeRepetido } from './logic';
 
 describe('limparNome', () => {
   it('tira espaços sobrando e recusa vazio ou longo', () => {
@@ -96,5 +96,24 @@ describe('aniversários', () => {
     expect(r[1]).toMatchObject({ dia: 18, idade: 26, hoje: true, passou: false });
     expect(r[0]).toMatchObject({ passou: true });
     expect(r[3].idade).toBeNull();
+  });
+});
+
+describe('colunasQueCabem', () => {
+  const colunas = [{ id: 'nome', min: 200 }, { id: 'fone', min: 150 }, { id: 'grupo', min: 190 }, { id: 'ultimo', min: 140 }];
+  const prioridade = ['nome', 'fone', 'ultimo', 'grupo'];
+  it('largura folgada: todas na linha', () => {
+    expect(colunasQueCabem(2000, colunas, prioridade, 130)).toEqual({ visiveis: ['nome', 'fone', 'grupo', 'ultimo'], abaixo: [] });
+  });
+  it('largura média: as de menor prioridade descem, mantendo a ordem de exibição', () => {
+    expect(colunasQueCabem(600, colunas, prioridade, 130)).toEqual({ visiveis: ['nome', 'fone'], abaixo: ['grupo', 'ultimo'] });
+    expect(colunasQueCabem(620, colunas, prioridade, 130)).toEqual({ visiveis: ['nome', 'fone', 'ultimo'], abaixo: ['grupo'] });
+  });
+  it('a primeira sempre entra; sem medida, mostra todas', () => {
+    expect(colunasQueCabem(100, colunas, prioridade, 130).visiveis).toEqual(['nome']);
+    expect(colunasQueCabem(0, colunas, prioridade).abaixo).toEqual([]);
+  });
+  it('não pula uma coluna mais importante para encaixar uma menor', () => {
+    expect(colunasQueCabem(380, colunas, ['nome', 'grupo', 'fone', 'ultimo'])).toEqual({ visiveis: ['nome'], abaixo: ['fone', 'grupo', 'ultimo'] });
   });
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { brl, dataBR, dataHoraBR, dataLocal, isoParaBR } from '../lib/formatos';
@@ -9,7 +9,7 @@ import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { Phone, Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package, List, LayoutGrid, CalendarClock, CalendarCheck, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { clientesKeys, listarGrupos, listarMembros, listarOrigens, listarResumoAtendimentos } from '../features/clientes/api';
-import { PALAVRA_EXCLUSAO, chaveAniversario, confirmacaoExclusaoValida, contarPorGrupo, gruposPorCliente, ordenarPor, type Direcao } from '../features/clientes/logic';
+import { PALAVRA_EXCLUSAO, colunasQueCabem, chaveAniversario, confirmacaoExclusaoValida, contarPorGrupo, gruposPorCliente, ordenarPor, type Direcao } from '../features/clientes/logic';
 import { AniversariantesMes } from '../features/clientes/Aniversariantes';
 import { GruposCartoes } from '../features/clientes/GruposCartoes';
 import { CampoOrigem } from '../features/clientes/CampoOrigem';
@@ -19,6 +19,22 @@ type ModoClientes = 'lista' | 'cartoes' | 'grupos';
 const CHAVE_MODO = 'jb-clientes-modo';
 
 type Coluna = 'nome' | 'whatsapp' | 'grupo' | 'ultimo' | 'proximo' | 'origem' | 'aniversario';
+// Largura mínima de cada coluna da tabela (px, com o espaçamento) e a ordem em que ficam na linha
+// quando falta espaço; as que não cabem descem para uma linha abaixo da cliente.
+const LARGURA_COLUNA: { id: Coluna; min: number }[] = [
+  { id: 'nome', min: 260 }, { id: 'whatsapp', min: 160 }, { id: 'grupo', min: 210 }, { id: 'ultimo', min: 175 },
+  { id: 'proximo', min: 190 }, { id: 'origem', min: 135 }, { id: 'aniversario', min: 165 },
+];
+const PRIORIDADE_COLUNA: Coluna[] = ['nome', 'whatsapp', 'proximo', 'ultimo', 'grupo', 'origem', 'aniversario'];
+const LARGURA_ACOES = 165;
+const CLASSE_CELULA: Record<Coluna, string> = {
+  nome: 'font-bold text-slate-800', whatsapp: 'text-slate-600 font-medium whitespace-nowrap', grupo: '',
+  ultimo: 'text-slate-500 whitespace-nowrap', proximo: 'text-slate-500 whitespace-nowrap', origem: 'text-slate-500', aniversario: 'text-slate-500 whitespace-nowrap',
+};
+
+// Título curto no cabeçalho da tabela (o completo aparece na linha de baixo e em "Ordenar por").
+const ROTULO_CABECALHO: Partial<Record<Coluna, string>> = { ultimo: 'Último atend.', proximo: 'Próximo atend.' };
+
 const ROTULO_COLUNA: Record<Coluna, string> = {
   nome: 'Nome', whatsapp: 'WhatsApp', grupo: 'Grupo', ultimo: 'Último atendimento', proximo: 'Próximo atendimento', origem: 'Origem', aniversario: 'Aniversário',
 };
@@ -316,6 +332,23 @@ export default function Clientes() {
     aniversario: (c) => chaveAniversario(c.birthday),
   };
   const clientesOrdenados = ordenarPor(filteredClients, chaveColuna[ordem.coluna], ordem.direcao);
+  // Largura real da tabela (muda com a janela e com o menu lateral recolhido).
+  const refTabela = useRef<HTMLDivElement>(null);
+  const [larguraTabela, setLarguraTabela] = useState(0);
+  useEffect(() => {
+    const el = refTabela.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const obs = new ResizeObserver(([e]) => setLarguraTabela(Math.round(e.contentRect.width)));
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [modo]);
+  const { visiveis: colunasNaLinha, abaixo: colunasAbaixo } = colunasQueCabem(
+    larguraTabela,
+    LARGURA_COLUNA.filter((c) => ehAdmin || (c.id !== 'grupo' && c.id !== 'aniversario')),
+    PRIORIDADE_COLUNA,
+    LARGURA_ACOES,
+  );
+
   const colunasDisponiveis: Coluna[] = ehAdmin
     ? ['nome', 'whatsapp', 'grupo', 'ultimo', 'proximo', 'origem', 'aniversario']
     : ['nome', 'ultimo', 'proximo', 'origem'];
@@ -327,8 +360,8 @@ export default function Clientes() {
     return (
       <th className={`px-4 xl:px-6 py-3 ${classe}`} aria-sort={ativa ? (ordem.direcao === 'asc' ? 'ascending' : 'descending') : 'none'}>
         <button type="button" onClick={() => ordenarColuna(coluna)} title={`Ordenar por ${ROTULO_COLUNA[coluna].toLowerCase()}`}
-          className={`sem-hover inline-flex items-center gap-1 uppercase font-bold tracking-wide hover:text-rose-600 ${ativa ? 'text-rose-600' : ''}`}>
-          {ROTULO_COLUNA[coluna]} <Seta size={13} className={ativa ? '' : 'opacity-40'} />
+          className={`sem-hover inline-flex items-center gap-1 whitespace-nowrap uppercase font-bold tracking-wide hover:text-rose-600 ${ativa ? 'text-rose-600' : ''}`}>
+          {ROTULO_CABECALHO[coluna] ?? ROTULO_COLUNA[coluna]} <Seta size={13} className={ativa ? '' : 'opacity-40'} />
         </button>
       </th>
     );
@@ -372,6 +405,24 @@ export default function Clientes() {
       {ehAdmin && <button onClick={() => abrirExclusao(client)} className="p-2.5 md:p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir" aria-label={`Excluir ${client.name}`}><Trash2 size={16} /></button>}
     </>
   );
+
+  /** Conteúdo de cada coluna (na linha da tabela ou na linha de baixo). */
+  const valorColuna = (c: Coluna, client: any): React.ReactNode => {
+    switch (c) {
+      case 'nome': return (
+        <div className="flex items-center gap-3 min-w-[12rem]">
+          <div className="w-8 h-8 shrink-0 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
+          <span>{client.name}</span>
+        </div>
+      );
+      case 'whatsapp': return ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>;
+      case 'grupo': return etiquetasGrupo(client.id, 3);
+      case 'ultimo': return ultimoDe(client.id);
+      case 'proximo': return proximoDe(client.id);
+      case 'origem': return nomeOrigem(client.origem_id) ?? '-';
+      case 'aniversario': return client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-';
+    }
+  };
 
   /** Ações com texto e altura de toque (44px), para o celular. */
   const acoesGrandes = (client: any) => (
@@ -460,7 +511,7 @@ export default function Clientes() {
 
       {ehAdmin && modo !== 'grupos' && <AniversariantesMes clientes={clients as any[]} hoje={dataLocal()} recolhivel />}
 
-      {modo !== 'grupos' && seletorOrdem(modo === 'lista' ? 'md:hidden' : 'sm:max-w-sm')}
+      {modo !== 'grupos' && seletorOrdem(modo === 'lista' ? (colunasAbaixo.length ? 'sm:max-w-sm' : 'md:hidden') : 'sm:max-w-sm')}
 
       {grupoFiltrado && modo !== 'grupos' && (
         <div className="flex flex-wrap items-center gap-3 bg-rose-50 border border-rose-100 rounded-2xl px-4 py-3">
@@ -558,49 +609,50 @@ export default function Clientes() {
         )}
       </div>
 
-      <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      <div ref={refTabela} className="hidden md:block bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        {/* Rolagem só como segurança: as colunas que não cabem já descem para a linha de baixo. */}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="text-xs text-slate-500 bg-slate-50/80 uppercase font-bold border-b border-slate-100">
-              <tr>
-                {cabecalho('nome')}
-                {cabecalho('whatsapp')}
-                {ehAdmin && cabecalho('grupo', 'hidden md:table-cell')}
-                {cabecalho('ultimo', 'hidden lg:table-cell')}
-                {cabecalho('proximo', 'hidden lg:table-cell')}
-                {cabecalho('origem', 'hidden xl:table-cell')}
-                {ehAdmin && cabecalho('aniversario', 'hidden 2xl:table-cell')}
-                <th className="px-4 xl:px-6 py-3 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {isLoading ? (
-                <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-400">Carregando...</td></tr>
-              ) : filteredClients.length === 0 ? (
-                <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-400">Nenhuma cliente encontrada.</td></tr>
-              ) : (
-                clientesOrdenados.map((client: any) => (
-                  <tr key={client.id} className="hover:bg-rose-50/30 transition-colors group">
-                    <td className="px-4 xl:px-6 py-3 font-bold text-slate-800">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 shrink-0 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
-                        <span>{client.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 xl:px-6 py-3 text-slate-600 font-medium whitespace-nowrap">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</td>
-                    {ehAdmin && <td className="px-4 xl:px-6 py-3 hidden md:table-cell">{etiquetasGrupo(client.id, 2)}</td>}
-                    <td className="px-4 xl:px-6 py-3 text-slate-500 hidden lg:table-cell whitespace-nowrap">{ultimoDe(client.id)}</td>
-                    <td className="px-4 xl:px-6 py-3 text-slate-500 hidden lg:table-cell whitespace-nowrap">{proximoDe(client.id)}</td>
-                    <td className="px-4 xl:px-6 py-3 text-slate-500 hidden xl:table-cell">{nomeOrigem(client.origem_id) ?? '-'}</td>
-                    {ehAdmin && <td className="px-4 xl:px-6 py-3 text-slate-500 hidden 2xl:table-cell whitespace-nowrap">{client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-'}</td>}
-                    <td className="px-4 xl:px-6 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">{acoesCliente(client)}</div>
+        <table className="w-full text-sm text-left">
+          <thead className="text-xs text-slate-500 bg-slate-50/80 uppercase font-bold border-b border-slate-100">
+            <tr>
+              {colunasNaLinha.map((c) => <React.Fragment key={c}>{cabecalho(c)}</React.Fragment>)}
+              <th className="px-4 xl:px-6 py-3 text-right">Ações</th>
+            </tr>
+          </thead>
+          {isLoading ? (
+            <tbody><tr><td colSpan={colunasNaLinha.length + 1} className="px-6 py-12 text-center text-slate-400">Carregando...</td></tr></tbody>
+          ) : filteredClients.length === 0 ? (
+            <tbody><tr><td colSpan={colunasNaLinha.length + 1} className="px-6 py-12 text-center text-slate-400">Nenhuma cliente encontrada.</td></tr></tbody>
+          ) : (
+            // Um tbody por cliente: a linha principal e, se faltar espaço, a linha de baixo com o resto.
+            clientesOrdenados.map((client: any) => (
+              <tbody key={client.id} className="border-b border-slate-100 last:border-b-0 hover:bg-rose-50/30 transition-colors">
+                <tr>
+                  {colunasNaLinha.map((c) => (
+                    <td key={c} className={`px-4 xl:px-6 ${colunasAbaixo.length ? 'pt-3 pb-1.5' : 'py-3'} ${CLASSE_CELULA[c]}`}>{valorColuna(c, client)}</td>
+                  ))}
+                  <td className={`px-4 xl:px-6 ${colunasAbaixo.length ? 'pt-3 pb-1.5' : 'py-3'} text-right`}>
+                    <div className="flex items-center justify-end gap-1">{acoesCliente(client)}</div>
+                  </td>
+                </tr>
+                {colunasAbaixo.length > 0 && (
+                  <tr>
+                    <td colSpan={colunasNaLinha.length + 1} className="px-4 xl:px-6 pb-3 pt-0">
+                      <dl className="flex flex-wrap gap-x-6 gap-y-1.5 pl-11 text-sm">
+                        {colunasAbaixo.map((c) => (
+                          <div key={c} className="flex items-baseline gap-1.5 min-w-0">
+                            <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500 whitespace-nowrap">{ROTULO_COLUNA[c]}</dt>
+                            <dd className="text-slate-700 min-w-0">{valorColuna(c, client)}</dd>
+                          </div>
+                        ))}
+                      </dl>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            ))
+          )}
+        </table>
         </div>
       </div>
       </>

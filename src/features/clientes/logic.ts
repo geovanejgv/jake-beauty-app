@@ -104,3 +104,32 @@ export function aniversariantesDoMes<T extends { birthday?: string | null }>(cli
   }
   return lista.sort((a, b) => a.dia - b.dia);
 }
+
+/**
+ * Colunas da tabela que cabem em `largura` (px). Entram por prioridade (a primeira sempre entra);
+ * a partir da primeira que não cabe, todas vão para a linha de baixo. `reservado` é o espaço fixo (ex.: coluna de ações).
+ * As duas listas saem na ordem de exibição de `colunas`. Largura 0 (ainda não medida) mostra todas.
+ */
+export function colunasQueCabem<T extends string>(
+  largura: number,
+  colunas: { id: T; min: number }[],
+  prioridade: T[],
+  reservado = 0,
+): { visiveis: T[]; abaixo: T[] } {
+  if (largura <= 0) return { visiveis: colunas.map((c) => c.id), abaixo: [] };
+  const minimo = new Map(colunas.map((c) => [c.id, c.min]));
+  const entram = new Set<T>();
+  let usado = reservado;
+  // Na ordem de prioridade: na primeira que não cabe, ela e as seguintes descem (a mais importante nunca
+  // desce para dar lugar a uma menor).
+  for (const [i, id] of prioridade.entries()) {
+    const min = minimo.get(id) ?? 0;
+    if (i > 0 && usado + min > largura) break;
+    entram.add(id);
+    usado += min;
+  }
+  return {
+    visiveis: colunas.filter((c) => entram.has(c.id)).map((c) => c.id),
+    abaixo: colunas.filter((c) => !entram.has(c.id)).map((c) => c.id),
+  };
+}
