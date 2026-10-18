@@ -1,16 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { brl, dataHoraBR, dataLocal, isoParaBR } from '../lib/formatos';
+import { brl, dataBR, dataHoraBR, dataLocal, isoParaBR } from '../lib/formatos';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
 import { COR_SITUACAO, ROTULO_SITUACAO, agruparSaldos, situacaoPacote } from '../features/pacotes/logic';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
-import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package } from 'lucide-react';
-import { clientesKeys, listarOrigens } from '../features/clientes/api';
+import { Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package, List, LayoutGrid, CalendarClock, CalendarCheck } from 'lucide-react';
+import { clientesKeys, listarGrupos, listarMembros, listarOrigens, listarResumoAtendimentos } from '../features/clientes/api';
+import { PALAVRA_EXCLUSAO, confirmacaoExclusaoValida, contarPorGrupo, gruposPorCliente } from '../features/clientes/logic';
+import { GruposCartoes } from '../features/clientes/GruposCartoes';
 import { CampoOrigem } from '../features/clientes/CampoOrigem';
 import { GruposClientes } from '../features/clientes/GruposClientes';
+
+type ModoClientes = 'lista' | 'cartoes' | 'grupos';
+const CHAVE_MODO = 'jb-clientes-modo';
 
 const TIPOS_HISTORICO: Record<string, string> = { tecnico: 'Técnico', alergia: 'Alergia', preferencia: 'Preferência', observacao: 'Observação' };
 
@@ -111,6 +116,24 @@ export default function Clientes() {
   const [origemId, setOrigemId] = useState('');
   const [filtroOrigem, setFiltroOrigem] = useState('');
   const [showGrupos, setShowGrupos] = useState(false);
+  // Grupo aberto direto no modal de grupos ('' = grupo novo); null = lista de grupos.
+  const [grupoModal, setGrupoModal] = useState<string | null>(null);
+  // Filtro por grupo (vindo do cartão do grupo).
+  const [grupoFiltro, setGrupoFiltro] = useState<string | null>(null);
+  // Exclusão em duas etapas: 1 = confirmar, 2 = digitar a palavra.
+  const [etapaExclusao, setEtapaExclusao] = useState<1 | 2>(1);
+  const [textoExclusao, setTextoExclusao] = useState('');
+
+  // Lista, cartões ou grupos (lembrado neste aparelho; grupos só para a administradora).
+  const [modoSalvo, setModoSalvo] = useState<ModoClientes>(() => {
+    try { const m = localStorage.getItem(CHAVE_MODO); if (m === 'lista' || m === 'cartoes' || m === 'grupos') return m; } catch { /* preferência de tela */ }
+    return 'lista';
+  });
+  const modo: ModoClientes = modoSalvo === 'grupos' && !ehAdmin ? 'lista' : modoSalvo;
+  const trocarModo = (m: ModoClientes) => {
+    setModoSalvo(m);
+    try { localStorage.setItem(CHAVE_MODO, m); } catch { /* preferência de tela; pode falhar */ }
+  };
 
   // Atalho por endereço: /clientes?nova=cliente abre o cadastro
   useEffect(() => {
@@ -135,6 +158,15 @@ export default function Clientes() {
 
   const { data: origens = [] } = useQuery({ queryKey: clientesKeys.origens, queryFn: listarOrigens });
   const nomeOrigem = (id?: string | null) => (id ? origens.find((o) => o.id === id)?.nome : undefined);
+
+  // Grupos e membros: só a administradora (RLS). Resumo da agenda: cada um vê o que a agenda deixa.
+  const { data: grupos = [] } = useQuery({ queryKey: clientesKeys.grupos, queryFn: listarGrupos, enabled: ehAdmin });
+  const { data: membros = [] } = useQuery({ queryKey: clientesKeys.membros, queryFn: listarMembros, enabled: ehAdmin });
+  const { data: resumo = [] } = useQuery({ queryKey: clientesKeys.resumo, queryFn: listarResumoAtendimentos });
+  const gruposDaCliente = useMemo(() => gruposPorCliente(grupos, membros), [grupos, membros]);
+  const contagemGrupos = useMemo(() => contarPorGrupo(membros), [membros]);
+  const resumoDaCliente = useMemo(() => new Map(resumo.map((r) => [r.cliente_id, r])), [resumo]);
+  const grupoFiltrado = grupoFiltro ? grupos.find((g) => g.id === grupoFiltro) : undefined;
 
   const { data: clientAppointments = [] } = useQuery({
     queryKey: ['client-appointments', selectedHistoryClient?.id],
@@ -188,12 +220,16 @@ export default function Clientes() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] });
-      setClientToDelete(null);
+      queryClient.invalidateQueries({ queryKey: ['clientes', 'grupos'] });
+      fecharExclusao();
     },
     onError: (error: any) => {
       alert(mensagemDeErro(error, 'Ops! Não foi possível excluir.', 'clientes.excluir'));
     }
   });
+
+  const abrirExclusao = (client: any) => { setClientToDelete(client); setEtapaExclusao(1); setTextoExclusao(''); };
+  const fecharExclusao = () => { setClientToDelete(null); setEtapaExclusao(1); setTextoExclusao(''); };
 
   const resetForm = () => {
     setName(''); setPhone(''); setBirthday(''); setNotes(''); setEmail(''); setLgpd(false); setOrigemId('');
@@ -256,7 +292,31 @@ export default function Clientes() {
 
   const filteredClients = clients.filter((c: any) =>
     (c.name.toLowerCase().includes(searchTerm.toLowerCase()) || (c.phone && c.phone.includes(searchTerm))) &&
-    (!filtroOrigem || (filtroOrigem === 'sem' ? !c.origem_id : c.origem_id === filtroOrigem))
+    (!filtroOrigem || (filtroOrigem === 'sem' ? !c.origem_id : c.origem_id === filtroOrigem)) &&
+    (!grupoFiltro || (gruposDaCliente.get(c.id) ?? []).some((g) => g.id === grupoFiltro))
+  );
+
+  const ultimoDe = (id: string) => { const u = resumoDaCliente.get(id)?.ultimo; return u ? dataBR(u) : '-'; };
+  const proximoDe = (id: string) => { const p = resumoDaCliente.get(id)?.proximo; return p ? dataHoraBR(p) : '-'; };
+  const etiquetasGrupo = (id: string, max = 99) => {
+    const lista = gruposDaCliente.get(id) ?? [];
+    if (!lista.length) return <span className="text-slate-400">-</span>;
+    return (
+      <span className="flex flex-wrap gap-1">
+        {lista.slice(0, max).map((g) => (
+          <button key={g.id} type="button" onClick={() => { setGrupoFiltro(g.id); if (modo === 'grupos') trocarModo('lista'); }} title={`Ver clientes do grupo ${g.nome}`}
+            className="sem-hover px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-100 text-[11px] font-bold hover:bg-rose-100 max-w-[12rem] truncate">{g.nome}</button>
+        ))}
+        {lista.length > max && <span className="text-[11px] text-slate-400">+{lista.length - max}</span>}
+      </span>
+    );
+  };
+  const acoesCliente = (client: any) => (
+    <>
+      <button onClick={() => { setAbaHistorico('atendimentos'); setSelectedHistoryClient(client); }} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Ver histórico" aria-label={`Histórico de ${client.name}`}><History size={16} /></button>
+      {ehAdmin && <button onClick={() => openEditModal(client)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Editar" aria-label={`Editar ${client.name}`}><Edit2 size={16} /></button>}
+      {ehAdmin && <button onClick={() => abrirExclusao(client)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir" aria-label={`Excluir ${client.name}`}><Trash2 size={16} /></button>}
+    </>
   );
 
   const getStatusBadge = (status: string) => {
@@ -269,76 +329,145 @@ export default function Clientes() {
     }
   };
 
+  const botaoModo = (m: ModoClientes, rotulo: string, Icone: typeof List) => (
+    <button type="button" role="radio" aria-checked={modo === m} onClick={() => trocarModo(m)}
+      className={`sem-hover flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold transition-colors ${modo === m ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-rose-500'}`}>
+      <Icone size={16} /> <span className="hidden sm:inline">{rotulo}</span>
+    </button>
+  );
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+    <div className="w-full space-y-6">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <div>
           <h2 className="text-3xl font-black text-slate-800">Clientes</h2>
           <p className="text-sm text-slate-500 mt-1">{ehAdmin ? 'Gestão de contatos e histórico de atendimentos' : 'Nome e histórico técnico. O contato das clientes fica com a administração do salão.'}</p>
         </div>
-        <div className="flex flex-wrap w-full md:w-auto gap-3">
-          <div className="relative flex-1 md:w-64">
-            <Search size={18} className="absolute left-3 top-3 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Buscar cliente..." 
-              value={searchTerm} 
-              onChange={e => setSearchTerm(e.target.value)} 
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm shadow-sm"
-            />
+        <div className="flex flex-wrap w-full xl:w-auto gap-3 items-center">
+          <div role="radiogroup" aria-label="Forma de exibição" className="flex p-1 rounded-xl bg-slate-100">
+            {botaoModo('lista', 'Lista', List)}
+            {botaoModo('cartoes', 'Cartões', LayoutGrid)}
+            {ehAdmin && botaoModo('grupos', 'Grupos', Users)}
           </div>
-          <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)} aria-label="Filtrar por origem" className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
-            <option value="">Todas as origens</option>
-            {origens.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
-            <option value="sem">Sem origem</option>
-          </select>
-          {ehAdmin && <button onClick={() => setShowGrupos(true)} className="bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-bold hover:bg-rose-50 transition-colors flex items-center space-x-2 shadow-sm whitespace-nowrap">
-            <Users size={18} /> <span className="hidden sm:inline">Grupos</span>
-          </button>}
+          {modo !== 'grupos' && <>
+            <div className="relative flex-1 min-w-[12rem] xl:w-72">
+              <Search size={18} className="absolute left-3 top-3 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar cliente..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                aria-label="Buscar cliente"
+                className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm shadow-sm"
+              />
+            </div>
+            <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)} aria-label="Filtrar por origem" className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
+              <option value="">Todas as origens</option>
+              {origens.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
+              <option value="sem">Sem origem</option>
+            </select>
+            {ehAdmin && grupos.length > 0 && (
+              <select value={grupoFiltro ?? ''} onChange={(e) => setGrupoFiltro(e.target.value || null)} aria-label="Filtrar por grupo" className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
+                <option value="">Todos os grupos</option>
+                {grupos.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
+              </select>
+            )}
+          </>}
           {ehAdmin && <button onClick={() => { resetForm(); setShowAddModal(true); }} className="bg-rose-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-rose-700 transition-colors flex items-center space-x-2 shadow-sm whitespace-nowrap">
             <Plus size={18} /> <span className="hidden sm:inline">Nova Cliente</span>
           </button>}
         </div>
       </div>
 
+      {grupoFiltrado && modo !== 'grupos' && (
+        <div className="flex flex-wrap items-center gap-3 bg-rose-50 border border-rose-100 rounded-2xl px-4 py-3">
+          <Users size={18} className="text-rose-600 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-slate-800">Grupo: {grupoFiltrado.nome} <span className="font-normal text-slate-500">· {filteredClients.length} cliente(s)</span></p>
+            {grupoFiltrado.descricao && <p className="text-xs text-slate-500 truncate">{grupoFiltrado.descricao}</p>}
+          </div>
+          <button type="button" onClick={() => { setGrupoModal(grupoFiltrado.id); setShowGrupos(true); }} className="text-xs font-bold text-rose-600 hover:text-rose-700">Editar grupo</button>
+          <button type="button" onClick={() => setGrupoFiltro(null)} className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-rose-600"><X size={14} /> Ver todas</button>
+        </div>
+      )}
+
+      {modo === 'grupos' ? (
+        <GruposCartoes
+          grupos={grupos}
+          contagem={contagemGrupos}
+          onAbrir={(id) => { setGrupoFiltro(id); trocarModo('lista'); }}
+          onEditarMembros={(id) => { setGrupoModal(id); setShowGrupos(true); }}
+          onNovo={() => { setGrupoModal(''); setShowGrupos(true); }}
+        />
+      ) : modo === 'cartoes' ? (
+        isLoading ? <p className="text-center text-slate-400 py-12">Carregando...</p>
+        : filteredClients.length === 0 ? <p className="text-center text-slate-400 py-12">Nenhuma cliente encontrada.</p>
+        : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+            {filteredClients.map((client: any) => (
+              <div key={client.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 shrink-0 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-slate-800 truncate" title={client.name}>{client.name}</p>
+                    <p className="text-sm text-slate-500">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</p>
+                  </div>
+                </div>
+                {ehAdmin && (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Grupos</p>
+                    {etiquetasGrupo(client.id)}
+                  </div>
+                )}
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <div><dt className="text-slate-400 flex items-center gap-1"><CalendarCheck size={12} /> Último</dt><dd className="font-semibold text-slate-700">{ultimoDe(client.id)}</dd></div>
+                  <div><dt className="text-slate-400 flex items-center gap-1"><CalendarClock size={12} /> Próximo</dt><dd className="font-semibold text-slate-700">{proximoDe(client.id)}</dd></div>
+                  <div><dt className="text-slate-400">Origem</dt><dd className="text-slate-600">{nomeOrigem(client.origem_id) ?? '-'}</dd></div>
+                  {ehAdmin && <div><dt className="text-slate-400">Aniversário</dt><dd className="text-slate-600">{client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</dd></div>}
+                </dl>
+                <div className="mt-auto pt-2 border-t border-slate-100 flex justify-end gap-1">{acoesCliente(client)}</div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-slate-500 bg-slate-50/80 uppercase font-bold border-b border-slate-100">
               <tr>
-                <th className="px-6 py-4">Nome</th>
-                <th className="px-6 py-4">WhatsApp</th>
-                <th className="px-6 py-4 hidden sm:table-cell">Origem</th>
-                {ehAdmin && <th className="px-6 py-4 hidden md:table-cell">Aniversário</th>}
-                <th className="px-6 py-4 text-center">Histórico</th>
-                <th className="px-6 py-4 text-right">Ações</th>
+                <th className="px-4 xl:px-6 py-4">Nome</th>
+                <th className="px-4 xl:px-6 py-4">WhatsApp</th>
+                {ehAdmin && <th className="px-4 xl:px-6 py-4 hidden md:table-cell">Grupo</th>}
+                <th className="px-4 xl:px-6 py-4 hidden lg:table-cell">Último atendimento</th>
+                <th className="px-4 xl:px-6 py-4 hidden lg:table-cell">Próximo atendimento</th>
+                <th className="px-4 xl:px-6 py-4 hidden xl:table-cell">Origem</th>
+                {ehAdmin && <th className="px-4 xl:px-6 py-4 hidden 2xl:table-cell">Aniversário</th>}
+                <th className="px-4 xl:px-6 py-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400">Carregando...</td></tr>
+                <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-400">Carregando...</td></tr>
               ) : filteredClients.length === 0 ? (
-                <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400">Nenhuma cliente encontrada.</td></tr>
+                <tr><td colSpan={8} className="px-6 py-12 text-center text-slate-400">Nenhuma cliente encontrada.</td></tr>
               ) : (
                 filteredClients.map((client: any) => (
                   <tr key={client.id} className="hover:bg-rose-50/30 transition-colors group">
-                    <td className="px-6 py-4 font-bold text-slate-800 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
-                      {client.name}
+                    <td className="px-4 xl:px-6 py-3 font-bold text-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 shrink-0 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
+                        <span>{client.name}</span>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-600 font-medium">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</td>
-                    <td className="px-6 py-4 text-slate-500 hidden sm:table-cell">{nomeOrigem(client.origem_id) ?? '-'}</td>
-                    {ehAdmin && <td className="px-6 py-4 text-slate-500 hidden md:table-cell">{client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-'}</td>}
-                    <td className="px-6 py-4 text-center">
-                      <button onClick={() => { setAbaHistorico('atendimentos'); setSelectedHistoryClient(client); }} className="text-slate-400 hover:text-rose-600 p-2 rounded-lg hover:bg-rose-50 transition-colors" title="Ver Histórico">
-                        <History size={18} />
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {ehAdmin && <div className="flex items-center justify-end space-x-1">
-                        <button onClick={() => openEditModal(client)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
-                        <button onClick={() => setClientToDelete(client)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
-                      </div>}
+                    <td className="px-4 xl:px-6 py-3 text-slate-600 font-medium whitespace-nowrap">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</td>
+                    {ehAdmin && <td className="px-4 xl:px-6 py-3 hidden md:table-cell">{etiquetasGrupo(client.id, 2)}</td>}
+                    <td className="px-4 xl:px-6 py-3 text-slate-500 hidden lg:table-cell whitespace-nowrap">{ultimoDe(client.id)}</td>
+                    <td className="px-4 xl:px-6 py-3 text-slate-500 hidden lg:table-cell whitespace-nowrap">{proximoDe(client.id)}</td>
+                    <td className="px-4 xl:px-6 py-3 text-slate-500 hidden xl:table-cell">{nomeOrigem(client.origem_id) ?? '-'}</td>
+                    {ehAdmin && <td className="px-4 xl:px-6 py-3 text-slate-500 hidden 2xl:table-cell whitespace-nowrap">{client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-'}</td>}
+                    <td className="px-4 xl:px-6 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">{acoesCliente(client)}</div>
                     </td>
                   </tr>
                 ))
@@ -347,6 +476,7 @@ export default function Clientes() {
           </table>
         </div>
       </div>
+      )}
 
       {/* MODAL HISTÓRICO */}
       {selectedHistoryClient && (
@@ -453,16 +583,35 @@ export default function Clientes() {
         </div>
       )}
 
-      {showGrupos && <GruposClientes clientes={clients as any[]} origens={origens} onFechar={() => setShowGrupos(false)} />}
+      {showGrupos && <GruposClientes clientes={clients as any[]} origens={origens} grupoInicial={grupoModal} onFechar={() => { setShowGrupos(false); setGrupoModal(null); }} />}
 
-      {/* MODAL EXCLUIR */}
+      {/* MODAL EXCLUIR: duas etapas (confirmar e digitar a palavra) */}
       {clientToDelete && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center space-y-4">
+          <div role="alertdialog" aria-labelledby="titulo-excluir" className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center space-y-4">
             <div className="flex justify-center text-red-500 mb-2"><AlertTriangle size={48} /></div>
-            <h3 className="text-xl font-bold text-slate-800">Excluir Cliente?</h3>
-            <p className="text-sm text-slate-500">Tem certeza que deseja excluir permanentemente o cadastro de <strong>{clientToDelete.name}</strong>?</p>
-            <div className="flex space-x-3 pt-4"><button onClick={() => setClientToDelete(null)} className="w-1/2 border border-slate-200 bg-slate-50 text-slate-600 p-2.5 rounded-xl font-medium">Voltar</button><button onClick={() => deleteMutation.mutate(clientToDelete.id)} disabled={deleteMutation.isPending} className="w-1/2 bg-red-600 text-white p-2.5 rounded-xl font-bold">Sim, Excluir</button></div>
+            <h3 id="titulo-excluir" className="text-xl font-bold text-slate-800">Excluir Cliente?</h3>
+            {etapaExclusao === 1 ? (
+              <>
+                <p className="text-sm text-slate-500">Tem certeza que deseja excluir permanentemente o cadastro de <strong>{clientToDelete.name}</strong>?</p>
+                <p className="text-xs text-slate-400">Etapa 1 de 2</p>
+                <div className="flex space-x-3 pt-2">
+                  <button onClick={fecharExclusao} className="w-1/2 border border-slate-200 bg-slate-50 text-slate-600 p-2.5 rounded-xl font-medium">Voltar</button>
+                  <button onClick={() => setEtapaExclusao(2)} className="w-1/2 bg-red-600 text-white p-2.5 rounded-xl font-bold">Sim, continuar</button>
+                </div>
+              </>
+            ) : (
+              <form onSubmit={(e) => { e.preventDefault(); if (confirmacaoExclusaoValida(textoExclusao)) deleteMutation.mutate(clientToDelete.id); }} className="space-y-3">
+                <p className="text-sm text-slate-500">Para confirmar a exclusão de <strong>{clientToDelete.name}</strong>, digite <strong className="text-red-600">{PALAVRA_EXCLUSAO}</strong> abaixo.</p>
+                <input value={textoExclusao} onChange={(e) => setTextoExclusao(e.target.value)} autoFocus autoComplete="off" aria-label={`Digite ${PALAVRA_EXCLUSAO} para confirmar`}
+                  className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-red-500 text-center font-bold tracking-widest uppercase" />
+                <p className="text-xs text-slate-400">Etapa 2 de 2</p>
+                <div className="flex space-x-3 pt-1">
+                  <button type="button" onClick={fecharExclusao} className="w-1/2 border border-slate-200 bg-slate-50 text-slate-600 p-2.5 rounded-xl font-medium">Cancelar</button>
+                  <button type="submit" disabled={!confirmacaoExclusaoValida(textoExclusao) || deleteMutation.isPending} className="w-1/2 bg-red-600 text-white p-2.5 rounded-xl font-bold disabled:opacity-40">{deleteMutation.isPending ? 'Excluindo...' : 'Excluir'}</button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
