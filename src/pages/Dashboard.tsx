@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { listarSaldos, listarVendas, pacotesKeys } from '../features/pacotes/api';
+import { diaLocal, fluxoKeys, listarAtendimentosConcluidos, listarDespesas, receitasDoFluxo } from '../features/fluxo-caixa/api';
+import { fluxoDoMes } from '../features/fluxo-caixa/logic';
 import { TrendingUp, Calendar, Filter, BarChart3, Loader2, DollarSign, CreditCard, X, FileSpreadsheet, Edit2, Trash2, AlertTriangle, Wallet, TrendingDown, Clock, CheckCircle, Package } from 'lucide-react';
 
 export default function Dashboard() {
@@ -34,30 +36,12 @@ export default function Dashboard() {
   const [expIsPaid, setExpIsPaid] = useState(true);
 
   // 1. Busca Agendamentos Concluídos (Receitas)
-  const { data: appointments = [], isLoading: isLoadingApt } = useQuery({
-    queryKey: ['dashboard-financials'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('appointments')
-        .select(`id, start_time, status, payment_method, installments, notes, valor_cobrado, gorjeta, servico_id, professional_id, clients ( name ), services ( id, name, price ), servicos ( nome )`)
-        .eq('status', 'completed')
-        .order('start_time', { ascending: false }); 
-      if (error) throw error;
-      // Valor do atendimento: o cobrado (catálogo/checkout); nos antigos, o do registro avulso.
-      return (data || []).map((a: any) => ({ ...a, services: { id: a.services?.id, name: a.servicos?.nome ?? a.services?.name ?? a.notes ?? 'Atendimento', price: a.valor_cobrado ?? a.services?.price ?? 0 } }));
-    }
-  });
+  const { data: appointments = [], isLoading: isLoadingApt } = useQuery({ queryKey: fluxoKeys.atendimentos, queryFn: listarAtendimentosConcluidos });
 
   // 1a. Pacotes: a venda é o faturamento (nota fiscal na venda); a sessão abatida não conta de novo.
   const { data: vendasPacote = [] } = useQuery({ queryKey: pacotesKeys.vendas, queryFn: listarVendas });
   const { data: saldosPacote = [] } = useQuery({ queryKey: pacotesKeys.saldos(null, false), queryFn: () => listarSaldos(null, false) });
-  const receitas = useMemo(() => [
-    ...appointments.filter((a: any) => a.payment_method !== 'pacote'),
-    ...vendasPacote.map((v) => ({
-      id: `pacote-${v.id}`, ehPacote: true, start_time: v.vendido_em, payment_method: 'pacote_venda', clients: { name: v.cliente_nome },
-      services: { name: `Pacote: ${v.nome}`, price: v.valor_total },
-    })),
-  ], [appointments, vendasPacote]);
+  const receitas = useMemo(() => receitasDoFluxo(appointments, vendasPacote), [appointments, vendasPacote]);
   const aExecutar = saldosPacote.reduce((t, l) => ({ sessoes: t.sessoes + l.sessoes - l.usadas - l.faltas, valor: t.valor + Number(l.valor_restante ?? 0) }), { sessoes: 0, valor: 0 });
 
   // 1b. Agendamentos ainda não finalizados (para "previsto" e pendências do filtro)
@@ -75,22 +59,12 @@ export default function Dashboard() {
   });
 
   // 2. Busca Despesas
-  const { data: expenses = [], isLoading: isLoadingExp } = useQuery({
-    queryKey: ['dashboard-expenses'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('*')
-        .order('expense_date', { ascending: false });
-      if (error) throw error;
-      return data || [];
-    }
-  });
+  const { data: expenses = [], isLoading: isLoadingExp } = useQuery({ queryKey: fluxoKeys.despesas, queryFn: listarDespesas });
 
   // Lógica de Datas
   const getLocalDateStr = (date: Date) => new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
   // Dia do atendimento no fuso local (antes usava UTC: atendimentos após 21h caíam no dia seguinte)
-  const aptLocalDate = (startTime: string) => getLocalDateStr(new Date(startTime));
+  const aptLocalDate = diaLocal;
   const now = new Date();
   const todayStr = getLocalDateStr(now);
   const currentDayOfWeek = now.getDay();
@@ -148,17 +122,15 @@ export default function Dashboard() {
       if (aptDate < todayStr) { customPendingCount++; customPendingTotal += price; }
     });
 
-    let monthExpensesPaid = 0;
-    let monthExpensesPending = 0;
-
-    expenses.forEach((exp: any) => {
-      if (exp.expense_date >= startOfMonthStr) {
-        if (exp.is_paid) monthExpensesPaid += parseFloat(exp.amount);
-        else monthExpensesPending += parseFloat(exp.amount);
-      }
-    });
-
-    const netIncome = monthTotal - monthExpensesPaid;
+    // Fluxo do mês: mesma conta do "Total Mês" em Finanças > Negócio
+    const fluxo = fluxoDoMes(
+      receitas.map((apt: any) => ({ data: aptLocalDate(apt.start_time), valor: parseFloat(apt.services?.price || 0) })),
+      expenses.map((exp: any) => ({ data: exp.expense_date, valor: parseFloat(exp.amount), pago: !!exp.is_paid })),
+      startOfMonthStr, endOfMonthStr,
+    );
+    const monthExpensesPaid = fluxo.despesasPagas;
+    const monthExpensesPending = fluxo.despesasPendentes;
+    const netIncome = fluxo.lucroLiquido;
 
     return { 
       todayTotal, weekTotal, biweekTotal, monthTotal, customTotal, customCount, customForecast, customPendingCount, customPendingTotal, hasCustomRange,

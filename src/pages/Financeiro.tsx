@@ -1,5 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AvisoBackup } from '../features/backup/AvisoBackup';
+import { Link } from 'react-router-dom';
+import { diaLocal, fluxoKeys, listarAtendimentosConcluidos, listarDespesas, receitasDoFluxo } from '../features/fluxo-caixa/api';
+import { ehTotalMes, fluxoDoMes, lancamentoTotalMes, limitesDoMes } from '../features/fluxo-caixa/logic';
+import { listarVendas, pacotesKeys } from '../features/pacotes/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
@@ -84,10 +88,24 @@ export default function Financeiro() {
     }
   });
 
-  const scopedRecords = useMemo(
-    () => (escopoView === 'todos' ? records : records.filter((r: any) => escopoDo(r) === escopoView)),
-    [records, escopoView],
-  );
+  // "Total Mês" (Negócio): lucro líquido real do Resumo Diário apurado até agora, no último dia do mês corrente
+  const { data: atendimentos = [] } = useQuery({ queryKey: fluxoKeys.atendimentos, queryFn: listarAtendimentosConcluidos });
+  const { data: vendasPacote = [] } = useQuery({ queryKey: pacotesKeys.vendas, queryFn: listarVendas });
+  const { data: despesasFluxo = [] } = useQuery({ queryKey: fluxoKeys.despesas, queryFn: listarDespesas });
+  const totalMes = useMemo(() => {
+    const { inicio, fim } = limitesDoMes(diaLocal(new Date().toISOString()));
+    const fluxo = fluxoDoMes(
+      receitasDoFluxo(atendimentos, vendasPacote).map((a: any) => ({ data: diaLocal(a.start_time), valor: parseFloat(a.services?.price || 0) })),
+      despesasFluxo.map((d: any) => ({ data: d.expense_date, valor: parseFloat(d.amount), pago: !!d.is_paid })),
+      inicio, fim,
+    );
+    return lancamentoTotalMes(fluxo.lucroLiquido, fim);
+  }, [atendimentos, vendasPacote, despesasFluxo, todayStr]);
+
+  const scopedRecords = useMemo(() => {
+    const todos = [...records, totalMes];
+    return escopoView === 'todos' ? todos : todos.filter((r: any) => escopoDo(r) === escopoView);
+  }, [records, totalMes, escopoView]);
 
   const safeSelectedDate = selectedDate || todayStr;
   const currentMonthStr = safeSelectedDate.substring(0, 7);
@@ -101,7 +119,8 @@ export default function Financeiro() {
       const val = parseFloat(r.amount || 0);
       if (r.type === 'income') {
         totalIncomes += val;
-        if (r.is_completed) receivedIncomes += val;
+        // Total Mês já é dinheiro apurado: entra no caixa real
+        if (r.is_completed || ehTotalMes(r)) receivedIncomes += val;
       } else {
         totalExpenses += val;
         if (r.is_completed) paidExpenses += val;
@@ -320,6 +339,24 @@ export default function Financeiro() {
   };
 
   const renderFinanceRow = (item: any) => {
+    if (ehTotalMes(item)) {
+      return (
+        <div key={item.id} className="p-3 mb-2 flex flex-col md:flex-row md:items-center justify-between border rounded-xl bg-white border-indigo-200">
+          <div className="flex items-center space-x-3 mb-2 md:mb-0 w-full md:w-auto">
+            <div className="p-2 rounded-lg flex items-center justify-center shrink-0 text-indigo-600 bg-indigo-100"><Wallet size={20} /></div>
+            <div className="flex-1 min-w-0">
+              <h4 className="font-bold flex items-center gap-2 text-sm text-indigo-800">
+                <span className="truncate">Total Mês</span>
+                <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded uppercase font-bold shrink-0">Automático</span>
+              </h4>
+              <p className="text-xs text-slate-500 mt-0.5">Lucro líquido real apurado até hoje (atendimentos e pacotes menos despesas pagas).</p>
+              <Link to="/dashboard" className="text-[11px] font-bold text-indigo-600 hover:underline">Ver fluxo de caixa no Resumo Diário</Link>
+            </div>
+          </div>
+          <span className={`font-black text-base mr-2 ${item.amount >= 0 ? 'text-indigo-700' : 'text-red-600'}`}>{formatCurrency(item.amount)}</span>
+        </div>
+      );
+    }
     const isIncome = item.type === 'income';
     const isComp = item.is_completed ?? false;
     
@@ -453,6 +490,11 @@ export default function Financeiro() {
                   <div className={`py-1.5 text-center border-b border-slate-200 shrink-0 ${isToday ? 'bg-rose-600 text-white font-bold' : 'bg-slate-100 text-slate-700'}`}><p className="text-[10px] tracking-wider uppercase">{dateObj.toLocaleDateString('pt-BR', { weekday: 'short' })}</p><p className="text-xs font-extrabold">{dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</p></div>
                   <div className="p-1.5 space-y-1.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
                     {dayItems.length === 0 ? <p className="text-[10px] text-slate-300 text-center py-4 italic">Sem contas</p> : dayItems.map((item: any) => {
+                      if (ehTotalMes(item)) return (
+                        <div key={item.id} onClick={(e) => e.stopPropagation()} title="Lucro líquido real apurado até hoje" className="p-1.5 rounded border text-[10px] shadow-sm bg-indigo-50 border-indigo-200 text-indigo-800">
+                          <div className="flex items-center gap-0.5 font-bold mb-0.5"><Wallet size={10} /> {formatCurrency(item.amount)}</div><p className="font-semibold truncate">Total Mês</p>
+                        </div>
+                      );
                       const isComp = item.is_completed ?? false; const isInc = item.type === 'income';
                       let bgClass = isInc ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800';
                       if (isComp) bgClass = 'bg-slate-100 border-slate-200 text-slate-500 line-through opacity-70';
@@ -479,6 +521,12 @@ export default function Financeiro() {
                     <div className="mb-1 shrink-0"><span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${isToday ? 'bg-rose-600 text-white' : 'text-slate-600'}`}>{dayNum}</span></div>
                     <div className="space-y-1 overflow-y-auto flex-1 min-h-0 pr-0.5 custom-scrollbar">
                       {dayItems.map((item: any) => {
+                        if (ehTotalMes(item)) return (
+                          <div key={item.id} onClick={(e) => e.stopPropagation()} title={`Total Mês (lucro líquido real até hoje): ${formatCurrency(item.amount)}`} className="p-1 rounded border text-[9px] flex items-center justify-between bg-indigo-50 border-indigo-200 text-indigo-800">
+                            <span className="truncate flex items-center gap-0.5 font-bold"><Wallet size={8} className="shrink-0" /> Total Mês</span>
+                            <span className="shrink-0 ml-1 font-black tracking-tighter">R$ {item.amount.toFixed(2)}</span>
+                          </div>
+                        );
                         const isComp = item.is_completed ?? false; const isInc = item.type === 'income';
                         let bgClass = isInc ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800';
                         if (isComp) bgClass = 'bg-slate-100 border-slate-200 text-slate-400 line-through opacity-60';
