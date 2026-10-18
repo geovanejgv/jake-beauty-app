@@ -17,22 +17,16 @@ export default defineConfig(({ command, mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         manifest: {
-          name: 'Studio Labeli',
-          short_name: 'Labeli',
-          theme_color: '#10b981',
-          background_color: '#f8fafc',
+          name: 'Controla Miga',
+          short_name: 'Controla Miga',
+          description: 'Gestão de salão: agenda, clientes, financeiro e equipe.',
+          theme_color: '#e11d48',
+          background_color: '#fdf2f8',
           display: 'standalone',
           icons: [
-            {
-              src: 'https://via.placeholder.com/192/10b981/ffffff?text=SL',
-              sizes: '192x192',
-              type: 'image/png'
-            },
-            {
-              src: 'https://via.placeholder.com/512/10b981/ffffff?text=SL',
-              sizes: '512x512',
-              type: 'image/png'
-            }
+            { src: '/marca/icone-192.png', sizes: '192x192', type: 'image/png' },
+            { src: '/marca/icone-512.png', sizes: '512x512', type: 'image/png' },
+            { src: '/marca/icone-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
           ]
         }
       })

@@ -49,7 +49,7 @@ function Cabecalho({ titulo, subtitulo }: { titulo: string; subtitulo: string })
   return (
     <header className="flex items-start justify-between border-b-2 border-rose-600 pb-3 mb-4">
       <div>
-        <p className="text-2xl font-black text-rose-600">Jake Beauty</p>
+        <img src="/marca/logo.png" alt="Controla Miga" className="h-12 w-auto mb-1" />
         <h1 className="text-lg font-bold">{titulo}</h1>
         <p className="text-sm text-slate-600">{subtitulo}</p>
       </div>

@@ -83,7 +83,7 @@ export default function Plano() {
         <LifeBuoy size={20} className="text-rose-600 shrink-0 mt-0.5" />
         <div className="text-sm text-slate-600">
           <p className="font-bold text-slate-800">Precisa ampliar ou mudar de plano?</p>
-          <p>Fale com o suporte do Jake Beauty: a mudança de plano e de limites é feita pela administração do sistema.</p>
+          <p>Fale com o suporte do Controla Miga: a mudança de plano e de limites é feita pela administração do sistema.</p>
         </div>
       </section>
     </div>

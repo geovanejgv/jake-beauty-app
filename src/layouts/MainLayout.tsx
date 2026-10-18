@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Menu, X, ChevronDown, ChevronUp, Lock, Building2, Gem, ShieldAlert, PanelLeftClose, PanelLeftOpen,
-  Sparkles, Settings, UserRound, LogOut, Smartphone,
+  Settings, UserRound, LogOut, Smartphone,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
@@ -247,23 +247,20 @@ export default function MainLayout() {
           </>
         )}
       </button>
-      {!compacto && <p className="mt-2 px-2 text-[10px] text-slate-400">Jake Beauty v1.0</p>}
+      {!compacto && <p className="mt-2 px-2 text-[10px] text-slate-400">Controla Miga v1.0</p>}
     </div>
   );
 
-  /** Topo: marca, estabelecimento e quem está conectado. */
-  const marca = (compacto: boolean) => (
-    <div className={`flex items-center min-w-0 ${compacto ? 'justify-center' : 'gap-3'}`}>
-      <span className="w-10 h-10 shrink-0 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-sm" aria-hidden="true">
-        <Sparkles size={20} />
-      </span>
-      {!compacto && (
-        <div className="min-w-0">
-          <p className="text-base font-black tracking-[0.18em] text-slate-800 leading-tight uppercase">Jake Beauty</p>
-          <p className="text-[10px] font-bold tracking-[0.2em] text-rose-600 uppercase truncate">{estabelecimento?.nome ?? 'Studio'}</p>
-          {perfil && <p className="text-[11px] text-slate-500 truncate">{perfil.name}</p>}
-        </div>
-      )}
+  /** Topo: logo Controla Miga (versão clara ou escura conforme o visual) e quem está conectado. */
+  const marca = (compacto: boolean) => compacto ? (
+    <div className="flex justify-center">
+      <img src="/marca/simbolo.png" alt="Controla Miga" className="w-11 h-11 object-contain" />
+    </div>
+  ) : (
+    <div className="min-w-0 pr-7">
+      <img src="/marca/logo.png" alt="Controla Miga" className="block dark:hidden h-14 w-auto max-w-full object-contain object-left" />
+      <img src="/marca/logo-escuro.png" alt="Controla Miga" className="hidden dark:block h-14 w-auto max-w-full object-contain object-left" />
+      {perfil && <p className="mt-1 text-[11px] text-slate-500 truncate">{perfil.name}</p>}
     </div>
   );
 
@@ -322,7 +319,10 @@ export default function MainLayout() {
               <Menu size={24} />
             </button>
             <div className="ml-2 min-w-0">
-              <h1 className="text-lg font-black text-rose-600 leading-tight">Jake Beauty</h1>
+              <h1 className="leading-none">
+                <img src="/marca/logo.png" alt="Controla Miga" className="block dark:hidden h-10 w-auto" />
+                <img src="/marca/logo-escuro.png" alt="Controla Miga" className="hidden dark:block h-10 w-auto" />
+              </h1>
               {moduloAtual && <p className="text-xs text-slate-500 truncate leading-tight">{moduloAtual.rotulo}</p>}
             </div>
           </div>

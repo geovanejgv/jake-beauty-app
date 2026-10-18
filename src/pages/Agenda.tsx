@@ -522,7 +522,7 @@ export default function Agenda() {
     if (!phone) return alert(`O cadastro de ${cName} está sem número de WhatsApp.`);
     let cleanPhone = phone.replace(/\D/g, ''); if (cleanPhone.length === 11 || cleanPhone.length === 10) cleanPhone = `55${cleanPhone}`;
     const sName = Array.isArray(apt.services) ? apt.services[0]?.name : apt.services?.name || 'seu procedimento';
-    const message = `Olá, ${cName}! Tudo bem com você? 🌸\n\nAqui é do *Jake Beauty*! Estava lembrando de você hoje e percebi que já está na hora de renovarmos o seu procedimento de *${sName}* para mantermos aqueles resultados maravilhosos que você adora! 🥰\n\nVamos agendar um novo horário? Te aguardo! ✨`;
+    const message = `Olá, ${cName}! Tudo bem com você? 🌸\n\nAqui é do *${perfil?.estabelecimento?.nome ?? 'salão'}*! Estava lembrando de você hoje e percebi que já está na hora de renovarmos o seu procedimento de *${sName}* para mantermos aqueles resultados maravilhosos que você adora! 🥰\n\nVamos agendar um novo horário? Te aguardo! ✨`;
     markWhatsAppSentMutation.mutate({id: apt.id, type: 'reminder'});
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
