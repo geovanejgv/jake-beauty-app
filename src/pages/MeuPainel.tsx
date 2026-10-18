@@ -10,6 +10,7 @@ import { brl, dataLocal, horaBR, isoParaBR, mesDe } from '../lib/formatos';
 import { comissoesKeys, listarAtendimentos, listarFechamentos, type Fechamento } from '../features/comissoes/api';
 import { ROTULO_STATUS_AGENDAMENTO, painelProfissional } from '../features/comissoes/logic';
 import { FechamentoDetalhe, SeloStatus } from '../features/comissoes/FechamentoDetalhe';
+import { AniversariantesMes } from '../features/clientes/Aniversariantes';
 
 type Periodo = 'hoje' | 'semana' | 'mes' | 'personalizado';
 
@@ -51,6 +52,18 @@ export default function MeuPainel() {
     queryFn: () => listarFechamentos({ profissionalId: perfil!.id }),
     enabled: !!perfil,
     refetchInterval: 60_000,
+  });
+
+  // Aniversariantes do mês: a data de aniversário é dado da administradora (a profissional não a recebe).
+  const ehAdmin = perfil?.role === 'admin';
+  const { data: clientesAniversario = [] } = useQuery({
+    queryKey: ['clients', 'aniversarios'],
+    enabled: ehAdmin,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('clients').select('id, name, phone, birthday').not('birthday', 'is', null);
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
   // Tempo real: qualquer mudança nos próprios atendimentos ou fechamentos atualiza o painel.
@@ -138,6 +151,8 @@ export default function MeuPainel() {
           ))}
         </div>
       )}
+
+      {ehAdmin && <AniversariantesMes clientes={clientesAniversario} hoje={hoje} />}
 
       <div className="grid lg:grid-cols-2 gap-4">
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
