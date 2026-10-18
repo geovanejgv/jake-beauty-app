@@ -4,7 +4,7 @@ Portal do estúdio: SPA Vite + React 18 + TypeScript + Tailwind, dados no Supaba
 
 ## Estrutura
 
-- `src/features/<módulo>/`: lógica (com testes) e acesso a dados de cada módulo: `acesso` (papéis, menu, preferências e MFA), `equipe`, `clientes` (origens e grupos), `catalogo`, `agenda`, `comissoes`, `kanban`, `pacotes`, `plano` (demonstração, limites, travas) e `admin-global`.
+- `src/features/<módulo>/`: lógica (com testes) e acesso a dados de cada módulo: `acesso` (papéis, menu, preferências e MFA), `equipe`, `clientes` (origens e grupos), `catalogo`, `agenda`, `comissoes`, `kanban`, `pacotes`, `leads` (funil da possível cliente), `backup` (planilha .xlsx com aviso mensal), `plano` (demonstração, limites, travas) e `admin-global`.
 - Vários estabelecimentos: todo dado tem `estabelecimento_id`, com política RLS restritiva e gatilho de guarda (`docs/especificacoes/administracao-global.md`). Tabela nova do app nasce com a coluna, a política restritiva e o gatilho `a0_estabelecimento_guarda`.
 - `src/pages/`: telas. Papéis: `admin` (administradora do estabelecimento) e `professional` (profissional parceiro); administração global à parte (`administradores_globais`, exige MFA). A fronteira de acesso é o RLS do banco.
 - `docs/especificacoes/`: especificações de funcionalidades ainda não implantadas.

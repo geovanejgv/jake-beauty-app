@@ -9,6 +9,7 @@ import PDV from './pages/PDV';
 import Pacotes from './pages/Pacotes';
 import Login from './pages/Login';
 import Tarefas from './pages/Tarefas';
+import Leads from './pages/Leads';
 import Configuracoes from './pages/Configuracoes';
 import Profissionais from './pages/Profissionais';
 import Servicos from './pages/Servicos';
@@ -132,6 +133,7 @@ export default function App() {
             <Route path="meu-painel" element={<RotaModulo id="meu_painel"><MeuPainel /></RotaModulo>} />
             <Route path="agenda" element={<RotaModulo id="agenda"><Agenda /></RotaModulo>} />
             <Route path="tarefas" element={<RotaModulo id="tarefas"><Tarefas /></RotaModulo>} />
+            <Route path="leads" element={<RotaModulo id="leads"><Leads /></RotaModulo>} />
             <Route path="clientes" element={<RotaModulo id="clientes"><Clientes /></RotaModulo>} />
             <Route path="profissionais" element={<RotaModulo id="profissionais"><Profissionais /></RotaModulo>} />
             <Route path="servicos" element={<RotaModulo id="servicos"><Servicos /></RotaModulo>} />

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { AvisoBackup } from '../features/backup/AvisoBackup';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
@@ -364,10 +365,12 @@ export default function Financeiro() {
 
   return (
     <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3 pb-4 relative">
+      <div className="shrink-0 empty:hidden"><AvisoBackup tipo="financeiro" exibir="faixa" /></div>
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 shrink-0">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Calendário Financeiro</h2>
+          <AvisoBackup tipo="financeiro" exibir="botao" />
           {/* Controle financeiro do negócio e pessoal */}
           <div className="bg-slate-200 p-0.5 rounded-lg flex items-center space-x-0.5" role="radiogroup" aria-label="Visão financeira">
             {ESCOPOS.map(({ valor, rotulo, Icone }) => (
