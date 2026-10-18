@@ -26,6 +26,8 @@ const ATIVO: Record<string, string> = {
   slate: 'bg-slate-100 border-slate-500 text-slate-700 ring-1 ring-slate-500',
 };
 
+const MAX_PARCELAS = 12;
+
 /** Soma dias a uma data YYYY-MM-DD. */
 function somarDias(iso: string, dias: number) {
   const d = new Date(`${iso}T12:00:00Z`);
@@ -45,6 +47,9 @@ export default function PDV() {
 
   const valorInicial = appointment?.services?.price ?? appointment?.valor_cobrado ?? 0;
   const [paymentMethod, setPaymentMethod] = useState<string>('pix');
+  // Crédito: à vista (1x) ou parcelado (2x a 12x).
+  const [parcelado, setParcelado] = useState(false);
+  const [parcelas, setParcelas] = useState(2);
   const [valor, setValor] = useState(valorParaCampo(valorInicial));
   const [gorjeta, setGorjeta] = useState('');
   const [returnDate, setReturnDate] = useState(''); // Data do lembrete de retorno
@@ -88,6 +93,7 @@ export default function PDV() {
           .update({
             status: 'completed',
             payment_method: paymentMethod,
+            installments: paymentMethod === 'credito' && parcelado ? parcelas : 1,
             valor_cobrado: v,
             gorjeta: g,
             notes: observacao,
@@ -207,6 +213,24 @@ export default function PDV() {
                 </button>
               ))}
             </div>
+            {paymentMethod === 'credito' && (
+              <div className="space-y-2 bg-violet-50/50 border border-violet-200 rounded-xl p-3">
+                <div className="flex bg-white border border-violet-100 p-1 rounded-lg" role="radiogroup" aria-label="Crédito à vista ou parcelado">
+                  <button type="button" role="radio" aria-checked={!parcelado} onClick={() => setParcelado(false)} className={`flex-1 py-1.5 text-xs font-bold rounded-md ${!parcelado ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-500'}`}>À vista</button>
+                  <button type="button" role="radio" aria-checked={parcelado} onClick={() => setParcelado(true)} className={`flex-1 py-1.5 text-xs font-bold rounded-md ${parcelado ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-500'}`}>Parcelado</button>
+                </div>
+                {parcelado && (
+                  <label className="block text-xs font-bold text-slate-500">Quantidade de parcelas
+                    <select value={parcelas} onChange={(e) => setParcelas(Number(e.target.value))} className="mt-1 w-full border border-slate-200 bg-white p-2.5 rounded-lg text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-violet-500">
+                      {Array.from({ length: MAX_PARCELAS - 1 }, (_, i) => i + 2).map((n) => {
+                        const v = lerValor(valor);
+                        return <option key={n} value={n}>{n}x{v ? ` de ${brl(v / n)}` : ''}</option>;
+                      })}
+                    </select>
+                  </label>
+                )}
+              </div>
+            )}
           </div>
           ) : <p className="text-sm text-slate-500 self-center">A sessão já foi paga na venda do pacote. Só a gorjeta, se houver, é registrada agora.</p>}
 

@@ -567,7 +567,7 @@ export default function Dashboard() {
                           <td className="px-4 py-3 whitespace-nowrap text-slate-500"><span className="font-semibold text-slate-700">{new Date(row.start_time).toLocaleDateString('pt-BR')}</span> às {new Date(row.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td>
                           <td className="px-4 py-3 font-bold text-slate-800">{row.clients?.name}</td>
                           <td className="px-4 py-3 text-slate-600">{row.services?.name}</td>
-                          <td className="px-4 py-3"><span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider">{translatePaymentMethod(row.payment_method)}</span></td>
+                          <td className="px-4 py-3"><span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider">{translatePaymentMethod(row.payment_method)}{row.payment_method === 'credito' && row.installments > 1 ? ` ${row.installments}x` : ''}</span></td>
                           <td className="px-4 py-3 text-right font-black text-rose-600">{formatCurrency(row.services?.price || 0)}</td>
                           <td className="px-4 py-3">
                             {row.ehPacote ? <Link to="/pacotes" className="block text-center text-[11px] font-bold text-violet-700 hover:underline">Ver em Pacotes</Link> : (
