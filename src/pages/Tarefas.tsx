@@ -36,8 +36,8 @@ export default function Tarefas() {
   const [params, setParams] = useSearchParams();
   const quadroId = params.get('quadro');
   const nova = params.get('nova');
-  // Visão da tela inicial: quadros do negócio ou pessoais (?visao=pessoal)
-  const visao: EscopoQuadro = params.get('visao') === 'pessoal' ? 'pessoal' : 'negocio';
+  // Visão da tela inicial: a pessoal é a padrão; a do negócio fica em ?visao=negocio
+  const visao: EscopoQuadro = params.get('visao') === 'negocio' ? 'negocio' : 'pessoal';
   const filtros = useMemo(() => lerFiltros(params), [params]);
   const hoje = hojeISO();
   const [aviso, setAviso] = useState<string | null>(null);
@@ -196,7 +196,7 @@ export default function Tarefas() {
       ) : (
         <TelaInicial secoes={agruparQuadros(quadrosDaVisao(listaQuadros, visao), grupos, vinculos)} todos={listaQuadros} colunas={todasColunas} visao={visao}
           temGrupos={grupos.length > 0}
-          onVisao={(v) => setParams(v === 'pessoal' ? { visao: 'pessoal' } : {})}
+          onVisao={(v) => setParams(v === 'negocio' ? { visao: 'negocio' } : {})}
           onNovoQuadro={abrirNovoQuadro} onEditar={setQuadroEditandoId} onExcluir={pedirExclusao} onCompartilhar={setQuadroCompartilharId}
           onNovoGrupo={() => setGrupoModal('novo')} onRenomearGrupo={setGrupoModal} onExcluirGrupo={setGrupoExcluir} onGrupoDoQuadro={setGrupoDoQuadroId} />
       )}
@@ -547,7 +547,7 @@ function QuadroAberto(p: QuadroAbertoProps) {
   // Quadro compartilhado só para visualizar: sem criar, mover nem editar (o banco também barra).
   const somenteVer = !podeEditarQuadro(p.quadro);
   const quadrosEditaveis = p.quadros.filter(podeEditarQuadro);
-  const voltar = p.quadro.no_negocio === false ? '/tarefas?visao=pessoal' : '/tarefas';
+  const voltar = p.quadro.no_negocio === false ? '/tarefas' : '/tarefas?visao=negocio';
   // Visualização compacta: só o título; cada cartão expande sozinho
   const [densidade, setDensidade] = useDensidade();
   const compacto = densidade === 'compacta';
