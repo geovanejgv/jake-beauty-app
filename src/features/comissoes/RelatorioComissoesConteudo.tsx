@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Download, Filter, Loader2, Printer } from 'lucide-react';
+import { Download, FileText, Filter, Loader2, Printer } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { mensagemDeErro } from '../../lib/seguranca/erros';
 import { brl, dataBR, dataLocal, mesDe, pct } from '../../lib/formatos';
@@ -8,6 +8,7 @@ import { equipeKeys, listarAtivos } from '../equipe/api';
 import { comissoesKeys, lerRegras, listarAtendimentos } from './api';
 import { ROTULO_FORMA, ROTULO_STATUS_AGENDAMENTO, somar, type FormaPagamento } from './logic';
 import { ROTULO_SITUACAO, gerarCsv, montarLinhas, type SituacaoPagamento } from './relatorio';
+import { ResumoProfissional } from './ResumoProfissional';
 
 /** Filtros usados também pela página de impressão (vão na URL). */
 export type FiltrosRelatorio = { de: string; ate: string; profissional: string; situacao: SituacaoPagamento | 'todas'; somenteConcluidos: boolean };
@@ -39,6 +40,9 @@ export function RelatorioComissoesConteudo() {
   const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos, enabled: ehAdmin });
   const { linhas, carregando, erro } = useLinhasRelatorio(f, ehAdmin ? null : perfil?.id ?? null);
   const totais = useMemo(() => somar(linhas.map((l) => ({ ...l.calculo, liquido: l.liquido, comissao: l.liquido - l.calculo.gorjeta }))), [linhas]);
+  const [resumoAberto, setResumoAberto] = useState(false);
+  // Resumo exige um profissional: o escolhido no filtro (administradora) ou o próprio usuário.
+  const profResumo = ehAdmin ? (f.profissional ? { id: f.profissional, nome: equipe.find((p) => p.id === f.profissional)?.name ?? 'Profissional' } : null) : perfil ? { id: perfil.id, nome: perfil.name } : null;
   const set = <K extends keyof FiltrosRelatorio>(k: K, v: FiltrosRelatorio[K]) => setF((x) => ({ ...x, [k]: v }));
 
   const urlPdf = `/relatorios/comissoes/imprimir?${new URLSearchParams({ de: f.de, ate: f.ate, profissional: ehAdmin ? f.profissional : '', situacao: f.situacao, concluidos: f.somenteConcluidos ? '1' : '0' })}`;
@@ -81,7 +85,9 @@ export function RelatorioComissoesConteudo() {
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-slate-500 flex items-center gap-1"><Filter size={12} /> {linhas.length} atendimento(s). Valores em aberto são prévia pelas regras atuais; os fechados vêm do fechamento.</p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setResumoAberto(true)} disabled={!profResumo} title={profResumo ? undefined : 'Selecione um profissional no filtro'}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm font-bold hover:bg-rose-100 disabled:opacity-50"><FileText size={16} /> Resumo do profissional</button>
           <button type="button" onClick={exportar} disabled={!linhas.length} className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-bold hover:bg-slate-50 disabled:opacity-50"><Download size={16} /> Exportar CSV</button>
           <a href={urlPdf} target="_blank" rel="noopener" className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold"><Printer size={16} /> Gerar PDF</a>
         </div>
@@ -130,6 +136,7 @@ export function RelatorioComissoesConteudo() {
               </table>
             </div>
           )}
+      {resumoAberto && profResumo && <ResumoProfissional profissionalId={profResumo.id} nome={profResumo.nome} de={f.de} ate={f.ate} onClose={() => setResumoAberto(false)} />}
     </div>
   );
 }
