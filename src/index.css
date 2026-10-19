@@ -518,7 +518,12 @@ html.tema-jake.dark {
 
 
 /* Impressão / "Salvar como PDF" (relatórios): papel branco, sem vidro nem sombras. */
+/* Impressão na própria tela (resumo do profissional): fora da impressão a área fica oculta;
+   durante a impressão só ela aparece. */
+.area-impressao { display: none; }
 @media print {
+  body.imprimindo > *:not(.area-impressao) { display: none !important; }
+  body.imprimindo > .area-impressao { display: block; }
   html, body { background: #fff !important; color: #0f172a !important; }
   html.dark body { background: #fff !important; }
   * { box-shadow: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
