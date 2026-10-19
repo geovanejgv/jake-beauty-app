@@ -14,7 +14,7 @@
 -- só da administradora até ganharem a checagem no banco.
 -- Histórico: ações da profissional na agenda e em clientes, só para a administradora,
 -- sem dado pessoal (só a tela, a ação, a data do atendimento e os campos alterados).
--- Sem DROP de tabela nem DELETE/UPDATE de dados: troca políticas e funções.
+-- Sem DROP nem DELETE/UPDATE de dados: altera políticas (alter policy) e funções.
 -- =============================================================================
 
 begin;
@@ -166,45 +166,37 @@ grant execute on function public.permissao_padrao(text), public.minha_permissao(
 -- demais profissionais, com alcance "todos" na Agenda ou no Relatório de comissões.
 -- Gravar exige "editar" na Agenda; nos das demais, também alcance "todos".
 -- Valores, forma de pagamento e gorjeta seguem só da administradora (appointments_protecao).
-drop policy "appointments: profissional select" on public.appointments;
-drop policy "appointments: profissional insert" on public.appointments;
-drop policy "appointments: profissional update" on public.appointments;
-drop policy "appointments: profissional delete" on public.appointments;
 
-create policy "appointments: profissional select" on public.appointments
-  for select to authenticated
+alter policy "appointments: profissional select" on public.appointments
+  to authenticated
   using (public.usuario_ativo() and (professional_id = public.usuario_atual_id()
          or public.ve_todos('agenda') or public.ve_todos('relatorio_comissoes')));
-create policy "appointments: profissional insert" on public.appointments
-  for insert to authenticated
+alter policy "appointments: profissional insert" on public.appointments
+  to authenticated
   with check (public.pode_editar('agenda') and (professional_id = public.usuario_atual_id() or public.ve_todos('agenda')));
-create policy "appointments: profissional update" on public.appointments
-  for update to authenticated
+alter policy "appointments: profissional update" on public.appointments
+  to authenticated
   using (public.pode_editar('agenda') and (professional_id = public.usuario_atual_id() or public.ve_todos('agenda')))
   with check (public.pode_editar('agenda') and (professional_id = public.usuario_atual_id() or public.ve_todos('agenda')));
-create policy "appointments: profissional delete" on public.appointments
-  for delete to authenticated
+alter policy "appointments: profissional delete" on public.appointments
+  to authenticated
   using (public.pode_editar('agenda') and (professional_id = public.usuario_atual_id() or public.ve_todos('agenda')));
 
 -- Agendar para as demais exige ver os serviços que cada uma oferece.
-drop policy "usuario_servico: select" on public.usuario_servico;
-create policy "usuario_servico: select" on public.usuario_servico
-  for select to authenticated
+alter policy "usuario_servico: select" on public.usuario_servico
+  to authenticated
   using (public.usuario_admin() or user_id = public.usuario_atual_id() or public.ve_todos('agenda'));
 
 -- Relatório de comissões com alcance "todos": fechamentos e ajustes das demais.
-drop policy "fechamentos: select" on public.fechamentos;
-create policy "fechamentos: select" on public.fechamentos
-  for select to authenticated
+alter policy "fechamentos: select" on public.fechamentos
+  to authenticated
   using (public.usuario_admin() or profissional_id = public.usuario_atual_id() or public.ve_todos('relatorio_comissoes'));
-drop policy "fechamento_itens: select" on public.fechamento_itens;
-create policy "fechamento_itens: select" on public.fechamento_itens
-  for select to authenticated
+alter policy "fechamento_itens: select" on public.fechamento_itens
+  to authenticated
   using (exists (select 1 from public.fechamentos f where f.id = fechamento_itens.fechamento_id
                  and (public.usuario_admin() or f.profissional_id = public.usuario_atual_id() or public.ve_todos('relatorio_comissoes'))));
-drop policy "lancamento_ajustes: select" on public.lancamento_ajustes;
-create policy "lancamento_ajustes: select" on public.lancamento_ajustes
-  for select to authenticated
+alter policy "lancamento_ajustes: select" on public.lancamento_ajustes
+  to authenticated
   using (public.usuario_admin() or (public.usuario_ativo() and (profissional_id = public.usuario_atual_id() or public.ve_todos('relatorio_comissoes'))));
 
 CREATE OR REPLACE FUNCTION public.agendar_atendimento(p_cliente uuid, p_profissional uuid, p_servico uuid, p_inicio timestamp with time zone, p_servico_avulso text DEFAULT NULL::text, p_valor numeric DEFAULT NULL::numeric, p_duracao_minutos integer DEFAULT NULL::integer, p_status text DEFAULT 'scheduled'::text, p_observacao text DEFAULT NULL::text, p_pacote_item uuid DEFAULT NULL::uuid)
@@ -397,12 +389,10 @@ as
   WHERE usuario_ativo() AND estabelecimento_id = (( SELECT estabelecimento_atual() AS estabelecimento_atual));
 
 -- Histórico técnico: ver com acesso a Clientes; registrar com "editar".
-drop policy "cliente_historico: select" on public.cliente_historico;
-create policy "cliente_historico: select" on public.cliente_historico
-  for select to authenticated using (public.pode_ver('clientes'));
-drop policy "cliente_historico: insert" on public.cliente_historico;
-create policy "cliente_historico: insert" on public.cliente_historico
-  for insert to authenticated with check (public.pode_editar('clientes'));
+alter policy "cliente_historico: select" on public.cliente_historico
+  to authenticated using (public.pode_ver('clientes'));
+alter policy "cliente_historico: insert" on public.cliente_historico
+  to authenticated with check (public.pode_editar('clientes'));
 
 -- Cadastro rápido (agenda e clientes): exige "editar" em Clientes ou na Agenda.
 CREATE OR REPLACE FUNCTION public.cadastrar_cliente_rapido(p_nome text, p_telefone text, p_aniversario date, p_origem uuid)
