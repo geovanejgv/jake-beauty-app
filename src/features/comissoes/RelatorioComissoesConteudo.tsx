@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Download, FileText, Filter, Loader2, Printer } from 'lucide-react';
+import { Download, FileText, Filter, Loader2, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { mensagemDeErro } from '../../lib/seguranca/erros';
 import { brl, dataBR, dataLocal, mesDe, pct } from '../../lib/formatos';
@@ -9,6 +9,9 @@ import { comissoesKeys, lerRegras, listarAtendimentos } from './api';
 import { ROTULO_FORMA, ROTULO_STATUS_AGENDAMENTO, somar, type FormaPagamento } from './logic';
 import { ROTULO_SITUACAO, gerarCsv, montarLinhas, type SituacaoPagamento } from './relatorio';
 import { ResumoProfissional } from './ResumoProfissional';
+import { EditarLancamento, ExcluirLancamento } from './EditarLancamento';
+import { Aviso } from '../../components/ui';
+import type { LinhaRelatorio } from './relatorio';
 
 /** Filtros usados também pela página de impressão (vão na URL). */
 export type FiltrosRelatorio = { de: string; ate: string; profissional: string; situacao: SituacaoPagamento | 'todas'; somenteConcluidos: boolean };
@@ -41,6 +44,9 @@ export function RelatorioComissoesConteudo() {
   const { linhas, carregando, erro } = useLinhasRelatorio(f, ehAdmin ? null : perfil?.id ?? null);
   const totais = useMemo(() => somar(linhas.map((l) => ({ ...l.calculo, liquido: l.liquido, comissao: l.liquido - l.calculo.gorjeta }))), [linhas]);
   const [resumoAberto, setResumoAberto] = useState(false);
+  const [editando, setEditando] = useState<LinhaRelatorio | null>(null);
+  const [excluindo, setExcluindo] = useState<LinhaRelatorio | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   // Resumo exige um profissional: o escolhido no filtro (administradora) ou o próprio usuário.
   const profResumo = ehAdmin ? (f.profissional ? { id: f.profissional, nome: equipe.find((p) => p.id === f.profissional)?.name ?? 'Profissional' } : null) : perfil ? { id: perfil.id, nome: perfil.name } : null;
   const set = <K extends keyof FiltrosRelatorio>(k: K, v: FiltrosRelatorio[K]) => setF((x) => ({ ...x, [k]: v }));
@@ -104,10 +110,11 @@ export function RelatorioComissoesConteudo() {
                     {ehAdmin && <th className="px-3 py-2.5">Profissional</th>}
                     <th className="px-3 py-2.5">Pagto</th><th className="px-3 py-2.5 text-right">Valor bruto</th><th className="px-3 py-2.5 text-right">% Comissão</th>
                     <th className="px-3 py-2.5 text-right">Valor líquido</th><th className="px-3 py-2.5">Situação</th>
+                    {ehAdmin && <th className="px-3 py-2.5"><span className="sr-only">Ações</span></th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {linhas.length === 0 && <tr><td colSpan={9} className="px-3 py-10 text-center text-slate-400">Nenhum atendimento com estes filtros.</td></tr>}
+                  {linhas.length === 0 && <tr><td colSpan={ehAdmin ? 10 : 8} className="px-3 py-10 text-center text-slate-400">Nenhum atendimento com estes filtros.</td></tr>}
                   {linhas.map((l) => (
                     <tr key={l.id} className="border-t border-slate-100">
                       <td className="px-3 py-2 whitespace-nowrap">{dataBR(l.start_time)}</td>
@@ -119,6 +126,15 @@ export function RelatorioComissoesConteudo() {
                       <td className="px-3 py-2 text-right">{pct(l.calculo.comissaoPercentual)}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap font-bold">{brl(l.liquido)}</td>
                       <td className="px-3 py-2"><span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${l.situacao === 'assinado_pago' ? 'bg-emerald-100 text-emerald-800' : l.situacao === 'aberto' ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-800'}`}>{ROTULO_SITUACAO[l.situacao]}</span></td>
+                      {ehAdmin && (
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          {/* Lançamento em fechamento fica travado no banco: cancele o fechamento antes. */}
+                          <button type="button" onClick={() => setEditando(l)} disabled={!!l.fechamento} title={l.fechamento ? 'Em fechamento: cancele o fechamento para alterar' : 'Editar lançamento'}
+                            className="p-1.5 text-slate-500 hover:text-rose-600 disabled:opacity-30 disabled:hover:text-slate-500" aria-label={`Editar lançamento de ${l.cliente_nome}`}><Pencil size={16} /></button>
+                          <button type="button" onClick={() => setExcluindo(l)} disabled={!!l.fechamento} title={l.fechamento ? 'Em fechamento: cancele o fechamento para excluir' : 'Excluir lançamento'}
+                            className="p-1.5 text-slate-500 hover:text-red-600 disabled:opacity-30 disabled:hover:text-slate-500" aria-label={`Excluir lançamento de ${l.cliente_nome}`}><Trash2 size={16} /></button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -130,12 +146,16 @@ export function RelatorioComissoesConteudo() {
                       <td />
                       <td className="px-3 py-2.5 text-right whitespace-nowrap">{brl(totais.liquido)}</td>
                       <td />
+                      {ehAdmin && <td />}
                     </tr>
                   </tfoot>
                 )}
               </table>
             </div>
           )}
+      {ehAdmin && editando && <EditarLancamento linha={editando} onClose={() => setEditando(null)} onAviso={setAviso} />}
+      {ehAdmin && excluindo && <ExcluirLancamento linha={excluindo} onClose={() => setExcluindo(null)} onAviso={setAviso} />}
+      <Aviso texto={aviso} onFechar={() => setAviso(null)} />
       {resumoAberto && profResumo && <ResumoProfissional profissionalId={profResumo.id} nome={profResumo.nome} de={f.de} ate={f.ate} onClose={() => setResumoAberto(false)} />}
     </div>
   );
