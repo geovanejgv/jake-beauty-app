@@ -28,4 +28,5 @@ rodar "${DB}_estabelecimentos" estabelecimentos.test.sql
 rodar "${DB}_login_mfa" login_mfa.test.sql
 rodar "${DB}_clientes_grupos" clientes_grupos.test.sql
 rodar "${DB}_leads_backup" leads_backup.test.sql
+rodar "${DB}_comissao" comissao_vigente.test.sql
 echo "Testes de segurança do banco: OK"
