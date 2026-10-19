@@ -69,18 +69,27 @@ select pg_temp.ok(pg_temp.pct('2026-10-19 15:00+00') = 35, 'profissional conclui
 select pg_temp.espera_erro($$select public.recalcular_comissoes_abertas(null, null)$$, 'permission denied');
 select pg_temp.espera_erro($$update public.appointments set gorjeta = 5 where start_time = '2026-10-19 15:00+00'$$, 'Somente a administradora');
 
--- Relatório de comissões: a administradora edita e exclui lançamento em aberto sem o
--- segundo fator (sessão aal1); lançamento em fechamento continua travado.
+-- Relatório de comissões: edição e exclusão só com justificativa, pelas funções do banco.
+select pg_temp.espera_erro($$select public.excluir_lancamento((select id from public.appointments where start_time = '2026-10-19 15:00+00'), 'Lançado errado')$$, 'Somente a administradora');
 select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
+-- Sem segundo fator (sessão aal1).
 select set_config('request.jwt.claims', '{"aal": "aal1"}', false);
-update public.appointments set valor_cobrado = 70, comissao_percentual = 50, payment_method = 'dinheiro', gorjeta = 5
- where start_time = '2026-10-19 15:00+00';
+select pg_temp.espera_erro($$select public.editar_lancamento((select id from public.appointments where start_time = '2026-10-19 15:00+00'), 70, 50, 'dinheiro', 5, ' ')$$, 'justificativa');
+select pg_temp.espera_erro($$update public.lancamento_ajustes set justificativa = 'x'$$, 'permission denied');
+select public.editar_lancamento((select id from public.appointments where start_time = '2026-10-19 15:00+00'), 70, 50, 'dinheiro', 5, 'Cliente pagou em dinheiro');
 select pg_temp.ok((select valor_cobrado = 70 and comissao_percentual = 50 and payment_method = 'dinheiro' and gorjeta = 5
    from public.appointments where start_time = '2026-10-19 15:00+00'), 'administradora edita lançamento em aberto sem aal2');
-select pg_temp.espera_erro($$update public.appointments set comissao_percentual = 10 where start_time = '2026-10-19 14:00+00'$$, 'já incluído em fechamento');
-select pg_temp.espera_erro($$delete from public.appointments where start_time = '2026-10-19 14:00+00'$$, 'já incluído em fechamento');
-delete from public.appointments where start_time = '2026-10-19 15:00+00';
+select pg_temp.ok((select tipo = 'edicao' and valor_antes = 60 and valor_depois = 70 and comissao_antes = 35 and forma_depois = 'dinheiro'
+   and cliente_nome = 'Carla Cliente' and servico_nome = 'Escova' and profissional_nome = 'Valentin' and justificativa = 'Cliente pagou em dinheiro'
+   from public.lancamento_ajustes), 'edição grava antes, depois e justificativa');
+select pg_temp.espera_erro($$select public.editar_lancamento((select id from public.appointments where start_time = '2026-10-19 14:00+00'), 1, 1, 'pix', 0, 'Tentativa em fechamento')$$, 'já incluído em fechamento');
+select pg_temp.espera_erro($$select public.excluir_lancamento((select id from public.appointments where start_time = '2026-10-19 14:00+00'), 'Tentativa em fechamento')$$, 'já incluído em fechamento');
+select pg_temp.ok((select count(*) from public.lancamento_ajustes) = 1, 'tentativa recusada não deixa ajuste');
+select public.excluir_lancamento((select id from public.appointments where start_time = '2026-10-19 15:00+00'), 'Atendimento lançado em duplicidade');
 select pg_temp.ok(not exists (select 1 from public.appointments where start_time = '2026-10-19 15:00+00'), 'administradora exclui lançamento em aberto sem aal2');
+select pg_temp.ok((select valor_antes = 70 and gorjeta_antes = 5 and valor_depois is null from public.lancamento_ajustes where tipo = 'exclusao'), 'exclusão guarda os dados apagados');
+select pg_temp.como('bbbbbbbb-0000-0000-0000-000000000002');
+select pg_temp.ok((select count(*) from public.lancamento_ajustes) = 2, 'profissional vê os ajustes dos próprios atendimentos');
 reset role;
 select pg_temp.ok((select count(*) from public.access_logs where acao = 'excluiu' and entidade = 'appointments') = 1, 'exclusão registrada na auditoria');
 select 'Comissão vigente: OK';
