@@ -11,6 +11,7 @@ import { ROTULO_SITUACAO, type SituacaoPagamento } from '../features/comissoes/r
 import { filtrosPadrao, useLinhasRelatorio, type FiltrosRelatorio } from '../features/comissoes/RelatorioComissoesConteudo';
 import { equipeKeys, listarAtivos } from '../features/equipe/api';
 import { DocumentoResumo, useResumoFinanceiro } from '../features/comissoes/ResumoProfissional';
+import { acessoTela } from '../features/acesso/permissoes';
 
 /**
  * Relatório pronto para imprimir ou "Salvar como PDF" pelo navegador (sem biblioteca
@@ -66,20 +67,20 @@ function Cabecalho({ titulo, subtitulo }: { titulo: string; subtitulo: string })
 
 function Relatorio({ params }: { params: URLSearchParams }) {
   const { perfil } = useAuth();
-  const ehAdmin = perfil?.role === 'admin';
+  const veTodas = perfil?.role === 'admin' || acessoTela(perfil?.permissoes, 'relatorio_comissoes').todos;
   const padrao = filtrosPadrao();
   const f: FiltrosRelatorio = {
     de: /^\d{4}-\d{2}-\d{2}$/.test(params.get('de') ?? '') ? params.get('de')! : padrao.de,
     ate: /^\d{4}-\d{2}-\d{2}$/.test(params.get('ate') ?? '') ? params.get('ate')! : padrao.ate,
-    profissional: ehAdmin ? (params.get('profissional') ?? '') : '',
+    profissional: veTodas ? (params.get('profissional') ?? '') : '',
     situacao: (['aberto', 'aguardando_conferencia', 'contestado', 'assinado_pago'].includes(params.get('situacao') ?? '') ? params.get('situacao') : 'todas') as FiltrosRelatorio['situacao'],
     somenteConcluidos: params.get('concluidos') !== '0',
   };
-  const { linhas, carregando, erro } = useLinhasRelatorio(f, ehAdmin ? null : perfil?.id ?? null);
+  const { linhas, carregando, erro } = useLinhasRelatorio(f, veTodas ? null : perfil?.id ?? null);
   const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos });
   const totais = useMemo(() => somar(linhas.map((l) => ({ ...l.calculo, liquido: l.liquido, comissao: l.liquido - l.calculo.gorjeta }))), [linhas]);
   useImprimirAoCarregar(!carregando && !erro);
-  const nomeProf = ehAdmin ? (f.profissional ? equipe.find((p) => p.id === f.profissional)?.name ?? 'Profissional' : 'Todos os profissionais') : perfil?.name ?? '';
+  const nomeProf = veTodas ? (f.profissional ? equipe.find((p) => p.id === f.profissional)?.name ?? 'Profissional' : 'Todos os profissionais') : perfil?.name ?? '';
 
   if (erro) return <p className="text-rose-600">{mensagemDeErro(erro, 'Não foi possível gerar o relatório.', 'relatorio.imprimir')}</p>;
   if (carregando) return <Loader2 className="animate-spin text-rose-500 mx-auto mt-20" size={32} />;
@@ -90,7 +91,7 @@ function Relatorio({ params }: { params: URLSearchParams }) {
         <thead>
           <tr className="border-b border-slate-400 text-left">
             <th className="py-1.5 pr-2">Data</th><th className="py-1.5 pr-2">Cliente</th><th className="py-1.5 pr-2">Serviço</th>
-            {ehAdmin && !f.profissional && <th className="py-1.5 pr-2">Profissional</th>}
+            {veTodas && !f.profissional && <th className="py-1.5 pr-2">Profissional</th>}
             <th className="py-1.5 pr-2">Pagto</th><th className="py-1.5 pr-2 text-right">Valor bruto</th><th className="py-1.5 pr-2 text-right">% Comissão</th><th className="py-1.5 text-right">Valor líquido</th>
           </tr>
         </thead>
@@ -100,7 +101,7 @@ function Relatorio({ params }: { params: URLSearchParams }) {
               <td className="py-1 pr-2 whitespace-nowrap">{dataBR(l.start_time)}</td>
               <td className="py-1 pr-2">{l.cliente_nome}</td>
               <td className="py-1 pr-2">{l.servico_nome}</td>
-              {ehAdmin && !f.profissional && <td className="py-1 pr-2">{l.profissional_nome}</td>}
+              {veTodas && !f.profissional && <td className="py-1 pr-2">{l.profissional_nome}</td>}
               <td className="py-1 pr-2">{l.payment_method ? ROTULO_FORMA[l.payment_method as FormaPagamento] ?? l.payment_method : '-'}</td>
               <td className="py-1 pr-2 text-right whitespace-nowrap">{brl(l.calculo.bruto)}</td>
               <td className="py-1 pr-2 text-right">{pct(l.calculo.comissaoPercentual)}</td>
@@ -186,17 +187,17 @@ const dataValida = (v: string | null, padrao: string) => (/^\d{4}-\d{2}-\d{2}$/.
 /** Resumo financeiro do profissional (modelo "Resumo Financeiro"), resumido ou com o descritivo dos atendimentos. */
 function ResumoFinanceiroPdf({ params }: { params: URLSearchParams }) {
   const { perfil } = useAuth();
-  const ehAdmin = perfil?.role === 'admin';
+  const veTodas = perfil?.role === 'admin' || acessoTela(perfil?.permissoes, 'relatorio_comissoes').todos;
   const padrao = filtrosPadrao();
   const de = dataValida(params.get('de'), padrao.de);
   const ate = dataValida(params.get('ate'), padrao.ate);
   // Profissional só emite o próprio resumo (o RLS também limita os atendimentos aos dele).
-  const profissionalId = ehAdmin ? params.get('profissional') ?? '' : perfil?.id ?? '';
+  const profissionalId = veTodas ? params.get('profissional') ?? '' : perfil?.id ?? '';
   const detalhado = params.get('detalhado') === '1';
-  const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos, enabled: ehAdmin });
+  const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos, enabled: veTodas });
   const { resumo, carregando, erro } = useResumoFinanceiro(profissionalId, de, ate);
   useImprimirAoCarregar(!!profissionalId && !carregando && !erro);
-  const nome = ehAdmin ? equipe.find((p) => p.id === profissionalId)?.name ?? 'Profissional' : perfil?.name ?? '';
+  const nome = veTodas ? equipe.find((p) => p.id === profissionalId)?.name ?? 'Profissional' : perfil?.name ?? '';
 
   if (!profissionalId) return <p>Selecione um profissional para emitir o resumo.</p>;
   if (erro) return <p className="text-rose-600">{mensagemDeErro(erro, 'Não foi possível gerar o resumo.', 'resumo.imprimir')}</p>;

@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { GRUPOS, ROTULO_PAPEL, moduloDaRota, modulosVisiveis, type IdGrupo, type Modulo } from '../features/acesso/modulos';
+import { MODULOS_COM_PERMISSAO } from '../features/acesso/permissoes';
 import { modoComputadorNoCelular } from '../features/acesso/visual';
 import { ROTULO_PLANO, demoExpirada, diasRestantesDemo, moduloLiberadoNoPlano } from '../features/plano/plano';
 
@@ -52,7 +53,7 @@ export default function MainLayout() {
   const liberado = (m: Modulo) => moduloLiberadoNoPlano(m.id, estabelecimento);
 
   const papel = perfil?.role ?? 'professional';
-  const modulos = useMemo(() => modulosVisiveis(papel, perfil?.preferencias_ui ?? { ocultar: [] }), [papel, perfil?.preferencias_ui]);
+  const modulos = useMemo(() => modulosVisiveis(papel, perfil?.preferencias_ui ?? { ocultar: [] }, perfil?.permissoes, MODULOS_COM_PERMISSAO), [papel, perfil?.preferencias_ui, perfil?.permissoes]);
   const moduloAtual = moduloDaRota(location.pathname);
 
   // Grupos abertos/fechados (lembrado no navegador; o grupo da tela atual sempre abre).

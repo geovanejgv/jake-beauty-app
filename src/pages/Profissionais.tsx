@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Loader2, Plus, Search, ShieldCheck, ShieldOff, UserCog, UserPlus } from 'lucide-react';
+import { AlertTriangle, History, KeyRound, Loader2, Plus, Search, ShieldCheck, ShieldOff, UserCog, UserPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { Aviso, Campo, Confirmar, Modal, inputCls } from '../components/ui';
@@ -9,6 +9,7 @@ import {
   type DadosMembro, type MembroEquipe, type ModeloContrato,
 } from '../features/equipe/api';
 import { ROTULO_PAPEL, type Papel } from '../features/acesso/modulos';
+import { HistoricoProfissional, PermissoesProfissional } from '../features/acesso/PermissoesProfissional';
 import { cnpjValido, cpfValido, formatarCnpj, formatarCpf, formatarTelefone, lerValor, pct, valorParaCampo } from '../lib/formatos';
 
 type Filtro = 'ativos' | 'inativos' | 'todos';
@@ -27,6 +28,8 @@ export default function Profissionais() {
   const [acesso, setAcesso] = useState<{ membro: MembroEquipe; modo: 'criar' | 'mfa' } | null>(null);
   const [status, setStatus] = useState<{ membro: MembroEquipe; ativo: boolean } | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [permissoes, setPermissoes] = useState<MembroEquipe | null>(null);
+  const [historico, setHistorico] = useState<MembroEquipe | null>(null);
 
   const { data: equipe = [], isLoading, error } = useQuery({ queryKey: equipeKeys.lista, queryFn: listarEquipe });
 
@@ -112,6 +115,12 @@ export default function Profissionais() {
                 )}
                 <div className="flex flex-wrap gap-2 mt-auto pt-1">
                   <button type="button" onClick={() => setEditando(m)} className="flex-1 min-w-[90px] text-xs font-bold border border-slate-200 rounded-lg py-2 hover:bg-slate-50">Editar perfil</button>
+                  {m.role === 'professional' && (
+                    <>
+                      <button type="button" onClick={() => setPermissoes(m)} className="flex-1 min-w-[90px] flex items-center justify-center gap-1 text-xs font-bold border border-rose-200 text-rose-700 rounded-lg py-2 hover:bg-rose-50"><KeyRound size={14} /> Permissões</button>
+                      <button type="button" onClick={() => setHistorico(m)} className="flex-1 min-w-[90px] flex items-center justify-center gap-1 text-xs font-bold border border-slate-200 text-slate-700 rounded-lg py-2 hover:bg-slate-50"><History size={14} /> Histórico</button>
+                    </>
+                  )}
                   {!(m.auth_id && eu) && (
                     <button type="button" onClick={() => setAcesso({ membro: m, modo: m.auth_id ? 'mfa' : 'criar' })} disabled={!m.active}
                       title={m.auth_id ? 'Para quem perdeu o celular ou trocou de aparelho' : undefined}
@@ -144,12 +153,14 @@ export default function Profissionais() {
           }}
         />
       )}
+      {permissoes && <PermissoesProfissional membro={permissoes} onClose={() => setPermissoes(null)} onAviso={setAviso} />}
+      {historico && <HistoricoProfissional membro={historico} onClose={() => setHistorico(null)} />}
       {acesso && (
         <AcessoModal
           membro={acesso.membro}
           modo={acesso.modo}
           onClose={() => setAcesso(null)}
-          onFeito={(msg) => { queryClient.invalidateQueries({ queryKey: equipeKeys.lista }); setAcesso(null); setAviso(msg); }}
+          onFeito={(msg) => { queryClient.invalidateQueries({ queryKey: equipeKeys.lista }); if (acesso.modo === 'criar' && acesso.membro.role === 'professional') setPermissoes(acesso.membro); setAcesso(null); setAviso(msg); }}
         />
       )}
       {status && (

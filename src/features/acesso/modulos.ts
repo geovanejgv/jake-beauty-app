@@ -90,22 +90,32 @@ export function normalizarPreferencias(bruto: unknown): PreferenciasUi {
   return { ocultar: [...new Set(ocultar)].filter((id) => MODULOS.find((m) => m.id === id)?.ocultavel) };
 }
 
-export function modulosDoPapel(papel: Papel): Modulo[] {
-  return MODULOS.filter((m) => m.papeis.includes(papel));
+/** Nível de acesso por tela (permissões da profissional definidas pela administradora). */
+export type AcessoModulos = Partial<Record<IdModulo, { nivel: 'nenhum' | 'ver' | 'editar' }>>;
+
+/**
+ * Telas do papel. Para a profissional, as telas com permissão configurável (fase 1)
+ * aparecem conforme o nível dado pela administradora; sem permissões carregadas, vale o papel.
+ */
+export function modulosDoPapel(papel: Papel, acesso?: AcessoModulos, configuraveis?: Set<IdModulo>): Modulo[] {
+  return MODULOS.filter((m) => {
+    if (papel === 'admin' || !acesso || !configuraveis?.has(m.id)) return m.papeis.includes(papel);
+    return (acesso[m.id]?.nivel ?? 'nenhum') !== 'nenhum';
+  });
 }
 
-export function modulosVisiveis(papel: Papel, prefs: PreferenciasUi): Modulo[] {
+export function modulosVisiveis(papel: Papel, prefs: PreferenciasUi, acesso?: AcessoModulos, configuraveis?: Set<IdModulo>): Modulo[] {
   const ocultos = new Set(prefs.ocultar);
-  return modulosDoPapel(papel).filter((m) => !m.ocultavel || !ocultos.has(m.id));
+  return modulosDoPapel(papel, acesso, configuraveis).filter((m) => !m.ocultavel || !ocultos.has(m.id));
 }
 
-export function moduloVisivel(id: IdModulo, papel: Papel, prefs: PreferenciasUi): boolean {
-  return modulosVisiveis(papel, prefs).some((m) => m.id === id);
+export function moduloVisivel(id: IdModulo, papel: Papel, prefs: PreferenciasUi, acesso?: AcessoModulos, configuraveis?: Set<IdModulo>): boolean {
+  return modulosVisiveis(papel, prefs, acesso, configuraveis).some((m) => m.id === id);
 }
 
 /** Primeira tela ao entrar: a agenda, se estiver visível; senão o primeiro módulo visível. */
-export function rotaInicial(papel: Papel, prefs: PreferenciasUi): string {
-  const visiveis = modulosVisiveis(papel, prefs);
+export function rotaInicial(papel: Papel, prefs: PreferenciasUi, acesso?: AcessoModulos, configuraveis?: Set<IdModulo>): string {
+  const visiveis = modulosVisiveis(papel, prefs, acesso, configuraveis);
   return (visiveis.find((m) => m.id === 'agenda') ?? visiveis[0]).caminho;
 }
 

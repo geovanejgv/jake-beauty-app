@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { acessoTela } from '../features/acesso/permissoes';
 import { brl, dataBR, dataHoraBR, dataLocal, formatarTelefone, isoParaBR } from '../lib/formatos';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
 import { COR_SITUACAO, ROTULO_SITUACAO, agruparSaldos, situacaoPacote } from '../features/pacotes/logic';
@@ -68,7 +69,7 @@ function PacotesCliente({ clienteId }: { clienteId: string }) {
 }
 
 /** Histórico técnico da cliente (fórmulas, alergias, preferências): visível à equipe, autor gravado pelo banco. */
-function HistoricoTecnico({ clienteId }: { clienteId: string }) {
+function HistoricoTecnico({ clienteId, podeRegistrar }: { clienteId: string; podeRegistrar: boolean }) {
   const queryClient = useQueryClient();
   const [tipo, setTipo] = useState('tecnico');
   const [texto, setTexto] = useState('');
@@ -94,7 +95,7 @@ function HistoricoTecnico({ clienteId }: { clienteId: string }) {
   });
   return (
     <div className="space-y-3">
-      <form onSubmit={(e) => { e.preventDefault(); if (texto.trim()) salvar.mutate(); }} className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+      {podeRegistrar && <form onSubmit={(e) => { e.preventDefault(); if (texto.trim()) salvar.mutate(); }} className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
         <div className="flex gap-2">
           <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-2 text-sm" aria-label="Tipo de registro">
             {Object.entries(TIPOS_HISTORICO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -102,7 +103,7 @@ function HistoricoTecnico({ clienteId }: { clienteId: string }) {
           <input value={texto} onChange={(e) => setTexto(e.target.value)} maxLength={2000} placeholder="Ex.: Coloração 7.1 + 20 vol; alergia a amônia" className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-rose-500" aria-label="Registro técnico" />
           <button type="submit" disabled={!texto.trim() || salvar.isPending} className="px-3 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold disabled:opacity-40">Adicionar</button>
         </div>
-      </form>
+      </form>}
       {isLoading ? null : itens.length === 0 ? <p className="text-sm text-slate-400 text-center py-2">Sem registros técnicos.</p> : itens.map((h: any) => (
         <div key={h.id} className={`border rounded-xl p-3 text-sm ${h.tipo === 'alergia' ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
           <div className="flex justify-between gap-2 text-[11px] text-slate-500 mb-1">
@@ -121,6 +122,10 @@ export default function Clientes() {
   const { perfil } = useAuth();
   // Profissional: só nome e contato mascarado (view clientes_visiveis), sem editar (risco de fuga de base).
   const ehAdmin = perfil?.role === 'admin';
+  // Dados além do nome que a administradora liberou para a profissional (o banco mascara o resto).
+  const acessoClientes = acessoTela(perfil?.permissoes, 'clientes');
+  const veTelefone = ehAdmin || acessoClientes.campo('telefone');
+  const veAniversario = ehAdmin || acessoClientes.campo('aniversario');
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   // Cadastro vindo de um lead que fechou: ao salvar, o lead fica vinculado à nova cliente.
@@ -193,7 +198,7 @@ export default function Clientes() {
     queryFn: async () => {
       const { data, error } = ehAdmin
         ? await supabase.from('clients').select('*').order('name')
-        : await supabase.from('clientes_visiveis').select('id, name, phone, email, contato_visivel, origem_id').order('name');
+        : await supabase.from('clientes_visiveis').select('id, name, phone, email, contato_visivel, email_visivel, birthday, aniversario_visivel, origem_id').order('name');
       if (error) throw error;
       return data || [];
     }
@@ -378,14 +383,14 @@ export default function Clientes() {
   }, [modo]);
   const { visiveis: colunasNaLinha, abaixo: colunasAbaixo } = colunasQueCabem(
     larguraTabela,
-    LARGURA_COLUNA.filter((c) => ehAdmin || (c.id !== 'grupo' && c.id !== 'aniversario')),
+    LARGURA_COLUNA.filter((c) => ehAdmin || (c.id !== 'grupo' && (c.id !== 'aniversario' || veAniversario) && (c.id !== 'whatsapp' || veTelefone))),
     PRIORIDADE_COLUNA,
     LARGURA_ACOES,
   );
 
   const colunasDisponiveis: Coluna[] = ehAdmin
     ? ['nome', 'whatsapp', 'grupo', 'ultimo', 'proximo', 'origem', 'aniversario']
-    : ['nome', 'ultimo', 'proximo', 'origem'];
+    : ['nome', ...(veTelefone ? ['whatsapp' as const] : []), 'ultimo', 'proximo', 'origem', ...(veAniversario ? ['aniversario' as const] : [])];
 
   /** Cabeçalho clicável: ordena pela coluna e alterna crescente/decrescente. */
   const cabecalho = (coluna: Coluna, classe = '') => {
@@ -449,7 +454,7 @@ export default function Clientes() {
           <span>{client.name}</span>
         </div>
       );
-      case 'whatsapp': return ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>;
+      case 'whatsapp': return veTelefone ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>;
       case 'grupo': return etiquetasGrupo(client.id, 3);
       case 'ultimo': return ultimoDe(client.id);
       case 'proximo': return proximoDe(client.id);
@@ -580,7 +585,7 @@ export default function Clientes() {
                   <div className="w-10 h-10 shrink-0 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs uppercase">{client.name.substring(0, 2)}</div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[17px] md:text-base font-bold text-slate-900 md:text-slate-800 truncate" title={client.name}>{client.name}</p>
-                    <p className="text-[15px] md:text-sm text-slate-600 md:text-slate-500">{ehAdmin ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</p>
+                    <p className="text-[15px] md:text-sm text-slate-600 md:text-slate-500">{veTelefone ? formatDisplayPhone(client.phone) : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> {client.phone || '-'}</span>}</p>
                   </div>
                 </div>
                 {ehAdmin && (gruposDaCliente.get(client.id)?.length ?? 0) > 0 && (
@@ -593,7 +598,7 @@ export default function Clientes() {
                   <div><dt className="text-slate-400 flex items-center gap-1"><CalendarCheck size={12} /> Último</dt><dd className="font-semibold text-slate-700">{ultimoDe(client.id)}</dd></div>
                   <div><dt className="text-slate-400 flex items-center gap-1"><CalendarClock size={12} /> Próximo</dt><dd className="font-semibold text-slate-700">{proximoDe(client.id)}</dd></div>
                   <div><dt className="text-slate-400">Origem</dt><dd className="text-slate-600">{nomeOrigem(client.origem_id) ?? '-'}</dd></div>
-                  {ehAdmin && <div><dt className="text-slate-400">Aniversário</dt><dd className="text-slate-600">{client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</dd></div>}
+                  {veAniversario && <div><dt className="text-slate-400">Aniversário</dt><dd className="text-slate-600">{client.birthday ? new Date(client.birthday).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</dd></div>}
                 </dl>
                 <div className="mt-auto md:hidden">{acoesGrandes(client)}</div>
                 <div className="mt-auto pt-2 border-t border-slate-100 hidden md:flex justify-end gap-1">{acoesCliente(client)}</div>
@@ -615,7 +620,7 @@ export default function Clientes() {
                 ['Último atendimento', ultimoDe(client.id), 'ultimo'],
                 ['Próximo atendimento', proximoDe(client.id), 'proximo'],
                 ...(origem ? [['Origem', origem, 'origem'] as [string, React.ReactNode, string]] : []),
-                ...(ehAdmin && client.birthday ? [['Aniversário', new Date(client.birthday).toLocaleDateString('pt-BR', { timeZone: 'UTC' }), 'aniversario'] as [string, React.ReactNode, string]] : []),
+                ...(veAniversario && client.birthday ? [['Aniversário', new Date(client.birthday).toLocaleDateString('pt-BR', { timeZone: 'UTC' }), 'aniversario'] as [string, React.ReactNode, string]] : []),
               ];
               return (
                 <li key={client.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
@@ -624,7 +629,7 @@ export default function Clientes() {
                     <div className="flex-1 min-w-0">
                       <p className="text-[17px] font-bold text-slate-900 leading-snug break-words">{client.name}</p>
                       <p className="text-[15px] text-slate-600 flex items-center gap-1.5 mt-0.5">
-                        {ehAdmin ? <><Phone size={14} className="shrink-0 text-slate-500" /> {formatDisplayPhone(client.phone)}</> : <><Lock size={14} className="shrink-0" /> {client.phone || '-'}</>}
+                        {veTelefone ? <><Phone size={14} className="shrink-0 text-slate-500" /> {formatDisplayPhone(client.phone)}</> : <><Lock size={14} className="shrink-0" /> {client.phone || '-'}</>}
                       </p>
                     </div>
                   </div>
@@ -712,7 +717,7 @@ export default function Clientes() {
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
-              {abaHistorico === 'pacotes' ? <PacotesCliente clienteId={selectedHistoryClient.id} /> : abaHistorico === 'tecnico' ? <HistoricoTecnico clienteId={selectedHistoryClient.id} /> : clientAppointments.length === 0 ? (
+              {abaHistorico === 'pacotes' ? <PacotesCliente clienteId={selectedHistoryClient.id} /> : abaHistorico === 'tecnico' ? <HistoricoTecnico clienteId={selectedHistoryClient.id} podeRegistrar={ehAdmin || acessoClientes.editar} /> : clientAppointments.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">Nenhum atendimento registrado.</div>
               ) : (
                 clientAppointments.map((apt: any) => {

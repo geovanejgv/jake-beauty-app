@@ -6,11 +6,16 @@ import { mensagemDeErro } from '../lib/seguranca/erros';
 import { normalizarPreferencias, type Papel, type PreferenciasUi } from '../features/acesso/modulos';
 import type { Plano, Situacao } from '../features/plano/plano';
 import { nivelMfa, type Nivel } from '../features/acesso/mfa';
+import { minhasPermissoes, type Permissoes } from '../features/acesso/permissoes';
 
 export type EstabelecimentoDoPerfil = { id: string; nome: string; plano: Plano; status: Situacao; demo_expira_em: string | null };
 
 /** Perfil do app (public.users). Papel e status vêm do banco, nunca da tela (AUZ-06). */
-export type Perfil = { id: string; name: string; role: Papel; preferencias_ui: PreferenciasUi; estabelecimento: EstabelecimentoDoPerfil | null };
+export type Perfil = {
+  id: string; name: string; role: Papel; preferencias_ui: PreferenciasUi; estabelecimento: EstabelecimentoDoPerfil | null;
+  /** Permissões por tela calculadas no banco (a administradora tem todas). */
+  permissoes: Permissoes;
+};
 
 /**
  * liberado: tem perfil ativo; negado: entrou com o Google, mas não tem perfil ativo (o
@@ -57,7 +62,7 @@ export async function buscarPerfilAtivo(authId: string): Promise<Perfil | null> 
   const linha = data as unknown as { id: string; name: string; role: Papel; preferencias_ui?: unknown; estabelecimento?: EstabelecimentoDoPerfil | null };
   return {
     id: linha.id, name: linha.name, role: linha.role, preferencias_ui: normalizarPreferencias(linha.preferencias_ui),
-    estabelecimento: linha.estabelecimento ?? null,
+    estabelecimento: linha.estabelecimento ?? null, permissoes: await minhasPermissoes(),
   };
 }
 

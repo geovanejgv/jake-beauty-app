@@ -24,6 +24,7 @@ import { registrarAuditoria } from './lib/seguranca/auditoria';
 import { supabase } from './lib/supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { moduloVisivel, rotaInicial, type IdModulo } from './features/acesso/modulos';
+import { MODULOS_COM_PERMISSAO } from './features/acesso/permissoes';
 import { moduloLiberadoNoPlano } from './features/plano/plano';
 
 /**
@@ -64,7 +65,7 @@ function SemAcesso() {
 function RotaModulo({ id, children }: { id: IdModulo; children: React.ReactNode }) {
   const { perfil } = useAuth();
   if (!perfil) return null;
-  if (!moduloVisivel(id, perfil.role, perfil.preferencias_ui)) return <Navigate to={rotaInicial(perfil.role, perfil.preferencias_ui)} replace />;
+  if (!moduloVisivel(id, perfil.role, perfil.preferencias_ui, perfil.permissoes, MODULOS_COM_PERMISSAO)) return <Navigate to={rotaInicial(perfil.role, perfil.preferencias_ui, perfil.permissoes, MODULOS_COM_PERMISSAO)} replace />;
   // Demonstração vencida: telas dos módulos pagos levam à página do plano (o banco também trava a gravação).
   if (!moduloLiberadoNoPlano(id, perfil.estabelecimento)) return <Navigate to="/plano" replace />;
   return <>{children}</>;
@@ -88,7 +89,7 @@ function EstabelecimentoInativo() {
 
 function Inicio() {
   const { perfil } = useAuth();
-  return perfil ? <Navigate to={rotaInicial(perfil.role, perfil.preferencias_ui)} replace /> : null;
+  return perfil ? <Navigate to={rotaInicial(perfil.role, perfil.preferencias_ui, perfil.permissoes, MODULOS_COM_PERMISSAO)} replace /> : null;
 }
 
 /** Quem já está logado não fica na tela de login (com ?erro= a mensagem aparece). */
