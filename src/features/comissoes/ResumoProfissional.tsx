@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp, Loader2, Printer } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
 import { mensagemDeErro } from '../../lib/seguranca/erros';
 import { brl, dataBR, dataHoraBR, isoParaBR } from '../../lib/formatos';
 import { Modal } from '../../components/ui';
@@ -79,13 +78,12 @@ export function QuadroResumo({ resumo, impressao = false }: { resumo: ResumoFina
   );
 }
 
-/** Documento no modelo "Resumo Financeiro": salão, profissional, período, descritivo (opcional), resumo e assinatura. */
-export function DocumentoResumo({ resumo, salao, nome, de, ate, detalhado }: { resumo: ResumoFinanceiro; salao: string; nome: string; de: string; ate: string; detalhado: boolean }) {
+/** Documento no modelo "Resumo Financeiro": profissional, período, descritivo (opcional), resumo e assinatura. */
+export function DocumentoResumo({ resumo, nome, de, ate, detalhado }: { resumo: ResumoFinanceiro; nome: string; de: string; ate: string; detalhado: boolean }) {
   return (
     <>
       <header className="text-center mb-6">
-        <p className="text-xl font-bold">{salao}</p>
-        <p className="mt-4 font-bold">RESUMO FINANCEIRO</p>
+        <p className="text-lg font-bold">RESUMO FINANCEIRO</p>
         <p className="font-bold uppercase">{nome}</p>
         <p className="text-sm">Período de Pagamento: {isoParaBR(de)} a {isoParaBR(ate)}</p>
       </header>
@@ -130,7 +128,6 @@ export function ResumoProfissional({ profissionalId, nome, de, ate, onClose }: {
   const [detalhe, setDetalhe] = useState(false);
   const [menu, setMenu] = useState(false);
   const [imprimir, setImprimir] = useState<'resumido' | 'detalhado' | null>(null);
-  const { perfil } = useAuth();
   const fimImpressao = React.useCallback(() => setImprimir(null), []);
   return (
     <Modal titulo={`Resumo do profissional: ${nome}`} onClose={onClose} largura="md:max-w-[960px]"
@@ -163,7 +160,7 @@ export function ResumoProfissional({ profissionalId, nome, de, ate, onClose }: {
           )}
       {imprimir && !carregando && !erro && (
         <ImpressaoResumo onFim={fimImpressao}>
-          <DocumentoResumo resumo={resumo} salao={perfil?.estabelecimento?.nome ?? 'Salão'} nome={nome} de={de} ate={ate} detalhado={imprimir === 'detalhado'} />
+          <DocumentoResumo resumo={resumo} nome={nome} de={de} ate={ate} detalhado={imprimir === 'detalhado'} />
         </ImpressaoResumo>
       )}
     </Modal>
