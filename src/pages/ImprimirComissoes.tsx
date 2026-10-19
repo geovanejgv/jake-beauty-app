@@ -10,7 +10,7 @@ import { ROTULO_FORMA, ROTULO_STATUS_FECHAMENTO, somar, type FormaPagamento } fr
 import { ROTULO_SITUACAO, type SituacaoPagamento } from '../features/comissoes/relatorio';
 import { filtrosPadrao, useLinhasRelatorio, type FiltrosRelatorio } from '../features/comissoes/RelatorioComissoesConteudo';
 import { equipeKeys, listarAtivos } from '../features/equipe/api';
-import { QuadroResumo, TabelaDetalhada, useResumoFinanceiro } from '../features/comissoes/ResumoProfissional';
+import { DocumentoResumo, useResumoFinanceiro } from '../features/comissoes/ResumoProfissional';
 
 /**
  * Relatório pronto para imprimir ou "Salvar como PDF" pelo navegador (sem biblioteca
@@ -206,28 +206,7 @@ function ResumoFinanceiroPdf({ params }: { params: URLSearchParams }) {
       <div className="print:hidden flex justify-end mb-2">
         <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold"><Printer size={14} /> Imprimir / Salvar PDF</button>
       </div>
-      <header className="text-center mb-6">
-        <p className="text-xl font-bold">{perfil?.estabelecimento?.nome ?? 'Salão'}</p>
-        <p className="mt-4 font-bold">RESUMO FINANCEIRO</p>
-        <p className="font-bold uppercase">{nome}</p>
-        <p className="text-sm">Período de Pagamento: {isoParaBR(de)} a {isoParaBR(ate)}</p>
-      </header>
-      {detalhado && (
-        <section className="mb-6">
-          <p className="font-bold text-sm mb-1">DESCRITIVO DAS RECEITAS VARIÁVEIS NO PERÍODO</p>
-          <p className="text-xs mb-1">Sobre Serviços</p>
-          <TabelaDetalhada resumo={resumo} impressao />
-        </section>
-      )}
-      <section className="break-inside-avoid">
-        <p className="font-bold text-sm mb-1">RESUMO</p>
-        <QuadroResumo resumo={resumo} impressao />
-      </section>
-      <div className="mt-16 w-72 break-inside-avoid">
-        <div className="border-t border-slate-800" />
-        <p className="text-sm uppercase mt-1">{nome}</p>
-      </div>
-      <p className="mt-6 text-[10px] text-slate-500">Emitido em {dataHoraBR(new Date())}. Valores em aberto são prévia pelas regras atuais de comissão; os já fechados são os gravados no fechamento.</p>
+      <DocumentoResumo resumo={resumo} salao={perfil?.estabelecimento?.nome ?? 'Salão'} nome={nome} de={de} ate={ate} detalhado={detalhado} />
     </>
   );
 }
