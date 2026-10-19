@@ -10,6 +10,7 @@ import { ROTULO_FORMA, ROTULO_STATUS_FECHAMENTO, somar, type FormaPagamento } fr
 import { ROTULO_SITUACAO, type SituacaoPagamento } from '../features/comissoes/relatorio';
 import { filtrosPadrao, useLinhasRelatorio, type FiltrosRelatorio } from '../features/comissoes/RelatorioComissoesConteudo';
 import { equipeKeys, listarAtivos } from '../features/equipe/api';
+import { QuadroResumo, TabelaDetalhada, useResumoFinanceiro } from '../features/comissoes/ResumoProfissional';
 
 /**
  * Relatório pronto para imprimir ou "Salvar como PDF" pelo navegador (sem biblioteca
@@ -29,7 +30,7 @@ export default function ImprimirComissoes() {
   return (
     <div className="min-h-screen bg-white text-slate-900 print:bg-white">
       <div className="max-w-5xl mx-auto p-6 print:p-0">
-        {fechamentoId ? <Demonstrativo id={fechamentoId} /> : <Relatorio params={params} />}
+        {fechamentoId ? <Demonstrativo id={fechamentoId} /> : params.get('modelo') === 'resumo' ? <ResumoFinanceiroPdf params={params} /> : <Relatorio params={params} />}
       </div>
     </div>
   );
@@ -176,6 +177,57 @@ function Demonstrativo({ id }: { id: string }) {
           </>
         ) : <p>Ainda não assinado ({ROTULO_STATUS_FECHAMENTO[f.status]}).</p>}
       </section>
+    </>
+  );
+}
+
+const dataValida = (v: string | null, padrao: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v ?? '') ? v! : padrao);
+
+/** Resumo financeiro do profissional (modelo "Resumo Financeiro"), resumido ou com o descritivo dos atendimentos. */
+function ResumoFinanceiroPdf({ params }: { params: URLSearchParams }) {
+  const { perfil } = useAuth();
+  const ehAdmin = perfil?.role === 'admin';
+  const padrao = filtrosPadrao();
+  const de = dataValida(params.get('de'), padrao.de);
+  const ate = dataValida(params.get('ate'), padrao.ate);
+  // Profissional só emite o próprio resumo (o RLS também limita os atendimentos aos dele).
+  const profissionalId = ehAdmin ? params.get('profissional') ?? '' : perfil?.id ?? '';
+  const detalhado = params.get('detalhado') === '1';
+  const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos, enabled: ehAdmin });
+  const { resumo, carregando, erro } = useResumoFinanceiro(profissionalId, de, ate);
+  useImprimirAoCarregar(!!profissionalId && !carregando && !erro);
+  const nome = ehAdmin ? equipe.find((p) => p.id === profissionalId)?.name ?? 'Profissional' : perfil?.name ?? '';
+
+  if (!profissionalId) return <p>Selecione um profissional para emitir o resumo.</p>;
+  if (erro) return <p className="text-rose-600">{mensagemDeErro(erro, 'Não foi possível gerar o resumo.', 'resumo.imprimir')}</p>;
+  if (carregando) return <Loader2 className="animate-spin text-rose-500 mx-auto mt-20" size={32} />;
+  return (
+    <>
+      <div className="print:hidden flex justify-end mb-2">
+        <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold"><Printer size={14} /> Imprimir / Salvar PDF</button>
+      </div>
+      <header className="text-center mb-6">
+        <p className="text-xl font-bold">{perfil?.estabelecimento?.nome ?? 'Salão'}</p>
+        <p className="mt-4 font-bold">RESUMO FINANCEIRO</p>
+        <p className="font-bold uppercase">{nome}</p>
+        <p className="text-sm">Período de Pagamento: {isoParaBR(de)} a {isoParaBR(ate)}</p>
+      </header>
+      {detalhado && (
+        <section className="mb-6">
+          <p className="font-bold text-sm mb-1">DESCRITIVO DAS RECEITAS VARIÁVEIS NO PERÍODO</p>
+          <p className="text-xs mb-1">Sobre Serviços</p>
+          <TabelaDetalhada resumo={resumo} impressao />
+        </section>
+      )}
+      <section className="break-inside-avoid">
+        <p className="font-bold text-sm mb-1">RESUMO</p>
+        <QuadroResumo resumo={resumo} impressao />
+      </section>
+      <div className="mt-16 w-72 break-inside-avoid">
+        <div className="border-t border-slate-800" />
+        <p className="text-sm uppercase mt-1">{nome}</p>
+      </div>
+      <p className="mt-6 text-[10px] text-slate-500">Emitido em {dataHoraBR(new Date())}. Valores em aberto são prévia pelas regras atuais de comissão; os já fechados são os gravados no fechamento.</p>
     </>
   );
 }

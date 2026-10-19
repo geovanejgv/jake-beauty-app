@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, FileText, HandCoins, Loader2, Lock, MoreVertical, Plus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,6 +11,7 @@ import { montarLinhas, resumoPorProfissional } from '../features/comissoes/relat
 import { FechamentoDetalhe, SeloStatus } from '../features/comissoes/FechamentoDetalhe';
 import { RelatorioComissoesConteudo } from '../features/comissoes/RelatorioComissoesConteudo';
 import { ConfigComissoes } from '../features/comissoes/ConfigComissoes';
+import { ResumoProfissional } from '../features/comissoes/ResumoProfissional';
 import { equipeKeys, listarAtivos } from '../features/equipe/api';
 
 type Aba = 'lancamento' | 'relatorio' | 'config' | 'gorjetas' | 'fechamentos';
@@ -75,6 +75,7 @@ function Lancamento({ de, ate, setDe, setAte, onNovo }: { de: string; ate: strin
   const regras = useQuery({ queryKey: comissoesKeys.regras, queryFn: lerRegras });
   const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos });
   const [menu, setMenu] = useState<string | null>(null);
+  const [relatorio, setRelatorio] = useState<{ id: string; nome: string } | null>(null);
   const resumo = useMemo(() => {
     const porProf = atend.data && regras.data ? resumoPorProfissional(montarLinhas(atend.data, regras.data)) : [];
     // Profissionais ativos sem atendimento também aparecem (zerados), como na referência.
@@ -128,7 +129,7 @@ function Lancamento({ de, ate, setDe, setAte, onNovo }: { de: string; ate: strin
                       <td className="px-3 py-3 text-right whitespace-nowrap">{brl(r.pago)}</td>
                       <td className={`px-3 py-3 text-right whitespace-nowrap font-bold ${r.restante > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{brl(r.restante)}</td>
                       <td className="px-3 py-3 text-right whitespace-nowrap relative">
-                        <Link to={`/relatorios/comissoes/imprimir?${new URLSearchParams({ de, ate, profissional: r.profissional_id, situacao: 'todas', concluidos: '1' })}`} target="_blank" className="inline-flex p-1.5 text-slate-500 hover:text-rose-600" title="Relatório do profissional" aria-label={`Relatório de ${r.nome}`}><FileText size={18} /></Link>
+                        <button type="button" onClick={() => setRelatorio({ id: r.profissional_id, nome: r.nome })} className="inline-flex p-1.5 text-slate-500 hover:text-rose-600" title="Relatório do profissional" aria-label={`Relatório de ${r.nome}`}><FileText size={18} /></button>
                         <button type="button" onClick={() => setMenu(menu === r.profissional_id ? null : r.profissional_id)} className="p-1.5 text-slate-500 hover:text-slate-800" aria-label={`Ações de ${r.nome}`} aria-haspopup="menu"><MoreVertical size={18} /></button>
                         {menu === r.profissional_id && (
                           <>
@@ -146,6 +147,7 @@ function Lancamento({ de, ate, setDe, setAte, onNovo }: { de: string; ate: strin
               </table>
             </div>
           )}
+      {relatorio && <ResumoProfissional profissionalId={relatorio.id} nome={relatorio.nome} de={de} ate={ate} onClose={() => setRelatorio(null)} />}
     </div>
   );
 }
