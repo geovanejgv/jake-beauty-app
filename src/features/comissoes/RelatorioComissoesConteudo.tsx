@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { mensagemDeErro } from '../../lib/seguranca/erros';
 import { brl, dataBR, dataLocal, mesDe, pct } from '../../lib/formatos';
 import { equipeKeys, listarAtivos } from '../equipe/api';
-import { comissoesKeys, lerRegras, listarAtendimentos } from './api';
+import { comissoesKeys, lerRegras, listarAjustes, listarAtendimentos, type AjusteLancamento } from './api';
 import { ROTULO_FORMA, ROTULO_STATUS_AGENDAMENTO, somar, type FormaPagamento } from './logic';
 import { ROTULO_SITUACAO, gerarCsv, montarLinhas, type SituacaoPagamento } from './relatorio';
 import { ResumoProfissional } from './ResumoProfissional';
@@ -36,12 +36,33 @@ export function useLinhasRelatorio(f: FiltrosRelatorio, profissionalFixo: string
   return { linhas, carregando: atend.isLoading || regras.isLoading, erro: atend.error ?? regras.error };
 }
 
+/** Edições e exclusões com justificativa do período (exclusões viram linhas zeradas no relatório). */
+function useAjustes(f: FiltrosRelatorio, profissionalFixo: string | null) {
+  const profissionalId = profissionalFixo ?? (f.profissional || null);
+  const { data = [] } = useQuery({
+    queryKey: comissoesKeys.ajustes({ de: f.de, ate: f.ate, profissionalId }),
+    queryFn: () => listarAjustes({ de: f.de, ate: f.ate, profissionalId }),
+  });
+  return useMemo(() => {
+    const edicoes = new Map<string, AjusteLancamento[]>();
+    for (const a of data) if (a.tipo === 'edicao') edicoes.set(a.agendamento_id, [...(edicoes.get(a.agendamento_id) ?? []), a]);
+    return { edicoes, exclusoes: data.filter((a) => a.tipo === 'exclusao') };
+  }, [data]);
+}
+
+const forma = (f: string | null) => (f ? ROTULO_FORMA[f as FormaPagamento] ?? f : '-');
+const textoEdicao = (a: AjusteLancamento) =>
+  `${dataBR(a.created_at)}: ${a.justificativa} (antes: ${brl(a.valor_antes ?? 0)}, ${pct(a.comissao_antes ?? 0)}, ${forma(a.forma_antes)}, gorjeta ${brl(a.gorjeta_antes ?? 0)})`;
+
 export function RelatorioComissoesConteudo() {
   const { perfil } = useAuth();
   const ehAdmin = perfil?.role === 'admin';
   const [f, setF] = useState<FiltrosRelatorio>(filtrosPadrao);
   const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos, enabled: ehAdmin });
   const { linhas, carregando, erro } = useLinhasRelatorio(f, ehAdmin ? null : perfil?.id ?? null);
+  const { edicoes, exclusoes: todasExclusoes } = useAjustes(f, ehAdmin ? null : perfil?.id ?? null);
+  // Excluídos aparecem só com "Status de pagamento: Todos" (não têm situação de pagamento).
+  const exclusoes = f.situacao === 'todas' ? todasExclusoes : [];
   const totais = useMemo(() => somar(linhas.map((l) => ({ ...l.calculo, liquido: l.liquido, comissao: l.liquido - l.calculo.gorjeta }))), [linhas]);
   const [resumoAberto, setResumoAberto] = useState(false);
   const [editando, setEditando] = useState<LinhaRelatorio | null>(null);
@@ -90,7 +111,7 @@ export function RelatorioComissoesConteudo() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-slate-500 flex items-center gap-1"><Filter size={12} /> {linhas.length} atendimento(s). Valores em aberto são prévia pelas regras atuais; os fechados vêm do fechamento.</p>
+        <p className="text-xs text-slate-500 flex items-center gap-1"><Filter size={12} /> {linhas.length} atendimento(s){exclusoes.length > 0 && `, ${exclusoes.length} excluído(s) com valor zerado`}. Valores em aberto são prévia pelas regras atuais; os fechados vêm do fechamento.</p>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setResumoAberto(true)} disabled={!profResumo} title={profResumo ? undefined : 'Selecione um profissional no filtro'}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm font-bold hover:bg-rose-100 disabled:opacity-50"><FileText size={16} /> Resumo do profissional</button>
@@ -114,12 +135,13 @@ export function RelatorioComissoesConteudo() {
                   </tr>
                 </thead>
                 <tbody>
-                  {linhas.length === 0 && <tr><td colSpan={ehAdmin ? 10 : 8} className="px-3 py-10 text-center text-slate-400">Nenhum atendimento com estes filtros.</td></tr>}
+                  {linhas.length === 0 && exclusoes.length === 0 && <tr><td colSpan={ehAdmin ? 10 : 8} className="px-3 py-10 text-center text-slate-400">Nenhum atendimento com estes filtros.</td></tr>}
                   {linhas.map((l) => (
                     <tr key={l.id} className="border-t border-slate-100">
                       <td className="px-3 py-2 whitespace-nowrap">{dataBR(l.start_time)}</td>
                       <td className="px-3 py-2">{l.cliente_nome}</td>
-                      <td className="px-3 py-2">{l.servico_nome}{l.status !== 'completed' && <span className="ml-1 text-[10px] text-slate-400">({ROTULO_STATUS_AGENDAMENTO[l.status]})</span>}</td>
+                      <td className="px-3 py-2">{l.servico_nome}{l.status !== 'completed' && <span className="ml-1 text-[10px] text-slate-400">({ROTULO_STATUS_AGENDAMENTO[l.status]})</span>}
+                        {edicoes.get(l.id)?.map((a) => <span key={a.id} className="block text-[11px] text-amber-700">Editado em {textoEdicao(a)}</span>)}</td>
                       {ehAdmin && <td className="px-3 py-2">{l.profissional_nome}</td>}
                       <td className="px-3 py-2">{l.payment_method ? ROTULO_FORMA[l.payment_method as FormaPagamento] ?? l.payment_method : '-'}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">{brl(l.calculo.bruto)}</td>
@@ -137,8 +159,23 @@ export function RelatorioComissoesConteudo() {
                       )}
                     </tr>
                   ))}
+                  {exclusoes.map((a) => (
+                    <tr key={a.id} className="border-t border-slate-100 bg-red-50/40 text-slate-500">
+                      <td className="px-3 py-2 whitespace-nowrap line-through">{dataBR(a.data_atendimento)}</td>
+                      <td className="px-3 py-2 line-through">{a.cliente_nome}</td>
+                      <td className="px-3 py-2"><span className="line-through">{a.servico_nome}</span>
+                        <span className="block text-[11px] text-red-700 no-underline">Excluído em {dataBR(a.created_at)}: {a.justificativa} (era {brl(a.valor_antes ?? 0)}, {pct(a.comissao_antes ?? 0)}, {forma(a.forma_antes)}{a.gorjeta_antes ? `, gorjeta ${brl(a.gorjeta_antes)}` : ''})</span></td>
+                      {ehAdmin && <td className="px-3 py-2 line-through">{a.profissional_nome}</td>}
+                      <td className="px-3 py-2">{forma(a.forma_antes)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{brl(0)}</td>
+                      <td className="px-3 py-2 text-right">{pct(0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap font-bold">{brl(0)}</td>
+                      <td className="px-3 py-2"><span className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap bg-red-100 text-red-700">Excluído</span></td>
+                      {ehAdmin && <td />}
+                    </tr>
+                  ))}
                 </tbody>
-                {linhas.length > 0 && (
+                {linhas.length + exclusoes.length > 0 && (
                   <tfoot className="bg-slate-50 font-bold text-slate-800">
                     <tr>
                       <td className="px-3 py-2.5" colSpan={ehAdmin ? 5 : 4}>Total ({totais.qtd})</td>

@@ -46,6 +46,7 @@ export const comissoesKeys = {
   fechamentos: (f: object) => ['comissoes', 'fechamentos', f] as const,
   itens: (id: string) => ['comissoes', 'itens', id] as const,
   regras: ['comissoes', 'regras'] as const,
+  ajustes: (f: object) => ['comissoes', 'ajustes', f] as const,
 };
 
 async function rodar<T>(p: PromiseLike<{ data: T; error: unknown }>): Promise<T> {
@@ -150,12 +151,37 @@ export async function salvarGorjeta(agendamentoId: string, valor: number) {
 
 export type EdicaoLancamento = { valor_cobrado: number; comissao_percentual: number; payment_method: FormaPagamento | null; gorjeta: number };
 
-/** Edição pela administradora (o banco recusa profissional e atendimento já em fechamento). */
-export async function editarLancamento(id: string, d: EdicaoLancamento) {
-  await rodar(supabase.from('appointments').update(d).eq('id', id));
+/** Edição pela administradora com justificativa (o banco recusa profissional e atendimento já em fechamento). */
+export async function editarLancamento(id: string, d: EdicaoLancamento, justificativa: string) {
+  await rodar(supabase.rpc('editar_lancamento', {
+    p_id: id, p_valor: d.valor_cobrado, p_comissao: d.comissao_percentual, p_forma: d.payment_method, p_gorjeta: d.gorjeta, p_justificativa: justificativa,
+  }));
 }
 
-/** Exclusão pela administradora (o banco recusa atendimento em fechamento ou já abatido de pacote e audita a exclusão). */
-export async function excluirLancamento(id: string) {
-  await rodar(supabase.from('appointments').delete().eq('id', id));
+/** Exclusão pela administradora com justificativa: o banco guarda os dados apagados (recusa atendimento em fechamento ou abatido de pacote). */
+export async function excluirLancamento(id: string, justificativa: string) {
+  await rodar(supabase.rpc('excluir_lancamento', { p_id: id, p_justificativa: justificativa }));
+}
+
+export type AjusteLancamento = {
+  id: string; agendamento_id: string; tipo: 'edicao' | 'exclusao'; justificativa: string; data_atendimento: string;
+  profissional_id: string | null; profissional_nome: string; cliente_nome: string; servico_nome: string;
+  valor_antes: number | null; comissao_antes: number | null; forma_antes: string | null; gorjeta_antes: number | null;
+  valor_depois: number | null; comissao_depois: number | null; forma_depois: string | null; gorjeta_depois: number | null;
+  created_at: string;
+};
+
+/** Ajustes (edições e exclusões) dos atendimentos do período; RLS limita a profissional aos próprios. */
+export async function listarAjustes(f: { de: string; ate: string; profissionalId?: string | null }): Promise<AjusteLancamento[]> {
+  const { de, ate } = intervaloLocal(f.de, f.ate);
+  let q = supabase.from('lancamento_ajustes')
+    .select('id, agendamento_id, tipo, justificativa, data_atendimento, profissional_id, profissional_nome, cliente_nome, servico_nome, valor_antes, comissao_antes, forma_antes, gorjeta_antes, valor_depois, comissao_depois, forma_depois, gorjeta_depois, created_at')
+    .gte('data_atendimento', de).lt('data_atendimento', ate).order('created_at').limit(LIMITE);
+  if (f.profissionalId) q = q.eq('profissional_id', f.profissionalId);
+  return ((await rodar(q)) as AjusteLancamento[]).map((x) => ({
+    ...x,
+    valor_antes: x.valor_antes === null ? null : Number(x.valor_antes), comissao_antes: x.comissao_antes === null ? null : Number(x.comissao_antes),
+    gorjeta_antes: x.gorjeta_antes === null ? null : Number(x.gorjeta_antes), valor_depois: x.valor_depois === null ? null : Number(x.valor_depois),
+    comissao_depois: x.comissao_depois === null ? null : Number(x.comissao_depois), gorjeta_depois: x.gorjeta_depois === null ? null : Number(x.gorjeta_depois),
+  }));
 }
