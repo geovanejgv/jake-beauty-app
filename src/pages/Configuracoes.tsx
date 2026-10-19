@@ -9,6 +9,7 @@ import { Chave, ConfigComissoes } from '../features/comissoes/ConfigComissoes';
 import { useAuth } from '../contexts/AuthContext';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { GRUPOS, ROTULO_PAPEL, modulosDoPapel, type IdModulo } from '../features/acesso/modulos';
+import { MODULOS_COM_PERMISSAO } from '../features/acesso/permissoes';
 import { Aviso } from '../components/ui';
 
 export default function Configuracoes() {
@@ -21,7 +22,7 @@ export default function Configuracoes() {
   const ehAdmin = perfil?.role === 'admin';
 
   // ---------------------------------------------------------------- interface
-  const modulos = useMemo(() => (perfil ? modulosDoPapel(perfil.role).filter((m) => m.ocultavel) : []), [perfil]);
+  const modulos = useMemo(() => (perfil ? modulosDoPapel(perfil.role, perfil.permissoes, MODULOS_COM_PERMISSAO).filter((m) => m.ocultavel) : []), [perfil]);
   const [ocultos, setOcultos] = useState<IdModulo[]>(perfil?.preferencias_ui.ocultar ?? []);
   useEffect(() => { setOcultos(perfil?.preferencias_ui.ocultar ?? []); }, [perfil?.preferencias_ui]);
   const salvarInterface = useMutation({

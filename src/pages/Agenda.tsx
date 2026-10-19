@@ -8,6 +8,7 @@ import { useNetworkState } from 'react-use';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { equipeKeys, listarAtivos, nomeNaAgenda } from '../features/equipe/api';
+import { acessoTela } from '../features/acesso/permissoes';
 import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '../features/catalogo/api';
 import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
 import { mensagemAgenda } from '../features/agenda/logic';
@@ -46,6 +47,14 @@ export default function Agenda() {
   // Papel vem do banco (AUZ-06). A profissional só recebe a própria agenda (RLS).
   const { perfil } = useAuth();
   const ehAdmin = perfil?.role === 'admin';
+  // Permissão dada pela administradora (o banco confere de novo): ver a agenda das demais,
+  // editar a própria e agendar para as demais.
+  const acessoAgenda = acessoTela(perfil?.permissoes, 'agenda');
+  const veEquipe = ehAdmin || acessoAgenda.todos;
+  const agendaOutras = ehAdmin || acessoAgenda.editarTodos;
+  const podeEditarAgenda = ehAdmin || acessoAgenda.editar;
+  const podeMexer = (ev: { professional_id?: string | null }) =>
+    ehAdmin || (acessoAgenda.editar && (ev.professional_id === perfil?.id || acessoAgenda.editarTodos));
   // Filtro da administradora: '' = todos, 'sem' = sem profissional, ou o id.
   const [filtroProf, setFiltroProf] = useState('');
   const [novoProf, setNovoProf] = useState('');
@@ -135,10 +144,10 @@ export default function Agenda() {
       price: a.valor_cobrado ?? a.services?.price ?? null,
     },
   }))
-    .filter((a) => !ehAdmin || !filtroProf || (filtroProf === 'sem' ? !a.professional_id : a.professional_id === filtroProf));
+    .filter((a) => !veEquipe || !filtroProf || (filtroProf === 'sem' ? !a.professional_id : a.professional_id === filtroProf));
 
   // Serviços que o profissional escolhido oferece, com preço e tempo dele.
-  const profAgendamento = ehAdmin ? novoProf : perfil?.id ?? '';
+  const profAgendamento = agendaOutras ? novoProf : perfil?.id ?? '';
   const ofertas = servicosCatalogo
     .map((s) => ({ s, c: condicoesEfetivas(s, vinculos.find((v) => v.user_id === profAgendamento && v.servico_id === s.id), null) }))
     .filter((x) => x.c.oferece);
@@ -170,7 +179,7 @@ export default function Agenda() {
         p_nome: client.name, p_telefone: client.phone, p_aniversario: client.birthday || null, p_origem: client.origem || null,
       });
       if (error) throw error;
-      return { id: data as string, name: client.name, phone: client.phone, contato_visivel: ehAdmin };
+      return { id: data as string, name: client.name, phone: client.phone, contato_visivel: ehAdmin || acessoTela(perfil?.permissoes, 'clientes').campo('telefone') };
     },
     onSuccess: (client: any) => {
       queryClient.invalidateQueries({ queryKey: ['clients-list-agenda'] });
@@ -275,7 +284,7 @@ export default function Agenda() {
         start_time: start.toISOString(), 
         end_time: end.toISOString(), 
         block_reason: blockData.reason,
-        ...(ehAdmin ? { professional_id: blockData.professional_id || null } : {})
+        ...(agendaOutras ? { professional_id: blockData.professional_id || null } : {})
       }).eq('id', blockData.id);
       if (error) throw error;
     },
@@ -288,7 +297,7 @@ export default function Agenda() {
       const apt = editingAppointment;
       const inicio = new Date(`${updatedData.date}T${updatedData.time}:00`);
       const trocouHorario = inicio.getTime() !== new Date(apt.start_time).getTime();
-      const trocouProf = ehAdmin && (updatedData.professional_id || null) !== (apt.professional_id || null);
+      const trocouProf = agendaOutras && (updatedData.professional_id || null) !== (apt.professional_id || null);
       if (trocouHorario || trocouProf) {
         // Remarcação passa pela trava de conflito do banco.
         const { error } = await supabase.rpc('remarcar_atendimento', { p_id: apt.id, p_inicio: inicio.toISOString(), p_profissional: trocouProf ? updatedData.professional_id || null : null });
@@ -401,6 +410,7 @@ export default function Agenda() {
   };
 
   const openAddModalForType = (type: 'appointment' | 'reminder', dateStr?: string, prof?: string | null, hora?: string) => {
+    if (!podeEditarAgenda) return;
     closeNewClientForm();
     setAppointmentType(type);
     setNovoProf(prof ?? (filtroProf && filtroProf !== 'sem' ? filtroProf : ''));
@@ -418,6 +428,7 @@ export default function Agenda() {
   };
 
   const openBlockModalForDate = (dateStr?: string) => {
+    if (!podeEditarAgenda) return;
     if (dateStr) setBlockDate(dateStr);
     setActionMenuDate(null);
     setEditingBlock(null);
@@ -457,7 +468,7 @@ export default function Agenda() {
       });
     }
     if (!selectedClient) return alert("Selecione uma cliente."); 
-    const professional_id = ehAdmin ? novoProf : perfil?.id ?? '';
+    const professional_id = agendaOutras ? novoProf : perfil?.id ?? '';
     if (appointmentType === 'appointment') {
       if (!professional_id) return alert('Escolha o profissional.');
       if (!novoServico) return alert('Escolha o serviço.');
@@ -489,13 +500,14 @@ export default function Agenda() {
     if (editingBlock) {
       updateBlockMutation.mutate({ id: editingBlock.id, date: blockDate, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason, professional_id: blockProf });
     } else {
-      addBlockMutation.mutate({ date: blockDate, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason, professional_id: ehAdmin ? blockProf : perfil?.id }); 
+      addBlockMutation.mutate({ date: blockDate, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason, professional_id: agendaOutras ? blockProf : perfil?.id }); 
     }
   };
 
   const handleEditSubmit = (e: React.FormEvent) => { e.preventDefault(); if (!editingAppointment) return; updateAppointmentMutation.mutate({ id: editingAppointment.id, serviceId: editingAppointment.services?.id, serviceName: editServiceName, price: editServicePrice, date: editDate, time: editTime, professional_id: editProf }); };
 
   const openEditModal = (apt: any) => {
+    if (!podeMexer(apt)) return;
     setEditingAppointment(apt); setEditServiceName(apt.services?.name || ''); setEditServicePrice(apt.services?.price != null ? valorParaCampo(apt.services.price) : ''); setEditProf(apt.professional_id || '');
     const aptDate = new Date(apt.start_time); setEditDate(aptDate.toISOString().split('T')[0]); setEditTime(aptDate.toTimeString().slice(0, 5));
   };
@@ -640,7 +652,7 @@ export default function Agenda() {
               <p className="text-xs text-indigo-600">Lembrar de agendar: {sName}</p>
             </div>
           </div>
-          <div className="flex items-center space-x-1.5 flex-wrap gap-y-2">
+          <div className={`flex items-center space-x-1.5 flex-wrap gap-y-2 ${podeMexer(ev) ? '' : 'hidden'}`}>
              {ev.clients?.contato_visivel && <button onClick={(e) => { e.stopPropagation(); handleSendReminderWhatsApp(ev); }} className="px-3 py-1.5 border border-emerald-200 text-emerald-700 bg-emerald-100 hover:bg-emerald-200 font-bold rounded-lg transition-colors text-xs flex items-center gap-1.5 shadow-sm">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
                 Chamar Cliente
@@ -670,10 +682,10 @@ export default function Agenda() {
               {isCancelled && <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded ml-2 uppercase font-bold">Cancelou</span>}
               {isNoShow && <span className="text-[9px] bg-amber-200 text-amber-700 px-1.5 py-0.5 rounded ml-2 uppercase font-bold">Faltou</span>}
             </h4>
-            <p className="text-xs text-slate-500">{sName} {sPrice != null && `• ${brl(sPrice)}`}{ehAdmin && !filtroProf && <span className="ml-1 text-slate-400">• {nomeProf(ev.professional_id)}</span>}</p>
+            <p className="text-xs text-slate-500">{sName} {sPrice != null && `• ${brl(sPrice)}`}{veEquipe && !filtroProf && <span className="ml-1 text-slate-400">• {nomeProf(ev.professional_id)}</span>}</p>
           </div>
         </div>
-        <div className="flex items-center space-x-1.5 flex-wrap gap-y-2">
+        <div className={`flex items-center space-x-1.5 flex-wrap gap-y-2 ${podeMexer(ev) ? '' : 'hidden'}`}>
           {!isInactive && (
              <div className="flex items-center space-x-1.5 md:mr-2">
                {ev.clients?.contato_visivel && <div className="flex items-center space-x-1">
@@ -714,7 +726,7 @@ export default function Agenda() {
     <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3">
       <div className="shrink-0 empty:hidden"><AvisoBackup tipo="agenda" exibir="faixa" /></div>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 shrink-0">
-        <div className="hidden md:block"><h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Agenda Conectada</h2>{!ehAdmin && perfil && <p className="text-xs text-slate-500 mt-1">Sua agenda, {perfil.name.split(' ')[0]}</p>}</div>
+        <div className="hidden md:block"><h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Agenda Conectada</h2>{!veEquipe && perfil && <p className="text-xs text-slate-500 mt-1">Sua agenda, {perfil.name.split(' ')[0]}</p>}</div>
         
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <AvisoBackup tipo="agenda" exibir="botao" />
@@ -722,10 +734,10 @@ export default function Agenda() {
             <button onClick={() => setViewMode('day')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'day' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><LayoutList size={12} /> <span>Dia</span></button>
             <button onClick={() => setViewMode('week')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'week' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><Columns size={12} /> <span>Semana</span></button>
             <button onClick={() => setViewMode('month')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'month' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><Grid size={12} /> <span>Mês</span></button>
-            {ehAdmin && <button onClick={() => setViewMode('equipe')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'equipe' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`} title="Linha do tempo por profissional"><Users size={12} /> <span>Equipe</span></button>}
+            {veEquipe && <button onClick={() => setViewMode('equipe')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'equipe' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`} title="Linha do tempo por profissional"><Users size={12} /> <span>Equipe</span></button>}
           </div>
 
-          {ehAdmin && (
+          {veEquipe && (
             <select value={filtroProf} onChange={(e) => setFiltroProf(e.target.value)} aria-label="Filtrar por profissional"
               className="h-8 bg-white border border-slate-300 rounded-lg px-2 text-[11px] font-bold text-slate-700 shadow-sm max-w-[180px]">
               <option value="">Todos os profissionais</option>
@@ -746,7 +758,7 @@ export default function Agenda() {
             <button onClick={() => handleNavigateDate('next')} className="px-2 hover:text-rose-600 hover:bg-rose-50 transition-colors border-l border-slate-200 h-full flex items-center"><ChevronRight size={16} /></button>
           </div>
           
-          <div className="flex space-x-2 h-8">
+          <div className={`flex space-x-2 h-8 ${podeEditarAgenda ? '' : 'hidden'}`}>
             <button onClick={() => openBlockModalForDate(selectedDate)} className="bg-slate-200 text-slate-700 px-3 rounded-lg font-semibold hover:bg-slate-300 transition-colors flex items-center shadow-sm"><Coffee size={14} /></button>
             <button onClick={() => openAddModalForType('appointment', selectedDate)} className="bg-rose-600 text-white px-3 rounded-lg font-bold hover:bg-rose-700 transition-colors flex items-center space-x-1.5 shadow-sm text-xs"><Plus size={14} /> <span className="hidden sm:inline">Agendar</span></button>
           </div>
@@ -799,7 +811,7 @@ export default function Agenda() {
               }))}
               profissionais={[]}
               mostrarSemProfissional={false}
-              umaColuna={ehAdmin ? (filtroProf && filtroProf !== 'sem' ? nomeProf(filtroProf) : filtroProf === 'sem' ? 'Sem profissional' : 'Todos os profissionais') : nomeProf(perfil?.id)}
+              umaColuna={veEquipe ? (filtroProf && filtroProf !== 'sem' ? nomeProf(filtroProf) : filtroProf === 'sem' ? 'Sem profissional' : 'Todos os profissionais') : nomeProf(perfil?.id)}
               onNovo={(_, hora) => { openAddModalForType('appointment', selectedDate, undefined, hora); }}
               onAbrir={(id) => {
                 const ev = filteredEvents.find((x: any) => x.id === id && !x.is_reminder_event);
@@ -963,7 +975,7 @@ export default function Agenda() {
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Início</label><input type="time" required value={blockStartTime} onChange={(e) => setBlockStartTime(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500" /></div>
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Fim</label><input type="time" required value={blockEndTime} onChange={(e) => setBlockEndTime(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500" /></div>
               </div>
-              {ehAdmin && (
+              {agendaOutras && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Profissional</label>
                   <select value={blockProf} onChange={(e) => setBlockProf(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500 text-sm bg-white">
                     <option value="">Salão (sem profissional)</option>
@@ -1082,7 +1094,7 @@ export default function Agenda() {
                   ))}
                 </div>
               )}
-              {ehAdmin && (
+              {agendaOutras && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Profissional {appointmentType === 'appointment' && '*'}</label>
                   <select value={novoProf} onChange={(e) => { setNovoProf(e.target.value); setNovoServico(''); }} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
                     <option value="">{appointmentType === 'reminder' ? 'Sem profissional' : 'Selecione'}</option>
@@ -1092,7 +1104,7 @@ export default function Agenda() {
               )}
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Serviço {appointmentType === 'appointment' && '*'}</label>
                 <select value={novoServico} onChange={(e) => { setNovoServico(e.target.value); setNovoValor(''); setUsarPacote(true); }} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
-                  <option value="">{appointmentType === 'appointment' && ehAdmin && !novoProf ? 'Escolha o profissional primeiro' : 'Selecione'}</option>
+                  <option value="">{appointmentType === 'appointment' && agendaOutras && !novoProf ? 'Escolha o profissional primeiro' : 'Selecione'}</option>
                   {categorias.map((c) => {
                     const daCategoria = ofertas.filter((x) => x.s.categoria_id === c.id);
                     if (!daCategoria.length) return null;
@@ -1157,7 +1169,7 @@ export default function Agenda() {
                 <h3 className="text-xl font-bold text-slate-800">Editar Agendamento</h3>
                 {editingAppointment.status === 'completed' && <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Concluído</span>}
                 {editingAppointment.status === 'confirmed' && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Confirmado</span>}
-                {ehAdmin && <span className="text-[10px] text-slate-500 ml-2">{nomeProf(editingAppointment.professional_id)}</span>}
+                {veEquipe && <span className="text-[10px] text-slate-500 ml-2">{nomeProf(editingAppointment.professional_id)}</span>}
                 {editingAppointment.status === 'cancelled' && <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Cancelou</span>}
                 {editingAppointment.pacote_item_id && <span className="text-[10px] bg-violet-100 text-violet-700 px-2 py-0.5 rounded font-bold uppercase mt-1 mr-1 inline-flex items-center gap-1"><Package size={10} /> Sessão de pacote</span>}
                 {editingAppointment.status === 'no_show' && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Faltou</span>}
@@ -1170,7 +1182,7 @@ export default function Agenda() {
 
             <form onSubmit={handleEditSubmit} className="space-y-4">
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Cliente (Somente Leitura)</label><input type="text" disabled value={editingAppointment.clients?.name || ''} className="w-full border bg-slate-100 p-2.5 rounded-lg text-slate-500 cursor-not-allowed font-medium" /></div>
-              {ehAdmin && (
+              {agendaOutras && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Profissional</label>
                   <select value={editProf} onChange={(e) => setEditProf(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
                     <option value="">Sem profissional</option>

@@ -11,6 +11,7 @@ import { ROTULO_SITUACAO, gerarCsv, montarLinhas, type SituacaoPagamento } from 
 import { ResumoProfissional } from './ResumoProfissional';
 import { EditarLancamento, ExcluirLancamento } from './EditarLancamento';
 import { Aviso } from '../../components/ui';
+import { acessoTela } from '../acesso/permissoes';
 import type { LinhaRelatorio } from './relatorio';
 
 /** Filtros usados também pela página de impressão (vão na URL). */
@@ -57,10 +58,12 @@ const textoEdicao = (a: AjusteLancamento) =>
 export function RelatorioComissoesConteudo() {
   const { perfil } = useAuth();
   const ehAdmin = perfil?.role === 'admin';
+  // Relatório das demais profissionais: administradora ou permissão com alcance "todas".
+  const veTodas = ehAdmin || acessoTela(perfil?.permissoes, 'relatorio_comissoes').todos;
   const [f, setF] = useState<FiltrosRelatorio>(filtrosPadrao);
-  const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos, enabled: ehAdmin });
-  const { linhas, carregando, erro } = useLinhasRelatorio(f, ehAdmin ? null : perfil?.id ?? null);
-  const { edicoes, exclusoes: todasExclusoes } = useAjustes(f, ehAdmin ? null : perfil?.id ?? null);
+  const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos, enabled: veTodas });
+  const { linhas, carregando, erro } = useLinhasRelatorio(f, veTodas ? null : perfil?.id ?? null);
+  const { edicoes, exclusoes: todasExclusoes } = useAjustes(f, veTodas ? null : perfil?.id ?? null);
   // Excluídos aparecem só com "Status de pagamento: Todos" (não têm situação de pagamento).
   const exclusoes = f.situacao === 'todas' ? todasExclusoes : [];
   const totais = useMemo(() => somar(linhas.map((l) => ({ ...l.calculo, liquido: l.liquido, comissao: l.liquido - l.calculo.gorjeta }))), [linhas]);
@@ -69,12 +72,12 @@ export function RelatorioComissoesConteudo() {
   const [excluindo, setExcluindo] = useState<LinhaRelatorio | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   // Resumo exige um profissional: o escolhido no filtro (administradora) ou o próprio usuário.
-  const profResumo = ehAdmin ? (f.profissional ? { id: f.profissional, nome: equipe.find((p) => p.id === f.profissional)?.name ?? 'Profissional' } : null) : perfil ? { id: perfil.id, nome: perfil.name } : null;
+  const profResumo = veTodas ? (f.profissional ? { id: f.profissional, nome: equipe.find((p) => p.id === f.profissional)?.name ?? 'Profissional' } : null) : perfil ? { id: perfil.id, nome: perfil.name } : null;
   const set = <K extends keyof FiltrosRelatorio>(k: K, v: FiltrosRelatorio[K]) => setF((x) => ({ ...x, [k]: v }));
 
-  const urlPdf = `/relatorios/comissoes/imprimir?${new URLSearchParams({ de: f.de, ate: f.ate, profissional: ehAdmin ? f.profissional : '', situacao: f.situacao, concluidos: f.somenteConcluidos ? '1' : '0' })}`;
+  const urlPdf = `/relatorios/comissoes/imprimir?${new URLSearchParams({ de: f.de, ate: f.ate, profissional: veTodas ? f.profissional : '', situacao: f.situacao, concluidos: f.somenteConcluidos ? '1' : '0' })}`;
   const exportar = () => {
-    const blob = new Blob([gerarCsv(linhas, ehAdmin, (iso) => dataBR(iso))], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([gerarCsv(linhas, veTodas, (iso) => dataBR(iso))], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `comissoes_${f.de}_a_${f.ate}.csv`;
@@ -91,7 +94,7 @@ export function RelatorioComissoesConteudo() {
         <label className="text-xs font-bold text-slate-500">Até
           <input type="date" value={f.ate} min={f.de} onChange={(e) => set('ate', e.target.value)} className="mt-1 block w-full border border-slate-200 rounded-lg px-2 py-2 text-sm" />
         </label>
-        {ehAdmin ? (
+        {veTodas ? (
           <label className="text-xs font-bold text-slate-500">Profissional
             <select value={f.profissional} onChange={(e) => set('profissional', e.target.value)} className="mt-1 block w-full border border-slate-200 rounded-lg px-2 py-2 text-sm">
               <option value="">Todos</option>
@@ -128,21 +131,21 @@ export function RelatorioComissoesConteudo() {
                 <thead className="text-[11px] uppercase tracking-wider text-slate-500 bg-slate-50 text-left">
                   <tr>
                     <th className="px-3 py-2.5">Data</th><th className="px-3 py-2.5">Cliente</th><th className="px-3 py-2.5">Serviço</th>
-                    {ehAdmin && <th className="px-3 py-2.5">Profissional</th>}
+                    {veTodas && <th className="px-3 py-2.5">Profissional</th>}
                     <th className="px-3 py-2.5">Pagto</th><th className="px-3 py-2.5 text-right">Valor bruto</th><th className="px-3 py-2.5 text-right">% Comissão</th>
                     <th className="px-3 py-2.5 text-right">Valor líquido</th><th className="px-3 py-2.5">Situação</th>
                     {ehAdmin && <th className="px-3 py-2.5"><span className="sr-only">Ações</span></th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {linhas.length === 0 && exclusoes.length === 0 && <tr><td colSpan={ehAdmin ? 10 : 8} className="px-3 py-10 text-center text-slate-400">Nenhum atendimento com estes filtros.</td></tr>}
+                  {linhas.length === 0 && exclusoes.length === 0 && <tr><td colSpan={8 + (veTodas ? 1 : 0) + (ehAdmin ? 1 : 0)} className="px-3 py-10 text-center text-slate-400">Nenhum atendimento com estes filtros.</td></tr>}
                   {linhas.map((l) => (
                     <tr key={l.id} className="border-t border-slate-100">
                       <td className="px-3 py-2 whitespace-nowrap">{dataBR(l.start_time)}</td>
                       <td className="px-3 py-2">{l.cliente_nome}</td>
                       <td className="px-3 py-2">{l.servico_nome}{l.status !== 'completed' && <span className="ml-1 text-[10px] text-slate-400">({ROTULO_STATUS_AGENDAMENTO[l.status]})</span>}
                         {edicoes.get(l.id)?.map((a) => <span key={a.id} className="block text-[11px] text-amber-700">Editado em {textoEdicao(a)}</span>)}</td>
-                      {ehAdmin && <td className="px-3 py-2">{l.profissional_nome}</td>}
+                      {veTodas && <td className="px-3 py-2">{l.profissional_nome}</td>}
                       <td className="px-3 py-2">{l.payment_method ? ROTULO_FORMA[l.payment_method as FormaPagamento] ?? l.payment_method : '-'}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">{brl(l.calculo.bruto)}</td>
                       <td className="px-3 py-2 text-right">{pct(l.calculo.comissaoPercentual)}</td>
@@ -165,7 +168,7 @@ export function RelatorioComissoesConteudo() {
                       <td className="px-3 py-2 line-through">{a.cliente_nome}</td>
                       <td className="px-3 py-2"><span className="line-through">{a.servico_nome}</span>
                         <span className="block text-[11px] text-red-700 no-underline">Excluído em {dataBR(a.created_at)}: {a.justificativa} (era {brl(a.valor_antes ?? 0)}, {pct(a.comissao_antes ?? 0)}, {forma(a.forma_antes)}{a.gorjeta_antes ? `, gorjeta ${brl(a.gorjeta_antes)}` : ''})</span></td>
-                      {ehAdmin && <td className="px-3 py-2 line-through">{a.profissional_nome}</td>}
+                      {veTodas && <td className="px-3 py-2 line-through">{a.profissional_nome}</td>}
                       <td className="px-3 py-2">{forma(a.forma_antes)}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">{brl(0)}</td>
                       <td className="px-3 py-2 text-right">{pct(0)}</td>
@@ -178,7 +181,7 @@ export function RelatorioComissoesConteudo() {
                 {linhas.length + exclusoes.length > 0 && (
                   <tfoot className="bg-slate-50 font-bold text-slate-800">
                     <tr>
-                      <td className="px-3 py-2.5" colSpan={ehAdmin ? 5 : 4}>Total ({totais.qtd})</td>
+                      <td className="px-3 py-2.5" colSpan={veTodas ? 5 : 4}>Total ({totais.qtd})</td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap">{brl(totais.bruto)}</td>
                       <td />
                       <td className="px-3 py-2.5 text-right whitespace-nowrap">{brl(totais.liquido)}</td>
