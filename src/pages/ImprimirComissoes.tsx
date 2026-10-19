@@ -206,7 +206,7 @@ function ResumoFinanceiroPdf({ params }: { params: URLSearchParams }) {
       <div className="print:hidden flex justify-end mb-2">
         <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold"><Printer size={14} /> Imprimir / Salvar PDF</button>
       </div>
-      <DocumentoResumo resumo={resumo} salao={perfil?.estabelecimento?.nome ?? 'Salão'} nome={nome} de={de} ate={ate} detalhado={detalhado} />
+      <DocumentoResumo resumo={resumo} nome={nome} de={de} ate={ate} detalhado={detalhado} />
     </>
   );
 }
