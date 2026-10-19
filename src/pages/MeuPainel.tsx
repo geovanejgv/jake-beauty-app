@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, CircleDollarSign, FileSignature, Loader2, Radio, TrendingUp, Wallet } from 'lucide-react';
+import { CalendarClock, CircleDollarSign, Edit2, FileSignature, Loader2, Radio, TrendingUp, Wallet, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { mensagemDeErro } from '../lib/seguranca/erros';
@@ -11,6 +11,7 @@ import { comissoesKeys, listarAtendimentos, listarFechamentos, type Fechamento }
 import { ROTULO_STATUS_AGENDAMENTO, painelProfissional } from '../features/comissoes/logic';
 import { FechamentoDetalhe, SeloStatus } from '../features/comissoes/FechamentoDetalhe';
 import { AniversariantesMes } from '../features/clientes/Aniversariantes';
+import { comissaoDe, detalharPainel, type IndicadorPainel } from '../features/comissoes/painelDetalhe';
 
 type Periodo = 'hoje' | 'semana' | 'mes' | 'personalizado';
 
@@ -37,6 +38,9 @@ export default function MeuPainel() {
   const [aberto, setAberto] = useState<Fechamento | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [aoVivo, setAoVivo] = useState(false);
+  // Caixa clicada: abre o detalhamento para conferência
+  const [indicadorAberto, setIndicadorAberto] = useState<IndicadorPainel | null>(null);
+  const navigate = useNavigate();
   const intervalo = periodoDatas(periodo, hoje, de, ate);
   // Hoje entra sempre (faturamento do dia), mesmo se o período for outro.
   const consulta = { de: intervalo.de < hoje ? intervalo.de : hoje, ate: intervalo.ate > hoje ? intervalo.ate : hoje, profissionalId: perfil?.id };
@@ -91,10 +95,10 @@ export default function MeuPainel() {
   if (!perfil) return null;
 
   const cartoes = [
-    { titulo: 'Faturamento do dia', valor: brl(paineis.faturamentoDia), detalhe: `Sua comissão hoje: ${brl(paineis.comissaoDia)}`, icone: CircleDollarSign, cor: 'text-emerald-600 bg-emerald-50' },
-    { titulo: 'Projeção de ganhos', valor: brl(doPeriodoResumo.projecaoComissao), detalhe: `${doPeriodoResumo.qtdProjecao} atendimento(s) confirmados ou pendentes (${brl(doPeriodoResumo.projecaoValor)} brutos)`, icone: TrendingUp, cor: 'text-indigo-600 bg-indigo-50' },
-    { titulo: 'Realizado no período', valor: brl(doPeriodoResumo.realizadoComissao), detalhe: `Comissão estimada sobre ${brl(doPeriodoResumo.realizadoValor)} concluídos`, icone: Wallet, cor: 'text-rose-600 bg-rose-50' },
-    { titulo: 'Atendimentos hoje', valor: String(paineis.atendimentosHoje), detalhe: `${proximos.length} ainda por atender`, icone: CalendarClock, cor: 'text-amber-600 bg-amber-50' },
+    { id: 'dia' as const, titulo: 'Faturamento do dia', valor: brl(paineis.faturamentoDia), detalhe: `Sua comissão hoje: ${brl(paineis.comissaoDia)}`, icone: CircleDollarSign, cor: 'text-emerald-600 bg-emerald-50' },
+    { id: 'projecao' as const, titulo: 'Projeção de ganhos', valor: brl(doPeriodoResumo.projecaoComissao), detalhe: `${doPeriodoResumo.qtdProjecao} atendimento(s) confirmados ou pendentes (${brl(doPeriodoResumo.projecaoValor)} brutos)`, icone: TrendingUp, cor: 'text-indigo-600 bg-indigo-50' },
+    { id: 'realizado' as const, titulo: 'Realizado no período', valor: brl(doPeriodoResumo.realizadoComissao), detalhe: `Comissão estimada sobre ${brl(doPeriodoResumo.realizadoValor)} concluídos`, icone: Wallet, cor: 'text-rose-600 bg-rose-50' },
+    { id: 'hoje' as const, titulo: 'Atendimentos hoje', valor: String(paineis.atendimentosHoje), detalhe: `${proximos.length} ainda por atender`, icone: CalendarClock, cor: 'text-amber-600 bg-amber-50' },
   ];
 
   return (
@@ -141,13 +145,14 @@ export default function MeuPainel() {
       {isLoading ? <div className="flex justify-center py-12"><Loader2 className="animate-spin text-rose-500" size={32} /></div> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {cartoes.map((c) => (
-            <div key={c.titulo} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+            <button type="button" key={c.titulo} onClick={() => setIndicadorAberto(c.id)} title="Ver detalhes para conferência"
+              className="text-left bg-white rounded-2xl border border-slate-200 shadow-sm p-4 hover:border-rose-300 hover:shadow-md transition-all">
               <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-wide">
                 <span className={`p-1.5 rounded-lg ${c.cor}`}><c.icone size={16} /></span> {c.titulo}
               </div>
               <p className="text-2xl font-black text-slate-800 mt-2">{c.valor}</p>
               <p className="text-xs text-slate-500 mt-1">{c.detalhe}</p>
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -190,6 +195,53 @@ export default function MeuPainel() {
           )}
         </section>
       </div>
+
+      {indicadorAberto && (() => {
+        const d = detalharPainel(indicadorAberto, doPeriodo, atendimentos, hoje, (iso) => dataLocal(iso));
+        const doDia = indicadorAberto === 'dia' || indicadorAberto === 'hoje';
+        const rotuloPeriodo = doDia ? `hoje, ${isoParaBR(hoje)}` : `${isoParaBR(intervalo.de)} a ${isoParaBR(intervalo.ate)}`;
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50" onClick={() => setIndicadorAberto(null)}>
+            <div role="dialog" aria-modal="true" aria-label={d.titulo} onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90dvh] flex flex-col">
+              <div className="flex items-start justify-between gap-3 p-4 sm:p-5 border-b border-slate-100">
+                <div className="min-w-0">
+                  <h3 className="text-lg sm:text-xl font-bold text-slate-800">{d.titulo} <span className="text-sm font-medium text-slate-400">({rotuloPeriodo})</span></h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{d.explicacao}</p>
+                </div>
+                <button onClick={() => setIndicadorAberto(null)} className="text-slate-400 hover:text-slate-600 shrink-0" aria-label="Fechar"><X size={20} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-4">
+                {d.secoes.length === 0 && <p className="text-center text-slate-400 py-8 text-sm">Nenhum atendimento.</p>}
+                {d.secoes.map((sec) => (
+                  <section key={sec.titulo}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">{sec.titulo} <span className="font-medium normal-case tracking-normal">({sec.itens.length})</span></h4>
+                      <span className="text-xs text-slate-500">{brl(sec.valor)} · comissão <strong className="text-slate-800">{brl(sec.comissao)}</strong></span>
+                    </div>
+                    <ul className="divide-y divide-slate-100 border border-slate-100 rounded-xl">
+                      {sec.itens.map((a) => (
+                        <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                          <span className="text-xs font-bold text-rose-700 w-[4.5rem] shrink-0">{doDia ? horaBR(a.start_time) : `${isoParaBR(dataLocal(a.start_time)).slice(0, 5)} ${horaBR(a.start_time)}`}</span>
+                          <span className="flex-1 min-w-[8rem]"><span className="block truncate font-semibold text-slate-800">{a.cliente_nome}</span><span className="block text-xs text-slate-500 truncate">{a.servico_nome}</span></span>
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{ROTULO_STATUS_AGENDAMENTO[a.status]}</span>
+                          {a.fechamento && <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700" title="Já incluído em um fechamento">Em fechamento</span>}
+                          <span className="text-right w-28"><span className="block font-black text-slate-800">{brl(a.valor_cobrado)}</span><span className="block text-[11px] text-slate-500">{Number(a.comissao_percentual ?? 0)}% = {brl(comissaoDe(a))}</span></span>
+                          <button type="button" onClick={() => navigate(`/agenda?agendamento=${encodeURIComponent(a.id)}`)} title="Editar na agenda"
+                            className="p-1.5 border border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-lg"><Edit2 size={14} /></button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-3 p-4 sm:p-5 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+                <span className="text-sm text-slate-600">{indicadorAberto === 'dia' ? <>Sua comissão <strong>{brl(d.comissao)}</strong></> : <>Total bruto <strong>{brl(d.valor)}</strong></>}</span>
+                <span className="text-xl font-black text-slate-800">{indicadorAberto === 'hoje' ? `${d.quantidade} atendimento(s)` : indicadorAberto === 'dia' ? brl(d.valor) : `Comissão ${brl(d.comissao)}`}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {aberto && <FechamentoDetalhe fechamento={aberto} papel="professional" onClose={() => setAberto(null)} onAviso={setAviso} />}
       <Aviso texto={aviso} onFechar={() => setAviso(null)} />

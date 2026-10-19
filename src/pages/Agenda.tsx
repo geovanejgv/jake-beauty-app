@@ -500,6 +500,17 @@ export default function Agenda() {
     const aptDate = new Date(apt.start_time); setEditDate(aptDate.toISOString().split('T')[0]); setEditTime(aptDate.toTimeString().slice(0, 5));
   };
 
+  // Atalho por endereço: /agenda?agendamento=<id> abre a edição desse atendimento (vindo do Meu Painel)
+  useEffect(() => {
+    const id = searchParams.get('agendamento');
+    if (!id || isLoading) return;
+    const apt = agendamentos.find((a: any) => a.id === id && !a.is_block);
+    if (apt) { setSelectedDate(new Date(apt.start_time).toISOString().split('T')[0]); openEditModal(apt); }
+    searchParams.delete('agendamento');
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, isLoading]);
+
   const handleSendToCheckout = (apt: any) => { setEditingAppointment(null); navigate('/pdv', { state: { appointment: apt } }); };
 
   const handleSendWhatsApp = (apt: any) => {
