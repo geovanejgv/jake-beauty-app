@@ -147,3 +147,15 @@ export const verificarFechamento = async (id: string) => (await rodar(supabase.r
 export async function salvarGorjeta(agendamentoId: string, valor: number) {
   await rodar(supabase.from('appointments').update({ gorjeta: valor }).eq('id', agendamentoId));
 }
+
+export type EdicaoLancamento = { valor_cobrado: number; comissao_percentual: number; payment_method: FormaPagamento | null; gorjeta: number };
+
+/** Edição pela administradora (o banco recusa profissional e atendimento já em fechamento). */
+export async function editarLancamento(id: string, d: EdicaoLancamento) {
+  await rodar(supabase.from('appointments').update(d).eq('id', id));
+}
+
+/** Exclusão pela administradora (o banco recusa atendimento em fechamento ou já abatido de pacote e audita a exclusão). */
+export async function excluirLancamento(id: string) {
+  await rodar(supabase.from('appointments').delete().eq('id', id));
+}

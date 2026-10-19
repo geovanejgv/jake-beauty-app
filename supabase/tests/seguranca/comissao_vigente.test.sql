@@ -67,5 +67,20 @@ select pg_temp.espera_erro($$update public.appointments set comissao_percentual 
 update public.appointments set status = 'completed' where start_time = '2026-10-19 15:00+00';
 select pg_temp.ok(pg_temp.pct('2026-10-19 15:00+00') = 35, 'profissional conclui e o banco grava a comissão vigente');
 select pg_temp.espera_erro($$select public.recalcular_comissoes_abertas(null, null)$$, 'permission denied');
+select pg_temp.espera_erro($$update public.appointments set gorjeta = 5 where start_time = '2026-10-19 15:00+00'$$, 'Somente a administradora');
+
+-- Relatório de comissões: a administradora edita e exclui lançamento em aberto sem o
+-- segundo fator (sessão aal1); lançamento em fechamento continua travado.
+select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
+select set_config('request.jwt.claims', '{"aal": "aal1"}', false);
+update public.appointments set valor_cobrado = 70, comissao_percentual = 50, payment_method = 'dinheiro', gorjeta = 5
+ where start_time = '2026-10-19 15:00+00';
+select pg_temp.ok((select valor_cobrado = 70 and comissao_percentual = 50 and payment_method = 'dinheiro' and gorjeta = 5
+   from public.appointments where start_time = '2026-10-19 15:00+00'), 'administradora edita lançamento em aberto sem aal2');
+select pg_temp.espera_erro($$update public.appointments set comissao_percentual = 10 where start_time = '2026-10-19 14:00+00'$$, 'já incluído em fechamento');
+select pg_temp.espera_erro($$delete from public.appointments where start_time = '2026-10-19 14:00+00'$$, 'já incluído em fechamento');
+delete from public.appointments where start_time = '2026-10-19 15:00+00';
+select pg_temp.ok(not exists (select 1 from public.appointments where start_time = '2026-10-19 15:00+00'), 'administradora exclui lançamento em aberto sem aal2');
 reset role;
+select pg_temp.ok((select count(*) from public.access_logs where acao = 'excluiu' and entidade = 'appointments') = 1, 'exclusão registrada na auditoria');
 select 'Comissão vigente: OK';
