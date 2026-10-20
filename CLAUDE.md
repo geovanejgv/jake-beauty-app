@@ -4,11 +4,11 @@ Portal de gestão de salão (marca Controla Miga, antes Jake Beauty / Studio Lab
 
 ## Estrutura
 
-- `src/features/<módulo>/`: lógica (com testes) e acesso a dados de cada módulo: `acesso` (papéis, menu, preferências e MFA), `equipe`, `clientes` (origens e grupos), `catalogo`, `agenda`, `comissoes`, `kanban`, `pacotes`, `leads` (funil da possível cliente), `backup` (planilha .xlsx com aviso mensal), `fluxo-caixa` (lucro líquido real do mês, usado no Resumo Diário e no "Total Mês" de Finanças), `financas` (detalhamento dos indicadores de Finanças), `plano` (demonstração, limites, travas) e `admin-global`.
+- `src/features/<módulo>/`: lógica (com testes) e acesso a dados de cada módulo: `acesso` (papéis, menu, preferências e MFA), `equipe`, `clientes` (origens e grupos), `catalogo`, `agenda`, `comissoes`, `kanban`, `pacotes`, `leads` (funil da possível cliente), `backup` (planilha .xlsx com aviso mensal), `fluxo-caixa` (lucro líquido real do mês, usado no Resumo Diário e no "Total Mês" de Finanças), `financas` (detalhamento dos indicadores de Finanças), `plano` (demonstração, limites, travas), `admin-global` e `ia` (integração opcional com IA, por pessoa: tela de configuração e painéis; o servidor fica em `supabase/functions/ia/`).
 - Vários estabelecimentos: todo dado tem `estabelecimento_id`, com política RLS restritiva e gatilho de guarda (`docs/especificacoes/administracao-global.md`). Tabela nova do app nasce com a coluna, a política restritiva e o gatilho `a0_estabelecimento_guarda`.
 - `src/pages/`: telas. Papéis: `admin` (administradora do estabelecimento) e `professional` (profissional parceiro); administração global à parte (`administradores_globais`, exige MFA). A fronteira de acesso é o RLS do banco.
 - `docs/especificacoes/`: especificações de funcionalidades ainda não implantadas.
-- `supabase/migrations/`: migrações (aplicar em produção só com aprovação). `supabase/functions/admin-usuarios/`: Edge Function de acessos (única com chave de serviço).
+- `supabase/migrations/`: migrações (aplicar em produção só com aprovação). `supabase/functions/admin-usuarios/`: Edge Function de acessos. `supabase/functions/ia/`: Edge Function da IA (provedores por `fetch`, sem SDK; núcleo testável em `nucleo/`, testes em `tests/ia/`). Só essas duas usam a chave de serviço.
 
 ## Segurança
 
