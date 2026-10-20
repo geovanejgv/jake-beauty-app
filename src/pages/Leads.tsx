@@ -12,6 +12,7 @@ import {
   COR_ETAPA, ETAPAS_LEAD, ORIGENS_LEAD, ROTULO_ETAPA, ROTULO_ORIGEM, acaoAtrasada, dadosDoFormulario, indicadoresLeads,
   linkWhatsapp, mensagemBoasVindas, mensagemContato, opcoesDeInteresse, temTelefone, validarLead, type DadosLead, type EtapaLead, type Lead,
 } from '../features/leads/logic';
+import { TriagemLeadIa } from '../features/ia/TriagemLeadIa';
 import { atualizarLead, criarLead, excluirLead, leadsKeys, listarEquipe, listarLeads, listarNomesServicos, moverLead } from '../features/leads/api';
 
 /**
@@ -307,6 +308,11 @@ function FormLead({ lead, equipe, interesses, onFechar, onSalvo }: {
         </div>
         {erro && <p role="alert" className="md:col-span-2 text-sm text-red-600">{erro}</p>}
       </form>
+      {lead && (
+        <div className="mt-4">
+          <TriagemLeadIa leadId={lead.id} telefone={lead.telefone} onUsarProximoPasso={(texto) => setF((v) => ({ ...v, proxima_acao: texto }))} />
+        </div>
+      )}
     </Modal>
   );
 }

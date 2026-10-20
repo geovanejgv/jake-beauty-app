@@ -8,7 +8,7 @@ import { COR_SITUACAO, ROTULO_SITUACAO, agruparSaldos, situacaoPacote } from '..
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
-import { Phone, Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package, List, LayoutGrid, CalendarClock, CalendarCheck, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Phone, Search, Plus, Edit2, Trash2, X, AlertTriangle, Users, History, Scissors, NotebookPen, ShieldCheck, Lock, Package, List, LayoutGrid, CalendarClock, CalendarCheck, ArrowUp, ArrowDown, ArrowUpDown, Sparkles } from 'lucide-react';
 import { clientesKeys, listarGrupos, listarMembros, listarOrigens, listarResumoAtendimentos } from '../features/clientes/api';
 import { PALAVRA_EXCLUSAO, colunasQueCabem, chaveAniversario, confirmacaoExclusaoValida, contarPorGrupo, gruposPorCliente, ordenarPor, type Direcao } from '../features/clientes/logic';
 import { AniversariantesMes } from '../features/clientes/Aniversariantes';
@@ -17,6 +17,8 @@ import { CampoOrigem } from '../features/clientes/CampoOrigem';
 import { GruposClientes } from '../features/clientes/GruposClientes';
 import { buscarLead, leadsKeys, vincularCliente } from '../features/leads/api';
 import { AvisoBackup } from '../features/backup/AvisoBackup';
+import { ResumoClienteIa } from '../features/ia/ResumoClienteIa';
+import { useDisponibilidadeIa } from '../features/ia/useIa';
 
 type ModoClientes = 'lista' | 'cartoes' | 'grupos';
 const CHAVE_MODO = 'jb-clientes-modo';
@@ -126,11 +128,13 @@ export default function Clientes() {
   const acessoClientes = acessoTela(perfil?.permissoes, 'clientes');
   const veTelefone = ehAdmin || acessoClientes.campo('telefone');
   const veAniversario = ehAdmin || acessoClientes.campo('aniversario');
+  // Aba de IA só para quem ativou a integração (opcional, por pessoa).
+  const iaAtiva = useDisponibilidadeIa().ativa;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   // Cadastro vindo de um lead que fechou: ao salvar, o lead fica vinculado à nova cliente.
   const [leadOrigem, setLeadOrigem] = useState<string | null>(null);
-  const [abaHistorico, setAbaHistorico] = useState<'atendimentos' | 'tecnico' | 'pacotes'>('atendimentos');
+  const [abaHistorico, setAbaHistorico] = useState<'atendimentos' | 'tecnico' | 'pacotes' | 'ia'>('atendimentos');
   const [searchTerm, setSearchTerm] = useState('');
   
   const [showAddModal, setShowAddModal] = useState(false);
@@ -714,10 +718,11 @@ export default function Clientes() {
               <button type="button" role="tab" aria-selected={abaHistorico === 'atendimentos'} onClick={() => setAbaHistorico('atendimentos')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'atendimentos' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><Scissors size={14} /> Atendimentos</button>
               <button type="button" role="tab" aria-selected={abaHistorico === 'tecnico'} onClick={() => setAbaHistorico('tecnico')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'tecnico' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><NotebookPen size={14} /> Histórico técnico</button>
               <button type="button" role="tab" aria-selected={abaHistorico === 'pacotes'} onClick={() => setAbaHistorico('pacotes')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'pacotes' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><Package size={14} /> Pacotes</button>
+              {iaAtiva && <button type="button" role="tab" aria-selected={abaHistorico === 'ia'} onClick={() => setAbaHistorico('ia')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'ia' ? 'border-violet-600 text-violet-700 font-bold' : 'border-transparent text-slate-500'}`}><Sparkles size={14} /> IA</button>}
             </div>
             
             <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
-              {abaHistorico === 'pacotes' ? <PacotesCliente clienteId={selectedHistoryClient.id} /> : abaHistorico === 'tecnico' ? <HistoricoTecnico clienteId={selectedHistoryClient.id} podeRegistrar={ehAdmin || acessoClientes.editar} /> : clientAppointments.length === 0 ? (
+              {abaHistorico === 'ia' && iaAtiva ? <ResumoClienteIa clienteId={selectedHistoryClient.id} telefone={veTelefone ? selectedHistoryClient.phone : null} /> : abaHistorico === 'pacotes' ? <PacotesCliente clienteId={selectedHistoryClient.id} /> : abaHistorico === 'tecnico' ? <HistoricoTecnico clienteId={selectedHistoryClient.id} podeRegistrar={ehAdmin || acessoClientes.editar} /> : clientAppointments.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">Nenhum atendimento registrado.</div>
               ) : (
                 clientAppointments.map((apt: any) => {

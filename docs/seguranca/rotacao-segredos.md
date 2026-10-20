@@ -10,6 +10,7 @@ O front (SPA) não guarda nenhum segredo: só a URL e a chave **publishable** do
 | JWT secret / signing keys do Supabase Auth | Painel do Supabase | Só em incidente | Project Settings, JWT Keys: rotacionar a chave de assinatura | Encerra todas as sessões; todos precisam entrar de novo |
 | Senhas das contas (Supabase, Vercel, GitHub, e-mail) | Gerenciador de senhas da administradora | Na saída de pessoa com acesso ou em incidente | Pelo painel de cada serviço | Manter MFA ligado (PRV-05) |
 | Token do GitHub usado por integrações | GitHub, Settings, Developer settings | Conforme validade do token | Gerar novo com menor escopo, revogar o antigo | Preferir tokens com expiração |
+| Segredo de cifra da IA (`IA_ENCRYPTION_KEY`) | Secrets das Edge Functions no Supabase | Só em incidente ou na saída de pessoa com acesso ao painel | Gravar novo valor aleatório (32+ caracteres) no painel; a função passa a usá-lo na próxima chamada | As chaves de API salvas deixam de abrir: cada pessoa cola a sua de novo em Configurações > Integração com IA |
 
 ## Procedimento geral
 

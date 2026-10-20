@@ -22,6 +22,7 @@ Controlador: (razão social e CNPJ do estúdio). Encarregado: (definir, LGP-07).
 | Dados do profissional | `perfis_profissionais` (CPF, CNPJ/MEI, telefone, e-mail, chave PIX, contrato) | Contrato de parceria ou de trabalho, repasse de comissões e obrigações fiscais | Execução de contrato (V) e obrigação legal (II) | Duração do contrato + prazo fiscal [Confirmar] | Supabase |
 | Histórico técnico da cliente | `cliente_historico` (fórmulas, alergias, preferências, autor) | Segurança e qualidade do atendimento | Execução de contrato (V); alergia pode ser dado de saúde (art. 11) [Confirmar] | Enquanto houver relação | Supabase |
 | Fechamentos de comissão | `fechamentos`, `fechamento_itens` (nome da cliente, serviço, valores; IP e navegador da assinatura) | Prova do acerto com o profissional | Execução de contrato (V) e exercício regular de direitos (VI) | 5 anos (sugestão) [Confirmar] | Supabase |
+| Integração com IA (opcional) | `user_ai_settings` (provedor, modelo, chave de API cifrada, data do consentimento), `ai_generations` (resultado ligado a cliente ou lead), `ai_usage_logs` (só metadados) | Resumo da cliente e triagem do lead por IA, a pedido da pessoa da equipe | Legítimo interesse (IX) para o resumo; dados de saúde do histórico técnico exigem base do art. 11 [Confirmar] | Resultado: enquanto houver relação ou até a pessoa excluir; uso: 1 ano (sugestão) | Supabase; provedor escolhido pela pessoa (Anthropic, OpenAI ou Google), fora do Brasil |
 
 ## Pontos para o controlador decidir
 
