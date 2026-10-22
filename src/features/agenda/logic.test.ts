@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { colunasSobrepostas, conflitoDoItem, conflitoLocal, fimDoItem, hhmmLocal, intervalosLivres, mensagemAgenda, posicaoNaLinha } from './logic';
+import { colunasSobrepostas, datasDoBloqueio, conflitoDoItem, conflitoLocal, fimDoItem, hhmmLocal, intervalosLivres, mensagemAgenda, posicaoNaLinha } from './logic';
 
 const ev = (id: string, ini: string, fim: string, x: Record<string, unknown> = {}) => ({
   id, start_time: ini, end_time: fim, status: 'scheduled', professional_id: 'p1', ...x,
@@ -77,5 +77,27 @@ describe('vários serviços no mesmo agendamento', () => {
       d(8), d(21), 30,
     );
     expect(livres.map((l) => [hhmmLocal(l.inicio), hhmmLocal(l.fim)])).toEqual([['08:00', '09:00'], ['12:00', '20:00']]);
+  });
+});
+
+describe('bloqueio recorrente', () => {
+  it('sem repetição é só o dia', () => {
+    expect(datasDoBloqueio('2026-10-22', 'nao', { tipo: 'vezes', vezes: 5 })).toEqual(['2026-10-22']);
+  });
+  it('diário até uma data, inclusive, virando o mês', () => {
+    expect(datasDoBloqueio('2026-10-30', 'diaria', { tipo: 'data', ate: '2026-11-02' })).toEqual(['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02']);
+  });
+  it('semanal após N vezes', () => {
+    expect(datasDoBloqueio('2026-10-22', 'semanal', { tipo: 'vezes', vezes: 3 })).toEqual(['2026-10-22', '2026-10-29', '2026-11-05']);
+  });
+  it('mensal usa o último dia do mês quando falta o dia', () => {
+    expect(datasDoBloqueio('2027-01-31', 'mensal', { tipo: 'data', ate: '2027-04-30' })).toEqual(['2027-01-31', '2027-02-28', '2027-03-31', '2027-04-30']);
+  });
+  it('recusa término inválido e excesso de repetições', () => {
+    expect(datasDoBloqueio('2026-10-22', 'diaria', { tipo: 'data', ate: '2026-10-22' })).toMatch(/depois/);
+    expect(datasDoBloqueio('2026-10-22', 'diaria', { tipo: 'data', ate: '' })).toMatch(/termina/);
+    expect(datasDoBloqueio('2026-10-22', 'diaria', { tipo: 'vezes', vezes: 1 })).toMatch(/2 vezes/);
+    expect(datasDoBloqueio('2026-10-22', 'diaria', { tipo: 'data', ate: '2028-01-01' })).toMatch(/máximo/);
+    expect((datasDoBloqueio('2026-01-01', 'diaria', { tipo: 'data', ate: '2027-01-01' }) as string[]).length).toBe(366);
   });
 });

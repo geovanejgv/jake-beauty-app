@@ -11,7 +11,7 @@ import { equipeKeys, listarAtivos, nomeNaAgenda } from '../features/equipe/api';
 import { acessoTela } from '../features/acesso/permissoes';
 import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '../features/catalogo/api';
 import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
-import { conflitoDoItem, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, mensagemAgenda, ocupaAgenda, type ItemAgendamento } from '../features/agenda/logic';
+import { BLOQUEIO_MAX_REPETICOES, conflitoDoItem, conflitoLocal, datasDoBloqueio, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, mensagemAgenda, ocupaAgenda, type ItemAgendamento, type RepeticaoBloqueio } from '../features/agenda/logic';
 import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
 import { brl, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
@@ -93,6 +93,11 @@ export default function Agenda() {
   const [blockStartTime, setBlockStartTime] = useState('12:00');
   const [blockEndTime, setBlockEndTime] = useState('13:00');
   const [blockReason, setBlockReason] = useState('Almoço');
+  // Bloqueio recorrente: diário, semanal ou mensal, terminando numa data ou após N vezes.
+  const [blockRepeticao, setBlockRepeticao] = useState<RepeticaoBloqueio>('nao');
+  const [blockTermino, setBlockTermino] = useState<'data' | 'vezes'>('data');
+  const [blockAte, setBlockAte] = useState('');
+  const [blockVezes, setBlockVezes] = useState('4');
 
   const [editServiceName, setEditServiceName] = useState('');
   const [editServicePrice, setEditServicePrice] = useState('');
@@ -318,11 +323,17 @@ export default function Agenda() {
     onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível agendar o lembrete do grupo.', 'agenda.lembrete_grupo'))
   });
 
+  // Bloqueio (um dia ou a série inteira num único insert: se um dia conflitar, nada é criado).
   const addBlockMutation = useMutation({
-    mutationFn: async (block: any) => {
-      const start = new Date(`${block.date}T${block.startTime}:00`);
-      const end = new Date(`${block.date}T${block.endTime}:00`);
-      const { error } = await supabase.from('appointments').insert([{ is_block: true, block_reason: block.reason, start_time: start.toISOString(), end_time: end.toISOString(), status: 'scheduled', professional_id: block.professional_id || null }]);
+    mutationFn: async (block: { datas: string[]; startTime: string; endTime: string; reason: string; professional_id: string | null }) => {
+      const serie = block.datas.length > 1;
+      const grupo = serie ? crypto.randomUUID() : null;
+      const { error } = await supabase.from('appointments').insert(block.datas.map((data) => ({
+        is_block: true, block_reason: block.reason, status: 'scheduled', professional_id: block.professional_id || null,
+        start_time: new Date(`${data}T${block.startTime}:00`).toISOString(),
+        end_time: new Date(`${data}T${block.endTime}:00`).toISOString(),
+        is_recurring: serie, recurring_group_id: grupo,
+      })));
       if (error) throw error;
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); closeBlockModal(); },
@@ -393,7 +404,7 @@ export default function Agenda() {
       if (apt.is_reminder_event && !apt.is_manual_reminder) {
         const { error } = await supabase.from('appointments').update({ return_reminder_date: null }).eq('id', apt.id);
         if (error) throw error;
-      } else if (apt.is_recurring && apt.recurring_group_id) {
+      } else if (apt.is_recurring && apt.recurring_group_id && !apt.so_este) {
         const { error } = await supabase.from('appointments')
           .delete()
           .eq('recurring_group_id', apt.recurring_group_id)
@@ -410,7 +421,8 @@ export default function Agenda() {
       setEditingAppointment(null);
       setEditingBlock(null);
       setShowBlockModal(false);
-    }
+    },
+    onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível excluir.', 'agenda.excluir'))
   });
 
   const markWhatsAppSentMutation = useMutation({
@@ -429,6 +441,10 @@ export default function Agenda() {
     setBlockStartTime('12:00');
     setBlockEndTime('13:00');
     setBlockReason('Almoço');
+    setBlockRepeticao('nao');
+    setBlockTermino('data');
+    setBlockAte('');
+    setBlockVezes('4');
   };
 
   // Máscara (11) 99999-9999, igual à tela de Clientes
@@ -490,6 +506,10 @@ export default function Agenda() {
     setBlockStartTime('12:00');
     setBlockEndTime('13:00');
     setBlockReason('Almoço');
+    setBlockRepeticao('nao');
+    setBlockTermino('data');
+    setBlockAte('');
+    setBlockVezes('4');
     setShowBlockModal(true);
   };
 
@@ -592,7 +612,13 @@ export default function Agenda() {
     if (editingBlock) {
       updateBlockMutation.mutate({ id: editingBlock.id, date: blockDate, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason, professional_id: blockProf });
     } else {
-      addBlockMutation.mutate({ date: blockDate, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason, professional_id: agendaOutras ? blockProf : perfil?.id }); 
+      const datas = datasDoBloqueio(blockDate, blockRepeticao, blockTermino === 'data' ? { tipo: 'data', ate: blockAte } : { tipo: 'vezes', vezes: Number(blockVezes) });
+      if (typeof datas === 'string') return alert(datas);
+      const professional_id = (agendaOutras ? blockProf : perfil?.id) || null;
+      // Mesma regra da trava do banco: mostra os dias que já têm atendimento ou bloqueio.
+      const conflitos = professional_id ? datas.filter((d) => conflitoLocal(appointments as any[], professional_id, new Date(`${d}T${blockStartTime}:00`), new Date(`${d}T${blockEndTime}:00`))) : [];
+      if (conflitos.length) return alert(`Conflito de horário: ${nomeProf(professional_id)} já tem atendimento ou bloqueio em ${conflitos.slice(0, 10).map(isoParaBR).join(', ')}${conflitos.length > 10 ? ` e mais ${conflitos.length - 10} dia(s)` : ''}. Ajuste o horário ou as datas.`);
+      addBlockMutation.mutate({ datas, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason, professional_id });
     }
   };
 
@@ -713,7 +739,7 @@ export default function Agenda() {
         <div key={`block-${ev.id}`} onClick={(e) => e.stopPropagation()} className="p-3 mb-2 flex flex-col md:flex-row md:items-center justify-between bg-slate-100 border-l-4 border-slate-400 opacity-90 rounded-r-xl">
           <div className="flex items-center space-x-3">
             <div className="font-bold px-2 py-1.5 rounded-lg flex items-center space-x-1 bg-slate-200 text-slate-600 text-sm"><Clock size={14} /> <span>{hour}:{min} - {endH}:{endM}</span></div>
-            <div><h4 className="font-bold text-slate-700 flex items-center space-x-1 text-sm"><Lock size={14} className="text-slate-500" /> <span>Bloqueado</span></h4><p className="text-xs text-slate-500 font-medium">{ev.block_reason}</p></div>
+            <div><h4 className="font-bold text-slate-700 flex items-center space-x-1 text-sm"><Lock size={14} className="text-slate-500" /> <span>Bloqueado</span>{ev.is_recurring && <Repeat size={12} className="text-slate-500"><title>Bloqueio recorrente</title></Repeat>}</h4><p className="text-xs text-slate-500 font-medium">{ev.block_reason}</p></div>
           </div>
           <div className="flex items-center space-x-1.5 mt-2 md:mt-0">
              <button onClick={(e) => { e.stopPropagation(); setAppointmentToDelete(ev); }} className="p-1.5 border border-slate-300 text-slate-500 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={14} /></button>
@@ -1056,7 +1082,7 @@ export default function Agenda() {
 
       {showBlockModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-center">
               <div className="flex items-center space-x-2 text-slate-800"><Lock size={20} className="text-slate-500"/><h3 className="text-xl font-bold">{editingBlock ? 'Editar Bloqueio' : 'Bloquear Horário'}</h3></div>
               <button onClick={closeBlockModal} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
@@ -1076,6 +1102,38 @@ export default function Agenda() {
                 </div>
               )}
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Motivo / Descrição</label><input type="text" required value={blockReason} onChange={(e) => setBlockReason(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500" placeholder="Ex: Almoço, Limpeza, Médico..." /></div>
+              {!editingBlock && (
+                <div className="space-y-2">
+                  <div><label className="block text-xs font-bold text-slate-500 mb-1">Repetir</label>
+                    <select value={blockRepeticao} onChange={(e) => setBlockRepeticao(e.target.value as RepeticaoBloqueio)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500 text-sm bg-white">
+                      <option value="nao">Não repetir</option>
+                      <option value="diaria">Todos os dias</option>
+                      <option value="semanal">Toda semana ({new Date(`${blockDate}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long' })})</option>
+                      <option value="mensal">Todo mês (dia {blockDate.slice(8, 10)})</option>
+                    </select>
+                  </div>
+                  {blockRepeticao !== 'nao' && (() => {
+                    const previa = datasDoBloqueio(blockDate, blockRepeticao, blockTermino === 'data' ? { tipo: 'data', ate: blockAte } : { tipo: 'vezes', vezes: Number(blockVezes) });
+                    return (
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 space-y-2">
+                        <span className="block text-xs font-bold text-slate-500">Termina</span>
+                        <label className="flex items-center gap-2 text-sm text-slate-700">
+                          <input type="radio" name="termino" checked={blockTermino === 'data'} onChange={() => setBlockTermino('data')} className="accent-slate-700" /> Em
+                          <input type="date" value={blockAte} min={blockDate} onChange={(e) => { setBlockAte(e.target.value); setBlockTermino('data'); }} className="flex-1 border bg-white p-1.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500 text-sm" />
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-slate-700">
+                          <input type="radio" name="termino" checked={blockTermino === 'vezes'} onChange={() => setBlockTermino('vezes')} className="accent-slate-700" /> Após
+                          <input type="text" inputMode="numeric" value={blockVezes} onChange={(e) => { setBlockVezes(e.target.value.replace(/\D/g, '').slice(0, 3)); setBlockTermino('vezes'); }} className="w-16 border bg-white p-1.5 rounded-lg outline-none focus:ring-2 focus:ring-slate-500 text-sm text-center" /> vezes
+                        </label>
+                        <p className={`text-[11px] ${typeof previa === 'string' ? 'text-amber-700' : 'text-slate-500'}`}>
+                          {typeof previa === 'string' ? previa : `Serão criados ${previa.length} bloqueios, de ${isoParaBR(previa[0])} a ${isoParaBR(previa[previa.length - 1])} (máximo ${BLOQUEIO_MAX_REPETICOES}).`}
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+              {editingBlock?.is_recurring && <p className="text-[11px] text-slate-500 flex items-center gap-1"><Repeat size={12} /> Bloqueio recorrente: a alteração vale só para este dia.</p>}
               <div className="flex space-x-3 pt-2">
                 {editingBlock && (
                    <button type="button" onClick={() => { setAppointmentToDelete(editingBlock); closeBlockModal(); }} className="p-2.5 border border-red-100 text-red-500 hover:bg-red-50 rounded-lg flex items-center justify-center" title="Excluir Bloqueio"><Trash2 size={18}/></button>
@@ -1379,11 +1437,22 @@ export default function Agenda() {
             </h3>
             <p className="text-sm text-slate-500">
               Tem certeza que deseja apagar o {appointmentToDelete.is_reminder_event ? 'lembrete de' : 'registro de'} <strong>{appointmentToDelete.is_block ? appointmentToDelete.block_reason : appointmentToDelete.clients?.name}</strong>{appointmentToDelete.is_reminder_event ? '?' : ' do banco de dados?'}
-              {appointmentToDelete.is_recurring && (
+              {appointmentToDelete.is_recurring && !appointmentToDelete.is_block && (
                  <span className="block mt-3 text-rose-600 font-bold bg-rose-50 p-2 rounded border border-rose-200 text-xs">Atenção: Isso excluirá este e todos os meses futuros deste lembrete recorrente.</span>
               )}
+              {appointmentToDelete.is_recurring && appointmentToDelete.is_block && (
+                 <span className="block mt-3 text-slate-600 bg-slate-50 p-2 rounded border border-slate-200 text-xs">Bloqueio recorrente: remova só este dia ou este e os próximos da série.</span>
+              )}
             </p>
+            {appointmentToDelete.is_recurring && appointmentToDelete.is_block && appointmentToDelete.recurring_group_id ? (
+              <div className="space-y-2 pt-4">
+                <button onClick={() => deleteAppointmentMutation.mutate({ ...appointmentToDelete, so_este: true })} disabled={deleteAppointmentMutation.isPending} className="w-full border border-red-200 text-red-600 hover:bg-red-50 p-2.5 rounded-lg font-bold">Só este dia</button>
+                <button onClick={() => deleteAppointmentMutation.mutate(appointmentToDelete)} disabled={deleteAppointmentMutation.isPending} className="w-full bg-red-600 text-white p-2.5 rounded-lg font-bold">Este e os próximos</button>
+                <button onClick={() => setAppointmentToDelete(null)} className="w-full border border-slate-200 bg-slate-50 text-slate-600 p-2.5 rounded-lg font-medium">Voltar</button>
+              </div>
+            ) : (
             <div className="flex space-x-3 pt-4"><button onClick={() => setAppointmentToDelete(null)} className="w-1/2 border border-slate-200 bg-slate-50 text-slate-600 p-2.5 rounded-lg font-medium">Voltar</button><button onClick={() => deleteAppointmentMutation.mutate(appointmentToDelete)} disabled={deleteAppointmentMutation.isPending} className="w-1/2 bg-red-600 text-white p-2.5 rounded-lg font-bold">Sim, Excluir</button></div>
+            )}
           </div>
         </div>
       )}

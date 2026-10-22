@@ -118,3 +118,47 @@ export function intervalosLivres(ocupados: { inicio: Date; fim: Date }[], janela
   if (cursor < janelaFim.getTime()) fecha(janelaFim.getTime());
   return livres;
 }
+
+/** Repetição do bloqueio de horário. Mensal mantém o dia do mês (ou o último dia, se o mês for menor). */
+export type RepeticaoBloqueio = 'nao' | 'diaria' | 'semanal' | 'mensal';
+export type TerminoRepeticao = { tipo: 'data'; ate: string } | { tipo: 'vezes'; vezes: number };
+/** Limite de bloqueios criados de uma vez (um ano de bloqueio diário). */
+export const BLOQUEIO_MAX_REPETICOES = 366;
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+function dataDaVez(inicio: string, freq: Exclude<RepeticaoBloqueio, 'nao'>, i: number): string {
+  const [ano, mes, dia] = inicio.split('-').map(Number);
+  if (freq === 'mensal') {
+    const m0 = mes - 1 + i;
+    const a = ano + Math.floor(m0 / 12);
+    const m = (m0 % 12) + 1;
+    return `${a}-${pad2(m)}-${pad2(Math.min(dia, new Date(a, m, 0).getDate()))}`;
+  }
+  const d = new Date(Date.UTC(ano, mes - 1, dia + i * (freq === 'semanal' ? 7 : 1)));
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+
+/**
+ * Datas (AAAA-MM-DD) do bloqueio, a primeira incluída. Termina numa data (inclusive) ou após N vezes.
+ * Devolve uma mensagem quando o término é inválido ou passa do limite.
+ */
+export function datasDoBloqueio(inicio: string, freq: RepeticaoBloqueio, termino: TerminoRepeticao): string[] | string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(inicio)) return 'Informe a data.';
+  if (freq === 'nao') return [inicio];
+  if (termino.tipo === 'vezes') {
+    if (!Number.isInteger(termino.vezes) || termino.vezes < 2) return 'Repita pelo menos 2 vezes.';
+    if (termino.vezes > BLOQUEIO_MAX_REPETICOES) return `No máximo ${BLOQUEIO_MAX_REPETICOES} repetições por vez.`;
+    return Array.from({ length: termino.vezes }, (_, i) => dataDaVez(inicio, freq, i));
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(termino.ate)) return 'Informe quando a repetição termina.';
+  if (termino.ate <= inicio) return 'A data final da repetição deve ser depois da data do bloqueio.';
+  const datas: string[] = [];
+  for (let i = 0; ; i++) {
+    const d = dataDaVez(inicio, freq, i);
+    if (d > termino.ate) break;
+    if (datas.length === BLOQUEIO_MAX_REPETICOES) return `No máximo ${BLOQUEIO_MAX_REPETICOES} repetições por vez; escolha uma data final mais próxima.`;
+    datas.push(d);
+  }
+  return datas;
+}
