@@ -11,7 +11,7 @@ import { equipeKeys, listarAtivos, nomeNaAgenda } from '../features/equipe/api';
 import { acessoTela } from '../features/acesso/permissoes';
 import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '../features/catalogo/api';
 import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
-import { mensagemAgenda } from '../features/agenda/logic';
+import { conflitoDoItem, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, mensagemAgenda, ocupaAgenda, type ItemAgendamento } from '../features/agenda/logic';
 import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
 import { brl, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
@@ -63,6 +63,8 @@ export default function Agenda() {
   const [novaDuracao, setNovaDuracao] = useState('45');
   const [usarPacote, setUsarPacote] = useState(true);
   const [novoConfirmado, setNovoConfirmado] = useState(false);
+  // Serviços já montados no agendamento com vários serviços (podem ser de profissionais diferentes).
+  const [itens, setItens] = useState<ItemAgendamento[]>([]);
   const [blockProf, setBlockProf] = useState('');
   const [editProf, setEditProf] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
@@ -162,6 +164,25 @@ export default function Agenda() {
   const itemPacote = appointmentType === 'appointment' ? itemParaAbater(saldosCliente, novoServico) : null;
   const comPacote = !!itemPacote && usarPacote;
 
+  // Agenda completa (sem o filtro da tela) para conferir conflito e mostrar os horários livres.
+  // A profissional sem "ver a agenda das demais" só recebe a própria (RLS).
+  const eventosAgenda = appointments as any[];
+  const painelVisivel = !!profAgendamento && (veEquipe || profAgendamento === perfil?.id);
+  const diaIni = new Date(`${appointmentDate}T00:00:00`);
+  const diaFim = new Date(diaIni.getTime() + 24 * 3600000);
+  const agendaDoDia = !painelVisivel || isNaN(diaIni.getTime()) ? [] : [
+    ...eventosAgenda.filter(ocupaAgenda).map((e) => ({
+      id: e.id as string, inicio: new Date(e.start_time), fim: new Date(e.end_time), professional_id: e.professional_id, novo: false,
+      rotulo: e.is_block ? `Bloqueado${e.block_reason ? `: ${e.block_reason}` : ''}` : `${mapaClientes.get(e.client_id)?.name ?? 'Cliente'} · ${e.servicos?.nome ?? e.services?.name ?? e.notes ?? 'Procedimento'}`,
+    })),
+    ...itensComoEventos(itens).map((e, i) => ({ id: e.id, inicio: new Date(e.start_time), fim: new Date(e.end_time), professional_id: e.professional_id, novo: true, rotulo: `Neste agendamento · ${itens[i].servicoNome}` })),
+  ].filter((e) => e.professional_id === profAgendamento && e.inicio < diaFim && e.fim > diaIni)
+    .sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+  const duracaoAtual = ofertaEscolhida?.c.minutos ?? (novoServico === 'avulso' ? Number(novaDuracao) || 15 : 15);
+  const livresDoDia = painelVisivel && !isNaN(diaIni.getTime())
+    ? intervalosLivres(agendaDoDia, new Date(`${appointmentDate}T07:00:00`), new Date(`${appointmentDate}T21:00:00`), duracaoAtual)
+    : [];
+
   // Atalho por endereço: /agenda?novo=agendamento abre o agendamento
   useEffect(() => {
     if (searchParams.get('novo') !== 'agendamento') return;
@@ -191,49 +212,32 @@ export default function Agenda() {
     onError: (error: unknown) => alert(mensagemDeErro(error, 'Ops! Não foi possível cadastrar a cliente.', 'agenda.nova_cliente'))
   });
 
+  // Lembrete manual não ocupa a agenda; o nome do procedimento fica nas observações.
   const addAppointmentMutation = useMutation({
     mutationFn: async (newApt: any) => {
       const inicio = new Date(`${newApt.date}T${newApt.time}:00`);
-      if (newApt.type === 'reminder') {
-        // Lembrete manual não ocupa a agenda; o nome do procedimento fica nas observações.
-        const inserts = [];
-        const groupId = newApt.is_recurring ? crypto.randomUUID() : null;
-        const loopCount = newApt.is_recurring ? 24 : 1;
-        for (let i = 0; i < loopCount; i++) {
-          const start = new Date(inicio);
-          start.setMonth(start.getMonth() + i);
-          const end = new Date(start.getTime() + 45 * 60000);
-          inserts.push({
-            client_id: newApt.client_id,
-            professional_id: newApt.professional_id || null,
-            servico_id: newApt.servico_id || null,
-            notes: newApt.service_name || null,
-            start_time: start.toISOString(),
-            end_time: end.toISOString(),
-            status: 'scheduled',
-            is_block: false,
-            is_manual_reminder: true,
-            is_recurring: newApt.is_recurring,
-            recurring_group_id: groupId
-          });
-        }
-        const { error } = await supabase.from('appointments').insert(inserts);
-        if (error) throw error;
-        return;
+      const inserts = [];
+      const groupId = newApt.is_recurring ? crypto.randomUUID() : null;
+      const loopCount = newApt.is_recurring ? 24 : 1;
+      for (let i = 0; i < loopCount; i++) {
+        const start = new Date(inicio);
+        start.setMonth(start.getMonth() + i);
+        const end = new Date(start.getTime() + 45 * 60000);
+        inserts.push({
+          client_id: newApt.client_id,
+          professional_id: newApt.professional_id || null,
+          servico_id: newApt.servico_id || null,
+          notes: newApt.service_name || null,
+          start_time: start.toISOString(),
+          end_time: end.toISOString(),
+          status: 'scheduled',
+          is_block: false,
+          is_manual_reminder: true,
+          is_recurring: newApt.is_recurring,
+          recurring_group_id: groupId
+        });
       }
-      // Atendimento: função do banco com trava contra conflito e valores do catálogo.
-      const { error } = await supabase.rpc('agendar_atendimento', {
-        p_cliente: newApt.client_id,
-        p_profissional: newApt.professional_id,
-        p_servico: newApt.servico_id || null,
-        p_inicio: inicio.toISOString(),
-        p_servico_avulso: newApt.servico_id ? null : newApt.service_name,
-        p_valor: newApt.valor,
-        p_duracao_minutos: newApt.duracao,
-        p_status: newApt.confirmado ? 'confirmed' : 'scheduled',
-        p_observacao: null,
-        p_pacote_item: newApt.pacote_item_id ?? null,
-      });
+      const { error } = await supabase.from('appointments').insert(inserts);
       if (error) throw error;
     },
     onSuccess: () => { 
@@ -250,6 +254,55 @@ export default function Agenda() {
       setNovoConfirmado(false);
     },
     onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível agendar.', 'agenda.agendar'))
+  });
+
+  // Atendimento (um ou vários serviços): um por vez pela função do banco, com trava contra
+  // conflito e valores do catálogo. Se um falhar, os já salvos saem da lista e o resto fica para corrigir.
+  const agendarItensMutation = useMutation({
+    mutationFn: async ({ cliente, confirmado, lista }: { cliente: string; confirmado: boolean; lista: ItemAgendamento[] }) => {
+      const salvos: string[] = [];
+      for (const it of lista) {
+        const { error } = await supabase.rpc('agendar_atendimento', {
+          p_cliente: cliente,
+          p_profissional: it.profissionalId,
+          p_servico: it.servicoId,
+          p_inicio: inicioDoItem(it).toISOString(),
+          p_servico_avulso: it.servicoId ? null : it.servicoNome,
+          p_valor: it.valor,
+          p_duracao_minutos: it.servicoId ? null : it.minutos,
+          p_status: confirmado ? 'confirmed' : 'scheduled',
+          p_observacao: null,
+          p_pacote_item: it.pacoteItemId,
+        });
+        if (error) throw { salvos, lista, item: it, erro: error };
+        salvos.push(it.chave);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] });
+      queryClient.invalidateQueries({ queryKey: pacotesKeys.base });
+      setShowAddModal(false);
+      setSelectedClient(null);
+      setClientSearchTerm('');
+      setServiceName('');
+      setServicePrice('65,00');
+      setNovoServico('');
+      setNovoValor('');
+      setNovoConfirmado(false);
+      setItens([]);
+    },
+    onError: (falha: any) => {
+      const salvos: string[] = falha?.salvos ?? [];
+      const msg = erroAgenda(falha?.erro ?? falha, 'Não foi possível agendar.', 'agenda.agendar');
+      if (!salvos.length) return alert(msg);
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] });
+      queryClient.invalidateQueries({ queryKey: pacotesKeys.base });
+      // O que faltou volta para a lista; o formulário fica livre para corrigir.
+      setItens((falha.lista as ItemAgendamento[]).filter((x) => !salvos.includes(x.chave)));
+      setNovoServico('');
+      setNovoValor('');
+      alert(`${salvos.length} serviço(s) agendado(s). "${falha.item?.servicoNome}" não foi salvo: ${msg}`);
+    }
   });
 
   const lembreteGrupoMutation = useMutation({
@@ -418,6 +471,7 @@ export default function Agenda() {
     setNovoValor('');
     setNovoConfirmado(false);
     setUsarPacote(true);
+    setItens([]);
     if (hora) setAppointmentTime(hora);
     setIsRecurring(false);
     setParaGrupo(false);
@@ -468,30 +522,68 @@ export default function Agenda() {
       });
     }
     if (!selectedClient) return alert("Selecione uma cliente."); 
-    const professional_id = agendaOutras ? novoProf : perfil?.id ?? '';
     if (appointmentType === 'appointment') {
-      if (!professional_id) return alert('Escolha o profissional.');
-      if (!novoServico) return alert('Escolha o serviço.');
+      // Com serviços já na lista, o formulário em branco só salva a lista.
+      const atual = itens.length && !novoServico ? null : montarItem();
+      if (typeof atual === 'string') return alert(atual);
+      const lista = atual ? [...itens, atual] : itens;
+      const choque = lista.map((it) => ({ it, c: conflitoDoItem(eventosAgenda, lista, it) })).find((x) => x.c);
+      if (choque) return alert(`Conflito de horário em "${choque.it.servicoNome}" (${nomeProf(choque.it.profissionalId)}, ${choque.it.hora}): já há atendimento ou bloqueio nesse intervalo.`);
+      return agendarItensMutation.mutate({ cliente: selectedClient.id, confirmado: novoConfirmado, lista });
     }
-    const avulso = novoServico === 'avulso' || appointmentType === 'reminder';
-    const valor = avulso ? lerValor(servicePrice) : (ehAdmin && novoValor.trim() && !comPacote ? lerValor(novoValor) : null);
-    if (appointmentType === 'appointment' && avulso && valor === null) return alert('Valor inválido.');
-    const duracao = avulso ? Number(novaDuracao) : null;
-    if (appointmentType === 'appointment' && avulso && (!duracao || duracao < 5 || duracao > 600)) return alert('Duração entre 5 e 600 minutos.');
+    const professional_id = agendaOutras ? novoProf : perfil?.id ?? '';
     addAppointmentMutation.mutate({ 
       client_id: selectedClient.id, 
       professional_id: professional_id || null,
-      servico_id: avulso ? (appointmentType === 'reminder' && novoServico && novoServico !== 'avulso' ? novoServico : null) : novoServico,
-      service_name: appointmentType === 'reminder' && novoServico && novoServico !== 'avulso' ? servicosCatalogo.find((x) => x.id === novoServico)?.nome : serviceName, 
-      valor,
-      duracao,
-      confirmado: novoConfirmado,
-      pacote_item_id: !avulso && comPacote ? itemPacote!.item_id : null,
+      servico_id: novoServico && novoServico !== 'avulso' ? novoServico : null,
+      service_name: novoServico && novoServico !== 'avulso' ? servicosCatalogo.find((x) => x.id === novoServico)?.nome : serviceName, 
       date: appointmentDate, 
       time: appointmentTime, 
-      type: appointmentType,
       is_recurring: isRecurring
     }); 
+  };
+
+  // Monta o serviço que está no formulário (validação igual à do banco; o banco confere de novo).
+  const montarItem = (): ItemAgendamento | string => {
+    const profissionalId = agendaOutras ? novoProf : perfil?.id ?? '';
+    if (!profissionalId) return 'Escolha o profissional.';
+    if (!novoServico) return 'Escolha o serviço.';
+    const base = { chave: crypto.randomUUID(), profissionalId, data: appointmentDate, hora: appointmentTime };
+    if (!appointmentDate || !appointmentTime) return 'Informe data e horário.';
+    if (novoServico === 'avulso') {
+      const nome = serviceName.trim();
+      if (!nome) return 'Informe o procedimento.';
+      const valor = lerValor(servicePrice);
+      if (valor === null) return 'Valor inválido.';
+      const minutos = Number(novaDuracao);
+      if (!minutos || minutos < 5 || minutos > 600) return 'Duração entre 5 e 600 minutos.';
+      return { ...base, servicoId: null, servicoNome: nome, minutos, valor, valorExibido: valor, pacoteItemId: null };
+    }
+    if (!ofertaEscolhida) return 'Escolha o serviço.';
+    const valor = ehAdmin && novoValor.trim() && !comPacote ? lerValor(novoValor) : null;
+    if (ehAdmin && novoValor.trim() && !comPacote && valor === null) return 'Valor inválido.';
+    return {
+      ...base, servicoId: novoServico, servicoNome: ofertaEscolhida.s.nome, minutos: ofertaEscolhida.c.minutos, valor,
+      valorExibido: comPacote ? itemPacote?.valor_sessao ?? null : valor ?? ofertaEscolhida.c.valor,
+      pacoteItemId: comPacote ? itemPacote!.item_id : null,
+    };
+  };
+
+  // "+ Serviço": guarda o serviço na lista e deixa o formulário pronto para o próximo,
+  // começando quando este termina (a profissional pode ser trocada).
+  const adicionarItem = () => {
+    const it = montarItem();
+    if (typeof it === 'string') return alert(it);
+    const c = conflitoDoItem(eventosAgenda, itens, it);
+    if (c) return alert(`Conflito de horário: ${nomeProf(it.profissionalId)} já tem atendimento ou bloqueio nesse intervalo.`);
+    setItens([...itens, it]);
+    setNovoServico('');
+    setNovoValor('');
+    setServiceName('');
+    setUsarPacote(true);
+    const fim = fimDoItem(it);
+    setAppointmentDate(`${fim.getFullYear()}-${String(fim.getMonth() + 1).padStart(2, '0')}-${String(fim.getDate()).padStart(2, '0')}`);
+    setAppointmentTime(hhmmLocal(fim));
   };
   
   const handleAddBlockSubmit = (e: React.FormEvent) => { 
@@ -998,7 +1090,7 @@ export default function Agenda() {
 
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-center"><h3 className="text-xl font-bold text-slate-800">Novo Cadastro</h3><button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button></div>
             
             <div className="flex bg-slate-100 p-1 rounded-lg">
@@ -1094,6 +1186,23 @@ export default function Agenda() {
                   ))}
                 </div>
               )}
+              {appointmentType === 'appointment' && itens.length > 0 && (
+                <div className="border border-rose-200 rounded-lg overflow-hidden" aria-label="Serviços deste agendamento">
+                  <p className="bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-800">Serviços deste agendamento ({itens.length})</p>
+                  <ul className="divide-y divide-slate-100">
+                    {itens.map((it) => (
+                      <li key={it.chave} className="flex items-center gap-2 px-3 py-2 text-xs">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-slate-800 truncate">{it.servicoNome}{it.pacoteItemId && <Package size={11} className="inline ml-1 text-violet-600" />}</p>
+                          <p className="text-slate-500">{isoParaBR(it.data)} · {it.hora} às {hhmmLocal(fimDoItem(it))} · {nomeProf(it.profissionalId)}{it.valorExibido != null ? ` · ${brl(it.valorExibido)}` : ''}</p>
+                        </div>
+                        <button type="button" onClick={() => setItens(itens.filter((x) => x.chave !== it.chave))} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" aria-label={`Remover ${it.servicoNome}`}><Trash2 size={14} /></button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="px-3 pb-2 text-[11px] text-slate-500">Escolha abaixo o próximo serviço ou clique em Salvar para agendar a lista.</p>
+                </div>
+              )}
               {agendaOutras && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Profissional {appointmentType === 'appointment' && '*'}</label>
                   <select value={novoProf} onChange={(e) => { setNovoProf(e.target.value); setNovoServico(''); }} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
@@ -1144,6 +1253,45 @@ export default function Agenda() {
               )}
               
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Horário *</label><input type="time" required value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
+
+              {appointmentType === 'appointment' && profAgendamento && (
+                <div className="border border-slate-200 rounded-lg p-2.5 space-y-2" aria-label="Agenda da profissional no dia">
+                  <p className="text-xs font-bold text-slate-600 flex items-center gap-1"><CalendarIcon size={12} /> Agenda de {nomeProf(profAgendamento)} em {isoParaBR(appointmentDate)}</p>
+                  {!painelVisivel ? (
+                    <p className="text-[11px] text-slate-500">Você não tem acesso à agenda desta profissional; o sistema confere o conflito ao salvar.</p>
+                  ) : (
+                    <>
+                      {agendaDoDia.length === 0
+                        ? <p className="text-[11px] text-slate-500">Nenhum atendimento ou bloqueio neste dia.</p>
+                        : <ul className="max-h-28 overflow-y-auto space-y-1">
+                            {agendaDoDia.map((e) => (
+                              <li key={e.id} className={`text-[11px] rounded px-2 py-1 truncate ${e.novo ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-700'}`}>
+                                <span className="font-bold">{hhmmLocal(e.inicio)} às {hhmmLocal(e.fim)}</span> {e.rotulo}
+                              </li>
+                            ))}
+                          </ul>}
+                      <div>
+                        <p className="text-[11px] font-bold text-emerald-700 mb-1">Horários livres (cabem {duracaoTexto(duracaoAtual)}; clique para usar):</p>
+                        {livresDoDia.length === 0
+                          ? <p className="text-[11px] text-slate-500">Nenhum intervalo livre entre 07:00 e 21:00.</p>
+                          : <div className="flex flex-wrap gap-1">
+                              {livresDoDia.map((l) => (
+                                <button key={l.inicio.getTime()} type="button" onClick={() => setAppointmentTime(hhmmLocal(l.inicio))} className="text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 hover:bg-emerald-100">
+                                  {hhmmLocal(l.inicio)} às {hhmmLocal(l.fim)}
+                                </button>
+                              ))}
+                            </div>}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {appointmentType === 'appointment' && (
+                <button type="button" onClick={adicionarItem} className="w-full flex items-center justify-center gap-1.5 border border-dashed border-rose-300 text-rose-700 hover:bg-rose-50 py-2 rounded-lg text-xs font-bold">
+                  <Plus size={14} /> Serviço (adicionar outro serviço, para esta ou outra profissional)
+                </button>
+              )}
               
               {appointmentType === 'reminder' && (
                 <div className="flex items-center space-x-2 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
@@ -1154,7 +1302,7 @@ export default function Agenda() {
 
               <div className="flex space-x-3 pt-2">
                 <button type="button" onClick={() => setShowAddModal(false)} className="w-1/2 border p-2.5 rounded-lg text-slate-500 font-medium">Cancelar</button>
-                <button type="submit" disabled={addAppointmentMutation.isPending || lembreteGrupoMutation.isPending || (appointmentType === 'reminder' && paraGrupo ? !grupoLembrete : !selectedClient)} className={`w-1/2 text-white p-2.5 rounded-lg font-bold disabled:opacity-50 transition-colors ${appointmentType === 'reminder' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-rose-600 hover:bg-rose-700'}`}>Salvar {appointmentType === 'reminder' ? 'Lembrete' : ''}</button>
+                <button type="submit" disabled={addAppointmentMutation.isPending || agendarItensMutation.isPending || lembreteGrupoMutation.isPending || (appointmentType === 'reminder' && paraGrupo ? !grupoLembrete : !selectedClient)} className={`w-1/2 text-white p-2.5 rounded-lg font-bold disabled:opacity-50 transition-colors ${appointmentType === 'reminder' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-rose-600 hover:bg-rose-700'}`}>Salvar {appointmentType === 'reminder' ? 'Lembrete' : itens.length ? `(${itens.length + (novoServico ? 1 : 0)} serviços)` : ''}</button>
               </div>
             </form>
           </div>

@@ -66,3 +66,55 @@ export function colunasSobrepostas<T extends { start_time: string; end_time: str
   if (grupo.length) fecha();
   return saida;
 }
+
+/** Ocupa a agenda (mesma regra da trava): atendimento ativo ou bloqueio, nunca lembrete. */
+export const ocupaAgenda = (e: Evento) => !e.is_manual_reminder && ATIVOS.has(e.status ?? 'scheduled');
+
+/** Serviço ainda não salvo do agendamento com vários serviços (data e hora locais, "AAAA-MM-DD" e "HH:MM"). */
+export type ItemAgendamento = {
+  chave: string;
+  profissionalId: string;
+  servicoId: string | null;
+  servicoNome: string;
+  data: string;
+  hora: string;
+  minutos: number;
+  valor: number | null;
+  valorExibido: number | null;
+  pacoteItemId: string | null;
+};
+
+export const inicioDoItem = (it: Pick<ItemAgendamento, 'data' | 'hora'>) => new Date(`${it.data}T${it.hora}:00`);
+export const fimDoItem = (it: Pick<ItemAgendamento, 'data' | 'hora' | 'minutos'>) => new Date(inicioDoItem(it).getTime() + it.minutos * 60000);
+export const hhmmLocal = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+/** Itens da lista como eventos da agenda, para conferir conflito entre eles e mostrar na grade. */
+export const itensComoEventos = (itens: ItemAgendamento[]): Evento[] => itens.map((it) => ({
+  id: `item:${it.chave}`, start_time: inicioDoItem(it).toISOString(), end_time: fimDoItem(it).toISOString(),
+  status: 'scheduled', professional_id: it.profissionalId,
+}));
+
+/** Primeiro conflito de um item com a agenda carregada ou com outro item da mesma lista. */
+export function conflitoDoItem(eventos: Evento[], itens: ItemAgendamento[], item: ItemAgendamento): Evento | null {
+  const outros = itensComoEventos(itens.filter((x) => x.chave !== item.chave));
+  return conflitoLocal([...eventos, ...outros], item.profissionalId, inicioDoItem(item), fimDoItem(item));
+}
+
+/** Intervalos livres da janela, descontando os ocupados; só os que comportam `minimoMin`. */
+export function intervalosLivres(ocupados: { inicio: Date; fim: Date }[], janelaIni: Date, janelaFim: Date, minimoMin: number): { inicio: Date; fim: Date }[] {
+  const ordenados = [...ocupados].sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+  const livres: { inicio: Date; fim: Date }[] = [];
+  let cursor = janelaIni.getTime();
+  const fecha = (ate: number) => {
+    if (ate - cursor >= minimoMin * 60000) livres.push({ inicio: new Date(cursor), fim: new Date(ate) });
+  };
+  for (const o of ordenados) {
+    const a = o.inicio.getTime(); const b = o.fim.getTime();
+    if (b <= cursor) continue;
+    if (a >= janelaFim.getTime()) break;
+    if (a > cursor) fecha(Math.min(a, janelaFim.getTime()));
+    cursor = Math.max(cursor, b);
+  }
+  if (cursor < janelaFim.getTime()) fecha(janelaFim.getTime());
+  return livres;
+}
