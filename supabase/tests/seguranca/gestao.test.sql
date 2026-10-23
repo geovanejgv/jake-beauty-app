@@ -90,7 +90,8 @@ select pg_temp.ok(public.agendar_atendimento('c1000000-0000-0000-0000-0000000000
 select pg_temp.ok((select valor_cobrado = 120 and comissao_percentual = 60 and end_time = '2026-10-20 14:00+00' from public.appointments limit 1),
   'valor, comissão e fim vêm do catálogo (preço enviado pela profissional ignorado)');
 select pg_temp.espera_erro($$select public.agendar_atendimento('c1000000-0000-0000-0000-000000000001', 'cc000000-0000-0000-0000-0000000000c1', null, '2026-10-20 13:00+00', 'Escova', 50)$$, 'sua própria agenda');
-select pg_temp.espera_erro($$select public.agendar_atendimento('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', 'd1000000-0000-0000-0000-000000000002', '2026-10-20 13:30+00')$$, 'Conflito de horário');
+select pg_temp.ok(public.agendar_atendimento('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1',
+  'd1000000-0000-0000-0000-000000000002', '2026-10-20 13:30+00') is not null, 'atendimentos no mesmo horário da mesma profissional são permitidos');
 select pg_temp.ok(public.agendar_atendimento('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1',
   'd1000000-0000-0000-0000-000000000002', '2026-10-20 14:00+00') is not null, 'horário encostado (14:00) é permitido');
 select pg_temp.espera_erro($$insert into public.appointments (client_id, professional_id, start_time, end_time, valor_cobrado) values ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '2026-10-21 10:00+00', '2026-10-21 11:00+00', 1)$$, 'Use o agendamento');
@@ -104,12 +105,21 @@ select pg_temp.espera_erro($$select public.agendar_atendimento('c1000000-0000-00
 select pg_temp.como('cccccccc-0000-0000-0000-000000000003');
 select pg_temp.ok((select count(*) from public.appointments) = 0, 'outra profissional não vê a agenda alheia');
 select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
-select pg_temp.ok((select count(*) from public.appointments) = 3, 'admin vê todas as agendas');
--- Garantia final no banco, mesmo sem a função: inserção direta sobreposta falha.
-select pg_temp.espera_erro($$insert into public.appointments (client_id, professional_id, start_time, end_time) values ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '2026-10-20 13:15+00', '2026-10-20 13:45+00')$$, 'appointments_sem_conflito');
+select pg_temp.ok((select count(*) from public.appointments) = 4, 'admin vê todas as agendas');
+-- Garantia final no banco, mesmo sem a função: atendimento em horário bloqueado e
+-- bloqueio sobre atendimento ativo falham; bloqueio sobre bloqueio e sobre cancelado, não.
+select pg_temp.espera_erro($$insert into public.appointments (client_id, professional_id, start_time, end_time) values ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '2026-10-20 16:15+00', '2026-10-20 16:45+00')$$, 'Horário bloqueado');
+select pg_temp.espera_erro($$insert into public.appointments (professional_id, start_time, end_time, is_block, block_reason) values ('bb000000-0000-0000-0000-0000000000b1', '2026-10-20 13:15+00', '2026-10-20 13:45+00', true, 'Médico')$$, 'Já existe atendimento das');
+select pg_temp.espera_erro($$update public.appointments set start_time = '2026-10-20 16:00+00', end_time = '2026-10-20 17:00+00' where start_time = '2026-10-20 14:00+00'$$, 'Horário bloqueado');
+insert into public.appointments (professional_id, start_time, end_time, is_block, block_reason)
+  values ('bb000000-0000-0000-0000-0000000000b1', '2026-10-20 16:30+00', '2026-10-20 17:30+00', true, 'Reunião');
+select pg_temp.ok(exists (select 1 from public.appointments where block_reason = 'Reunião'), 'bloqueio sobre outro bloqueio é permitido');
 select pg_temp.ok(public.agendar_atendimento('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1',
   null, '2026-10-22 13:00+00', 'Hidratação avulsa', 80, 30) is not null, 'admin agenda procedimento avulso');
-select pg_temp.espera_erro($$select public.remarcar_atendimento((select id from public.appointments where start_time = '2026-10-22 13:00+00'), '2026-10-20 13:30+00')$$, 'Conflito de horário');
+select pg_temp.espera_erro($$select public.remarcar_atendimento((select id from public.appointments where start_time = '2026-10-22 13:00+00'), '2026-10-20 16:10+00')$$, 'Horário bloqueado');
+select public.remarcar_atendimento((select id from public.appointments where start_time = '2026-10-22 13:00+00'), '2026-10-20 13:10+00');
+select pg_temp.ok(exists (select 1 from public.appointments where start_time = '2026-10-20 13:10+00'), 'remarcar para horário já ocupado por atendimento é permitido');
+select public.remarcar_atendimento((select id from public.appointments where start_time = '2026-10-20 13:10+00'), '2026-10-22 13:00+00');
 select pg_temp.espera_erro($$update public.appointments set status = 'teste'$$, 'appointments_status_check');
 
 -- 5) Fechamento de comissões com assinatura digital
