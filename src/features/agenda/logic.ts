@@ -1,4 +1,4 @@
-// Regras da agenda usadas pela tela (o banco confere tudo de novo: trava de conflito,
+// Regras da agenda usadas pela tela (o banco confere tudo de novo: trava do bloqueio,
 // valores do catálogo e permissões por profissional).
 
 export type Evento = {
@@ -8,20 +8,31 @@ export type Evento = {
   status: string | null;
   professional_id: string | null;
   is_block?: boolean | null;
+  block_reason?: string | null;
   is_manual_reminder?: boolean | null;
 };
 
 const ATIVOS = new Set(['scheduled', 'confirmed', 'completed']);
 
-/** Mesma regra da restrição appointments_sem_conflito: intervalos [início, fim) sobrepostos do mesmo profissional. */
-export function conflitoLocal(eventos: Evento[], profissionalId: string, inicio: Date, fim: Date, ignorarId?: string): Evento | null {
-  return eventos.find((e) =>
-    e.professional_id === profissionalId
-    && e.id !== ignorarId
-    && !e.is_manual_reminder
-    && ATIVOS.has(e.status ?? 'scheduled')
-    && new Date(e.start_time) < fim
-    && new Date(e.end_time) > inicio) ?? null;
+const sobrepoe = (e: Evento, profissionalId: string, inicio: Date, fim: Date, ignorarId?: string) =>
+  e.professional_id === profissionalId
+  && e.id !== ignorarId
+  && !e.is_manual_reminder
+  && ATIVOS.has(e.status ?? 'scheduled')
+  && new Date(e.start_time) < fim
+  && new Date(e.end_time) > inicio;
+
+/**
+ * Mesma regra do gatilho appointments_bloqueio_guarda: intervalos [início, fim) sobrepostos do mesmo
+ * profissional só conflitam entre atendimento e bloqueio. Atendimentos no mesmo horário são permitidos.
+ */
+export function conflitoLocal(eventos: Evento[], profissionalId: string, inicio: Date, fim: Date, ignorarId?: string, ehBloqueio = false): Evento | null {
+  return eventos.find((e) => !!e.is_block !== ehBloqueio && sobrepoe(e, profissionalId, inicio, fim, ignorarId)) ?? null;
+}
+
+/** Atendimentos ativos no mesmo intervalo (permitido; a tela só avisa). */
+export function atendimentosNoHorario(eventos: Evento[], profissionalId: string, inicio: Date, fim: Date, ignorarId?: string): Evento[] {
+  return eventos.filter((e) => !e.is_block && sobrepoe(e, profissionalId, inicio, fim, ignorarId));
 }
 
 /** Mensagem amigável para erros de agenda vindos do banco. */
@@ -94,10 +105,17 @@ export const itensComoEventos = (itens: ItemAgendamento[]): Evento[] => itens.ma
   status: 'scheduled', professional_id: it.profissionalId,
 }));
 
-/** Primeiro conflito de um item com a agenda carregada ou com outro item da mesma lista. */
-export function conflitoDoItem(eventos: Evento[], itens: ItemAgendamento[], item: ItemAgendamento): Evento | null {
-  const outros = itensComoEventos(itens.filter((x) => x.chave !== item.chave));
-  return conflitoLocal([...eventos, ...outros], item.profissionalId, inicioDoItem(item), fimDoItem(item));
+/** Bloqueio que impede o item (atendimentos no mesmo horário são permitidos). */
+export function conflitoDoItem(eventos: Evento[], item: ItemAgendamento): Evento | null {
+  return conflitoLocal(eventos, item.profissionalId, inicioDoItem(item), fimDoItem(item));
+}
+
+/** Itens que caem em horário já ocupado por atendimento (da agenda ou de outro item da lista), para avisar. */
+export function itensSobrepostos(eventos: Evento[], itens: ItemAgendamento[]): ItemAgendamento[] {
+  return itens.filter((it) => {
+    const outros = itensComoEventos(itens.filter((x) => x.chave !== it.chave));
+    return atendimentosNoHorario([...eventos, ...outros], it.profissionalId, inicioDoItem(it), fimDoItem(it)).length > 0;
+  });
 }
 
 /** Intervalos livres da janela, descontando os ocupados; só os que comportam `minimoMin`. */

@@ -11,7 +11,7 @@ import { equipeKeys, listarAtivos, nomeNaAgenda } from '../features/equipe/api';
 import { acessoTela } from '../features/acesso/permissoes';
 import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '../features/catalogo/api';
 import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
-import { BLOQUEIO_MAX_REPETICOES, conflitoDoItem, conflitoLocal, datasDoBloqueio, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, mensagemAgenda, ocupaAgenda, type ItemAgendamento, type RepeticaoBloqueio } from '../features/agenda/logic';
+import { BLOQUEIO_MAX_REPETICOES, conflitoDoItem, conflitoLocal, datasDoBloqueio, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, itensSobrepostos, mensagemAgenda, ocupaAgenda, type ItemAgendamento, type RepeticaoBloqueio } from '../features/agenda/logic';
 import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
 import { brl, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
@@ -547,8 +547,11 @@ export default function Agenda() {
       const atual = itens.length && !novoServico ? null : montarItem();
       if (typeof atual === 'string') return alert(atual);
       const lista = atual ? [...itens, atual] : itens;
-      const choque = lista.map((it) => ({ it, c: conflitoDoItem(eventosAgenda, lista, it) })).find((x) => x.c);
-      if (choque) return alert(`Conflito de horário em "${choque.it.servicoNome}" (${nomeProf(choque.it.profissionalId)}, ${choque.it.hora}): já há atendimento ou bloqueio nesse intervalo.`);
+      // Bloqueio impede; atendimento no mesmo horário é permitido, só pede confirmação.
+      const choque = lista.map((it) => ({ it, c: conflitoDoItem(eventosAgenda, it) })).find((x) => x.c);
+      if (choque) return alert(`Horário bloqueado em "${choque.it.servicoNome}" (${nomeProf(choque.it.profissionalId)}, ${choque.it.hora}): ${choque.c?.block_reason ?? 'bloqueio'}. Escolha outro horário.`);
+      const juntos = itensSobrepostos(eventosAgenda, lista);
+      if (juntos.length && !window.confirm(`${juntos.map((it) => `${nomeProf(it.profissionalId)} às ${it.hora}`).join(', ')}: já há atendimento nesse horário. Agendar mesmo assim?`)) return;
       return agendarItensMutation.mutate({ cliente: selectedClient.id, confirmado: novoConfirmado, lista });
     }
     const professional_id = agendaOutras ? novoProf : perfil?.id ?? '';
@@ -594,8 +597,8 @@ export default function Agenda() {
   const adicionarItem = () => {
     const it = montarItem();
     if (typeof it === 'string') return alert(it);
-    const c = conflitoDoItem(eventosAgenda, itens, it);
-    if (c) return alert(`Conflito de horário: ${nomeProf(it.profissionalId)} já tem atendimento ou bloqueio nesse intervalo.`);
+    const c = conflitoDoItem(eventosAgenda, it);
+    if (c) return alert(`Horário bloqueado: ${nomeProf(it.profissionalId)} tem bloqueio nesse intervalo (${c.block_reason ?? 'bloqueio'}).`);
     setItens([...itens, it]);
     setNovoServico('');
     setNovoValor('');
@@ -615,9 +618,9 @@ export default function Agenda() {
       const datas = datasDoBloqueio(blockDate, blockRepeticao, blockTermino === 'data' ? { tipo: 'data', ate: blockAte } : { tipo: 'vezes', vezes: Number(blockVezes) });
       if (typeof datas === 'string') return alert(datas);
       const professional_id = (agendaOutras ? blockProf : perfil?.id) || null;
-      // Mesma regra da trava do banco: mostra os dias que já têm atendimento ou bloqueio.
-      const conflitos = professional_id ? datas.filter((d) => conflitoLocal(appointments as any[], professional_id, new Date(`${d}T${blockStartTime}:00`), new Date(`${d}T${blockEndTime}:00`))) : [];
-      if (conflitos.length) return alert(`Conflito de horário: ${nomeProf(professional_id)} já tem atendimento ou bloqueio em ${conflitos.slice(0, 10).map(isoParaBR).join(', ')}${conflitos.length > 10 ? ` e mais ${conflitos.length - 10} dia(s)` : ''}. Ajuste o horário ou as datas.`);
+      // Mesma regra da trava do banco: bloqueio não entra sobre atendimento ativo.
+      const conflitos = professional_id ? datas.filter((d) => conflitoLocal(appointments as any[], professional_id, new Date(`${d}T${blockStartTime}:00`), new Date(`${d}T${blockEndTime}:00`), undefined, true)) : [];
+      if (conflitos.length) return alert(`Conflito de horário: ${nomeProf(professional_id)} já tem atendimento em ${conflitos.slice(0, 10).map(isoParaBR).join(', ')}${conflitos.length > 10 ? ` e mais ${conflitos.length - 10} dia(s)` : ''}. Ajuste o horário ou as datas.`);
       addBlockMutation.mutate({ datas, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason, professional_id });
     }
   };
@@ -1305,7 +1308,7 @@ export default function Agenda() {
               {appointmentType === 'appointment' && novoServico === 'avulso' && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Duração (min) *</label><input type="text" inputMode="numeric" value={novaDuracao} onChange={(e) => setNovaDuracao(e.target.value.replace(/\D/g, ''))} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
               )}
-              {appointmentType === 'appointment' && ofertaEscolhida && <p className="text-[11px] text-slate-500 -mt-2">Duração: {duracaoTexto(ofertaEscolhida.c.minutos)}. O horário final é calculado e o sistema recusa conflito com outro atendimento ou bloqueio.</p>}
+              {appointmentType === 'appointment' && ofertaEscolhida && <p className="text-[11px] text-slate-500 -mt-2">Duração: {duracaoTexto(ofertaEscolhida.c.minutos)}. O horário final é calculado. Pode coincidir com outro atendimento; só o horário bloqueado é recusado.</p>}
               {appointmentType === 'appointment' && (
                 <label className="flex items-center gap-2 text-xs font-bold text-slate-600"><input type="checkbox" checked={novoConfirmado} onChange={(e) => setNovoConfirmado(e.target.checked)} className="w-4 h-4 accent-emerald-600" /> Já confirmado com a cliente</label>
               )}

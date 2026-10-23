@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { colunasSobrepostas, datasDoBloqueio, conflitoDoItem, conflitoLocal, fimDoItem, hhmmLocal, intervalosLivres, mensagemAgenda, posicaoNaLinha } from './logic';
+import { atendimentosNoHorario, colunasSobrepostas, datasDoBloqueio, conflitoDoItem, conflitoLocal, fimDoItem, hhmmLocal, intervalosLivres, itensSobrepostos, mensagemAgenda, posicaoNaLinha } from './logic';
 
 const ev = (id: string, ini: string, fim: string, x: Record<string, unknown> = {}) => ({
   id, start_time: ini, end_time: fim, status: 'scheduled', professional_id: 'p1', ...x,
@@ -13,18 +13,23 @@ describe('conflito de horário (mesma regra do banco)', () => {
     ev('d', '2026-10-20T20:00:00Z', '2026-10-20T21:00:00Z', { is_manual_reminder: true }),
   ];
   const t = (iso: string) => new Date(iso);
-  it('sobreposição conflita; encostado não', () => {
-    expect(conflitoLocal(lista, 'p1', t('2026-10-20T13:30:00Z'), t('2026-10-20T14:30:00Z'))?.id).toBe('a');
-    expect(conflitoLocal(lista, 'p1', t('2026-10-20T14:00:00Z'), t('2026-10-20T15:00:00Z'))).toBeNull();
+  it('atendimento no mesmo horário de outro atendimento é permitido, mas aparece no aviso', () => {
+    expect(conflitoLocal(lista, 'p1', t('2026-10-20T13:30:00Z'), t('2026-10-20T14:30:00Z'))).toBeNull();
+    expect(atendimentosNoHorario(lista, 'p1', t('2026-10-20T13:30:00Z'), t('2026-10-20T14:30:00Z')).map((e) => e.id)).toEqual(['a']);
+    expect(atendimentosNoHorario(lista, 'p1', t('2026-10-20T14:00:00Z'), t('2026-10-20T15:00:00Z'))).toEqual([]);
   });
-  it('bloqueio conflita; cancelado e lembrete não', () => {
+  it('bloqueio impede atendimento; cancelado e lembrete não', () => {
     expect(conflitoLocal(lista, 'p1', t('2026-10-20T16:30:00Z'), t('2026-10-20T16:45:00Z'))?.id).toBe('b');
     expect(conflitoLocal(lista, 'p1', t('2026-10-20T18:00:00Z'), t('2026-10-20T19:00:00Z'))).toBeNull();
     expect(conflitoLocal(lista, 'p1', t('2026-10-20T20:00:00Z'), t('2026-10-20T21:00:00Z'))).toBeNull();
   });
+  it('bloqueio novo conflita com atendimento, não com outro bloqueio', () => {
+    expect(conflitoLocal(lista, 'p1', t('2026-10-20T13:30:00Z'), t('2026-10-20T14:30:00Z'), undefined, true)?.id).toBe('a');
+    expect(conflitoLocal(lista, 'p1', t('2026-10-20T16:30:00Z'), t('2026-10-20T17:30:00Z'), undefined, true)).toBeNull();
+  });
   it('outro profissional e o próprio evento (remarcação) não conflitam', () => {
-    expect(conflitoLocal(lista, 'p2', t('2026-10-20T13:00:00Z'), t('2026-10-20T14:00:00Z'))).toBeNull();
-    expect(conflitoLocal(lista, 'p1', t('2026-10-20T13:15:00Z'), t('2026-10-20T14:15:00Z'), 'a')).toBeNull();
+    expect(conflitoLocal(lista, 'p2', t('2026-10-20T16:00:00Z'), t('2026-10-20T17:00:00Z'))).toBeNull();
+    expect(conflitoLocal(lista, 'p1', t('2026-10-20T16:15:00Z'), t('2026-10-20T16:30:00Z'), 'b')).toBeNull();
   });
   it('traduz o erro da trava do banco', () => {
     expect(mensagemAgenda({ code: '23P01', message: 'conflicting key value violates exclusion constraint "appointments_sem_conflito"' })).toMatch(/Conflito de horário/);
@@ -54,18 +59,21 @@ describe('vários serviços no mesmo agendamento', () => {
   const item = (chave: string, prof: string, hora: string, minutos: number) => ({
     chave, profissionalId: prof, servicoId: 's', servicoNome: 'S', data: '2026-10-21', hora, minutos, valor: null, valorExibido: 80, pacoteItemId: null,
   });
-  it('item conflita com outro item da mesma profissional, não com o de outra', () => {
+  it('itens sobrepostos da mesma profissional são permitidos, mas aparecem no aviso', () => {
     const a = item('a', 'p1', '11:00', 120);
     const b = item('b', 'p1', '12:30', 30);
     const c = item('c', 'p2', '11:00', 60);
-    expect(conflitoDoItem([], [a, b, c], b)?.id).toBe('item:a');
-    expect(conflitoDoItem([], [a, b, c], c)).toBeNull();
-    expect(conflitoDoItem([], [a, item('d', 'p1', '13:00', 30)], a)).toBeNull();
+    expect(conflitoDoItem([], b)).toBeNull();
+    expect(itensSobrepostos([], [a, b, c]).map((x) => x.chave)).toEqual(['a', 'b']);
+    expect(itensSobrepostos([], [a, item('d', 'p1', '13:00', 30)])).toEqual([]);
   });
-  it('item conflita com a agenda já salva', () => {
-    const salvo = ev('x', new Date(2026, 9, 21, 14).toISOString(), new Date(2026, 9, 21, 15).toISOString());
-    expect(conflitoDoItem([salvo], [], item('a', 'p1', '14:30', 30))?.id).toBe('x');
-    expect(conflitoDoItem([salvo], [], item('a', 'p1', '15:00', 30))).toBeNull();
+  it('item em horário bloqueado é recusado; sobre atendimento salvo, só avisa', () => {
+    const d = (h: number) => new Date(2026, 9, 21, h).toISOString();
+    const bloqueio = ev('x', d(14), d(15), { is_block: true });
+    const salvo = ev('y', d(16), d(17));
+    expect(conflitoDoItem([bloqueio, salvo], item('a', 'p1', '14:30', 30))?.id).toBe('x');
+    expect(conflitoDoItem([bloqueio, salvo], item('a', 'p1', '16:30', 30))).toBeNull();
+    expect(itensSobrepostos([bloqueio, salvo], [item('a', 'p1', '16:30', 30)])).toHaveLength(1);
   });
   it('fim do item vira o próximo horário', () => {
     expect(hhmmLocal(fimDoItem({ data: '2026-10-21', hora: '11:00', minutos: 120 }))).toBe('13:00');

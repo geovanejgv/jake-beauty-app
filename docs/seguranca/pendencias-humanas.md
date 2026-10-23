@@ -138,3 +138,7 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
 53. **Contrato e privacidade (IAD-06, IAD-07, LGP).** Política de privacidade e termos com os salões devem citar o uso opcional de IA, os provedores possíveis (Anthropic, OpenAI, Google) e a transferência internacional (LGPD, arts. 33 a 36). Avaliar se o consentimento da cliente (`clients.lgpd_consent`) deve cobrir esse envio.
 54. **Plano e custo.** A IA está liberada para todas as pessoas ativas de qualquer plano, com a conta e o custo de cada uma no provedor (cota de 40 usos por dia). Decidir se fica só no plano Premium; se sim, o agente acrescenta a trava no banco e na função.
 55. **Domínio próprio.** Quando houver domínio próprio, incluí-lo também em `ORIGENS_PERMITIDAS` da função `ia` (CORS), como na `admin-usuarios` (item 39).
+
+## Agenda com horários simultâneos
+
+56. **Migração `20261029120000_agenda_horarios_simultaneos.sql` (DEV-02).** A pedido da usuária, a mesma profissional pode ter atendimentos no mesmo horário. Remove a restrição `appointments_sem_conflito`; `agenda_conflito` passa a recusar só horário bloqueado; o gatilho novo `appointments_bloqueio_guarda` mantém no banco a regra atendimento x bloqueio. Testada em `supabase/tests/seguranca/run.sh` e `supabase/tests/kanban/run.sh`; não mexe em autenticação, autorização nem apaga dados (regra 8). Para voltar a impedir horários iguais, basta recriar a restrição (só funciona se não houver atendimentos sobrepostos gravados até lá).
