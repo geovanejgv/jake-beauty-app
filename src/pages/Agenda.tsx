@@ -788,7 +788,7 @@ export default function Agenda() {
     const isInactive = isCompleted || isCancelled || isNoShow;
     let rowBgClass = 'hover:bg-slate-50'; let timeBadgeClass = 'bg-rose-50 text-rose-700'; let nameClass = 'text-slate-800';
 
-    if (isCompleted) { rowBgClass = 'bg-slate-50'; timeBadgeClass = 'bg-slate-200 text-slate-500'; nameClass = 'text-slate-500 line-through opacity-70'; }
+    if (isCompleted) { rowBgClass = 'bg-green-100'; timeBadgeClass = 'bg-green-200 text-green-800'; nameClass = 'text-green-800'; }
     else if (isCancelled) { rowBgClass = 'bg-slate-50 opacity-60'; timeBadgeClass = 'bg-slate-200 text-slate-400'; nameClass = 'text-slate-400 line-through'; }
     else if (isNoShow) { rowBgClass = 'bg-amber-50/30 opacity-70'; timeBadgeClass = 'bg-amber-100 text-amber-700'; nameClass = 'text-amber-700 line-through'; }
 
@@ -986,7 +986,7 @@ export default function Agenda() {
 
                       const isCompleted = ev.status === 'completed'; const isCancelled = ev.status === 'cancelled'; const isNoShow = ev.status === 'no_show';
                       let itemClass = 'bg-rose-50 border-rose-200 text-rose-900 font-bold hover:bg-rose-100';
-                      if (isCompleted) itemClass = 'bg-slate-100 text-slate-400 line-through border-slate-200'; else if (isCancelled) itemClass = 'bg-slate-50 text-slate-400 line-through border-slate-200 opacity-60'; else if (isNoShow) itemClass = 'bg-amber-50 text-amber-600 line-through border-amber-200 opacity-70';
+                      if (isCompleted) itemClass = 'bg-green-100 text-green-800 border-green-300'; else if (isCancelled) itemClass = 'bg-slate-50 text-slate-400 line-through border-slate-200 opacity-60'; else if (isNoShow) itemClass = 'bg-amber-50 text-amber-600 line-through border-amber-200 opacity-70';
                       return (
                         <div key={`apt-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-1 md:p-1.5 rounded border text-[10px] transition-all cursor-pointer flex flex-col ${itemClass}`}>
                           <div className="flex justify-between items-center mb-0.5">
@@ -1046,7 +1046,7 @@ export default function Agenda() {
 
                         const isCompleted = ev.status === 'completed'; const isCancelled = ev.status === 'cancelled'; const isNoShow = ev.status === 'no_show';
                         let itemClass = 'bg-rose-50 border-rose-200 text-rose-900 font-bold hover:bg-rose-100';
-                        if (isCompleted) itemClass = 'bg-slate-100 text-slate-400 line-through border-slate-200'; else if (isCancelled) itemClass = 'bg-slate-50 text-slate-400 line-through border-slate-200 opacity-60'; else if (isNoShow) itemClass = 'bg-amber-50 text-amber-600 line-through border-amber-200 opacity-70';
+                        if (isCompleted) itemClass = 'bg-green-100 text-green-800 border-green-300'; else if (isCancelled) itemClass = 'bg-slate-50 text-slate-400 line-through border-slate-200 opacity-60'; else if (isNoShow) itemClass = 'bg-amber-50 text-amber-600 line-through border-amber-200 opacity-70';
                         return (
                           <div key={`apt-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-1 rounded border text-[9px] cursor-pointer transition-all w-full flex items-center justify-between ${itemClass}`} title={`${hour}:${min} - ${ev.clients?.name}`}>
                               <span className="truncate mr-1">{hour}:{min} {ev.clients?.name}</span>
@@ -1376,7 +1376,7 @@ export default function Agenda() {
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-slate-800">Editar Agendamento</h3>
-                {editingAppointment.status === 'completed' && <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Concluído</span>}
+                {editingAppointment.status === 'completed' && <span className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Concluído</span>}
                 {editingAppointment.status === 'confirmed' && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Confirmado</span>}
                 {veEquipe && <span className="text-[10px] text-slate-500 ml-2">{nomeProf(editingAppointment.professional_id)}</span>}
                 {editingAppointment.status === 'cancelled' && <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Cancelou</span>}
