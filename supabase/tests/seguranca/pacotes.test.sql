@@ -38,6 +38,8 @@ insert into public.servicos (id, categoria_id, nome, preco_base, duracao_base_mi
   select 'e1000000-0000-0000-0000-000000000001', id, 'Laser', 100, 45 from public.categorias_servico where nome = 'Depilação';
 insert into public.servicos (id, categoria_id, nome, preco_base, duracao_base_minutos)
   select 'e2000000-0000-0000-0000-000000000002', id, 'Drenagem', 50, 60 from public.categorias_servico where nome = 'Estética Corporal';
+-- Vínculos exatos do teste (o serviço novo nasce habilitado para toda a equipe).
+delete from public.usuario_servico;
 insert into public.usuario_servico (user_id, servico_id) values
   ('bb000000-0000-0000-0000-0000000000b1', 'e1000000-0000-0000-0000-000000000001'),
   ('bb000000-0000-0000-0000-0000000000b1', 'e2000000-0000-0000-0000-000000000002'),

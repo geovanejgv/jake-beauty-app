@@ -55,6 +55,8 @@ function AbaCatalogo({ categorias, servicos, onAviso }: { categorias: Categoria[
   const atualizar = () => {
     queryClient.invalidateQueries({ queryKey: catalogoKeys.categorias });
     queryClient.invalidateQueries({ queryKey: catalogoKeys.servicos });
+    // Serviço novo nasce habilitado para a equipe (gatilho do banco): recarrega os vínculos.
+    queryClient.invalidateQueries({ queryKey: ['catalogo', 'vinculos'] });
   };
 
   const remover = useMutation({
@@ -210,6 +212,7 @@ function ServicoModal({ inicial, categorias, onClose, onSalvo }: { inicial: Part
         <Campo rotulo="Retorno sugerido (dias)" dica="Usado no lembrete de retorno do checkout."><input inputMode="numeric" value={s.retorno} onChange={(e) => set('retorno', e.target.value.replace(/\D/g, ''))} className={inputCls} placeholder="Ex.: 30" /></Campo>
         <label className="flex items-center gap-2 text-sm text-slate-700 self-end pb-2"><input type="checkbox" checked={s.ativo} onChange={(e) => set('ativo', e.target.checked)} className="w-4 h-4 accent-rose-600" /> Serviço ativo</label>
         <div className="sm:col-span-2"><Campo rotulo="Descrição"><textarea value={s.descricao} onChange={(e) => set('descricao', e.target.value)} className={`${inputCls} min-h-[70px]`} maxLength={1000} /></Campo></div>
+        {!inicial.id && <p className="sm:col-span-2 text-xs text-slate-500">O serviço novo já fica habilitado para toda a equipe ativa. Para tirar de alguém, use a aba Serviços por profissional.</p>}
         {erro && <p role="alert" className="sm:col-span-2 text-sm text-rose-600">{erro}</p>}
       </div>
     </Modal>

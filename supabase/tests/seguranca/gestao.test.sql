@@ -81,7 +81,10 @@ update public.usuario_servico set valor_personalizado = 120, comissao_percentual
  where user_id = 'bb000000-0000-0000-0000-0000000000b1' and servico_id = 'd1000000-0000-0000-0000-000000000001';
 select pg_temp.ok((select valor = 120 and comissao = 60 and minutos = 60 and oferece from public.servico_condicoes('bb000000-0000-0000-0000-0000000000b1', 'd1000000-0000-0000-0000-000000000001')), 'preço e comissão do vínculo prevalecem');
 select pg_temp.ok((select valor = 60 and comissao = 40 from public.servico_condicoes('bb000000-0000-0000-0000-0000000000b1', 'd1000000-0000-0000-0000-000000000002')), 'sem comissão no vínculo usa a taxa fixa do perfil');
-select pg_temp.ok((select not oferece from public.servico_condicoes('cc000000-0000-0000-0000-0000000000c1', 'd1000000-0000-0000-0000-000000000001')), 'profissional sem vínculo não oferece');
+select pg_temp.ok((select oferece from public.servico_condicoes('cc000000-0000-0000-0000-0000000000c1', 'd1000000-0000-0000-0000-000000000001')), 'serviço novo nasce habilitado para a equipe ativa');
+select pg_temp.ok((select count(*) from public.usuario_servico where servico_id = 'd1000000-0000-0000-0000-000000000002') = 3, 'serviço novo: um vínculo por pessoa ativa');
+select pg_temp.ok(public.habilitar_servicos('cc000000-0000-0000-0000-0000000000c1', array['d1000000-0000-0000-0000-000000000001']::uuid[], false) = 1, 'admin desabilita o serviço da profissional');
+select pg_temp.ok((select not oferece from public.servico_condicoes('cc000000-0000-0000-0000-0000000000c1', 'd1000000-0000-0000-0000-000000000001')), 'profissional com serviço desabilitado não oferece');
 
 -- 4) Agenda: trava de conflito, valores calculados no banco, visão própria
 select pg_temp.como('bbbbbbbb-0000-0000-0000-000000000002');
@@ -101,22 +104,29 @@ update public.appointments set status = 'confirmed' where start_time = '2026-10-
 select pg_temp.ok((select status from public.appointments where start_time = '2026-10-20 13:00+00') = 'confirmed', 'profissional confirma o próprio atendimento');
 insert into public.appointments (professional_id, start_time, end_time, is_block, block_reason)
   values ('bb000000-0000-0000-0000-0000000000b1', '2026-10-20 16:00+00', '2026-10-20 17:00+00', true, 'Almoço');
-select pg_temp.espera_erro($$select public.agendar_atendimento('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', 'd1000000-0000-0000-0000-000000000002', '2026-10-20 16:30+00')$$, 'Horário bloqueado');
+select pg_temp.ok(public.agendar_atendimento('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1',
+  'd1000000-0000-0000-0000-000000000002', '2026-10-20 16:30+00') is not null, 'atendimento em horário bloqueado é permitido (a tela pede confirmação)');
 select pg_temp.como('cccccccc-0000-0000-0000-000000000003');
 select pg_temp.ok((select count(*) from public.appointments) = 0, 'outra profissional não vê a agenda alheia');
 select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
-select pg_temp.ok((select count(*) from public.appointments) = 4, 'admin vê todas as agendas');
--- Garantia final no banco, mesmo sem a função: atendimento em horário bloqueado e
--- bloqueio sobre atendimento ativo falham; bloqueio sobre bloqueio e sobre cancelado, não.
-select pg_temp.espera_erro($$insert into public.appointments (client_id, professional_id, start_time, end_time) values ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '2026-10-20 16:15+00', '2026-10-20 16:45+00')$$, 'Horário bloqueado');
-select pg_temp.espera_erro($$insert into public.appointments (professional_id, start_time, end_time, is_block, block_reason) values ('bb000000-0000-0000-0000-0000000000b1', '2026-10-20 13:15+00', '2026-10-20 13:45+00', true, 'Médico')$$, 'Já existe atendimento das');
-select pg_temp.espera_erro($$update public.appointments set start_time = '2026-10-20 16:00+00', end_time = '2026-10-20 17:00+00' where start_time = '2026-10-20 14:00+00'$$, 'Horário bloqueado');
+select pg_temp.ok((select count(*) from public.appointments) = 5, 'admin vê todas as agendas');
+-- Sem trava de bloqueio no banco: atendimento sobre bloqueio e bloqueio sobre atendimento
+-- entram, inclusive por escrita direta e remarcação.
+insert into public.appointments (client_id, professional_id, start_time, end_time) values ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '2026-10-20 16:15+00', '2026-10-20 16:45+00');
+select pg_temp.ok(exists (select 1 from public.appointments where start_time = '2026-10-20 16:15+00' and not is_block), 'escrita direta de atendimento sobre bloqueio é permitida');
+insert into public.appointments (professional_id, start_time, end_time, is_block, block_reason) values ('bb000000-0000-0000-0000-0000000000b1', '2026-10-20 13:15+00', '2026-10-20 13:45+00', true, 'Médico');
+select pg_temp.ok(exists (select 1 from public.appointments where block_reason = 'Médico'), 'bloqueio sobre atendimento é permitido');
+delete from public.appointments where start_time in ('2026-10-20 16:30+00', '2026-10-20 16:15+00') and not is_block;
+delete from public.appointments where block_reason = 'Médico';
+select pg_temp.ok((select count(*) from public.appointments) = 4, 'limpa os registros do teste de bloqueio');
 insert into public.appointments (professional_id, start_time, end_time, is_block, block_reason)
   values ('bb000000-0000-0000-0000-0000000000b1', '2026-10-20 16:30+00', '2026-10-20 17:30+00', true, 'Reunião');
 select pg_temp.ok(exists (select 1 from public.appointments where block_reason = 'Reunião'), 'bloqueio sobre outro bloqueio é permitido');
 select pg_temp.ok(public.agendar_atendimento('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1',
   null, '2026-10-22 13:00+00', 'Hidratação avulsa', 80, 30) is not null, 'admin agenda procedimento avulso');
-select pg_temp.espera_erro($$select public.remarcar_atendimento((select id from public.appointments where start_time = '2026-10-22 13:00+00'), '2026-10-20 16:10+00')$$, 'Horário bloqueado');
+select public.remarcar_atendimento((select id from public.appointments where start_time = '2026-10-22 13:00+00'), '2026-10-20 16:10+00');
+select pg_temp.ok(exists (select 1 from public.appointments where start_time = '2026-10-20 16:10+00'), 'remarcar para horário bloqueado é permitido');
+select public.remarcar_atendimento((select id from public.appointments where start_time = '2026-10-20 16:10+00'), '2026-10-22 13:00+00');
 select public.remarcar_atendimento((select id from public.appointments where start_time = '2026-10-22 13:00+00'), '2026-10-20 13:10+00');
 select pg_temp.ok(exists (select 1 from public.appointments where start_time = '2026-10-20 13:10+00'), 'remarcar para horário já ocupado por atendimento é permitido');
 select public.remarcar_atendimento((select id from public.appointments where start_time = '2026-10-20 13:10+00'), '2026-10-22 13:00+00');

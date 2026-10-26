@@ -1,5 +1,5 @@
-// Regras da agenda usadas pela tela (o banco confere tudo de novo: trava do bloqueio,
-// valores do catálogo e permissões por profissional).
+// Regras da agenda usadas pela tela (o banco confere de novo valores do catálogo e
+// permissões por profissional; bloqueio e horário ocupado só pedem confirmação na tela).
 
 export type Evento = {
   id: string;
@@ -23,8 +23,8 @@ const sobrepoe = (e: Evento, profissionalId: string, inicio: Date, fim: Date, ig
   && new Date(e.end_time) > inicio;
 
 /**
- * Mesma regra do gatilho appointments_bloqueio_guarda: intervalos [início, fim) sobrepostos do mesmo
- * profissional só conflitam entre atendimento e bloqueio. Atendimentos no mesmo horário são permitidos.
+ * Intervalos [início, fim) sobrepostos do mesmo profissional entre atendimento e bloqueio.
+ * É só aviso: a tela pede confirmação e o banco aceita.
  */
 export function conflitoLocal(eventos: Evento[], profissionalId: string, inicio: Date, fim: Date, ignorarId?: string, ehBloqueio = false): Evento | null {
   return eventos.find((e) => !!e.is_block !== ehBloqueio && sobrepoe(e, profissionalId, inicio, fim, ignorarId)) ?? null;
@@ -78,7 +78,7 @@ export function colunasSobrepostas<T extends { start_time: string; end_time: str
   return saida;
 }
 
-/** Ocupa a agenda (mesma regra da trava): atendimento ativo ou bloqueio, nunca lembrete. */
+/** Ocupa a agenda: atendimento ativo ou bloqueio, nunca lembrete. */
 export const ocupaAgenda = (e: Evento) => !e.is_manual_reminder && ATIVOS.has(e.status ?? 'scheduled');
 
 /** Serviço ainda não salvo do agendamento com vários serviços (data e hora locais, "AAAA-MM-DD" e "HH:MM"). */
@@ -105,7 +105,7 @@ export const itensComoEventos = (itens: ItemAgendamento[]): Evento[] => itens.ma
   status: 'scheduled', professional_id: it.profissionalId,
 }));
 
-/** Bloqueio que impede o item (atendimentos no mesmo horário são permitidos). */
+/** Bloqueio no horário do item (permitido; a tela pede confirmação). */
 export function conflitoDoItem(eventos: Evento[], item: ItemAgendamento): Evento | null {
   return conflitoLocal(eventos, item.profissionalId, inicioDoItem(item), fimDoItem(item));
 }

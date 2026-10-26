@@ -67,7 +67,7 @@ describe('vários serviços no mesmo agendamento', () => {
     expect(itensSobrepostos([], [a, b, c]).map((x) => x.chave)).toEqual(['a', 'b']);
     expect(itensSobrepostos([], [a, item('d', 'p1', '13:00', 30)])).toEqual([]);
   });
-  it('item em horário bloqueado é recusado; sobre atendimento salvo, só avisa', () => {
+  it('item em horário bloqueado é apontado para confirmação; sobre atendimento salvo, só avisa', () => {
     const d = (h: number) => new Date(2026, 9, 21, h).toISOString();
     const bloqueio = ev('x', d(14), d(15), { is_block: true });
     const salvo = ev('y', d(16), d(17));
