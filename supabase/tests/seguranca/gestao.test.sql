@@ -210,7 +210,8 @@ select pg_temp.ok((select count(*) from public.tarefa_comentarios where texto = 
 
 -- 7) Permissões: nada executável por visitante; funções internas fechadas
 select pg_temp.ok((select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and has_function_privilege('anon', p.oid, 'execute')
-  and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')) = 0, 'anon não executa função do app');
+  and p.oid not in ('public.ficha_publica_abrir(text)'::regprocedure, 'public.ficha_publica_assinar(text, jsonb, text, jsonb, text, text)'::regprocedure)
+  and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')) = 0, 'anon não executa função do app fora da lista pública');
 select pg_temp.ok(not has_function_privilege('authenticated', 'public.fechamento_resumo_itens(uuid)', 'execute'), 'resumo de itens é interno');
 select pg_temp.ok(not has_function_privilege('authenticated', 'public.agenda_conflito(uuid,timestamptz,timestamptz,uuid)', 'execute'), 'consulta de conflito é interna');
 select pg_temp.ok((select count(*) from pg_tables where schemaname = 'public' and not rowsecurity) = 0, 'toda tabela com RLS');

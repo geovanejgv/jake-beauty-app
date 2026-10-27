@@ -10,6 +10,9 @@ import Pacotes from './pages/Pacotes';
 import Login from './pages/Login';
 import Tarefas from './pages/Tarefas';
 import Leads from './pages/Leads';
+import Fichas from './pages/Fichas';
+import FichaPublica from './pages/FichaPublica';
+import ImprimirFicha from './pages/ImprimirFicha';
 import Configuracoes from './pages/Configuracoes';
 import Profissionais from './pages/Profissionais';
 import Servicos from './pages/Servicos';
@@ -123,6 +126,8 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<SomenteSemSessao><Login /></SomenteSemSessao>} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          {/* Pública: a cliente abre pelo link com token de uso único (no fragmento #) */}
+          <Route path="/ficha" element={<FichaPublica />} />
           
           <Route path="/" element={
             <PrivateRoute>
@@ -136,6 +141,7 @@ export default function App() {
             <Route path="tarefas" element={<RotaModulo id="tarefas"><Tarefas /></RotaModulo>} />
             <Route path="leads" element={<RotaModulo id="leads"><Leads /></RotaModulo>} />
             <Route path="clientes" element={<RotaModulo id="clientes"><Clientes /></RotaModulo>} />
+            <Route path="fichas" element={<RotaModulo id="fichas"><Fichas /></RotaModulo>} />
             <Route path="profissionais" element={<RotaModulo id="profissionais"><Profissionais /></RotaModulo>} />
             <Route path="servicos" element={<RotaModulo id="servicos"><Servicos /></RotaModulo>} />
             <Route path="financas" element={<RotaModulo id="financas"><Financeiro /></RotaModulo>} />
@@ -152,6 +158,12 @@ export default function App() {
           <Route path="/relatorios/comissoes/imprimir" element={
             <PrivateRoute>
               <RotaModulo id="relatorio_comissoes"><ImprimirComissoes /></RotaModulo>
+            </PrivateRoute>
+          } />
+
+          <Route path="/fichas/:id/imprimir" element={
+            <PrivateRoute>
+              <RotaModulo id="fichas"><ImprimirFicha /></RotaModulo>
             </PrivateRoute>
           } />
 

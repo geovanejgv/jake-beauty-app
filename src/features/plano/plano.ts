@@ -21,7 +21,7 @@ export const LIMITES_PADRAO: Record<Plano, Limites> = {
 
 /** Telas que seguem funcionando com a demonstração vencida (as demais pedem plano). */
 export const MODULOS_SEM_PLANO: readonly IdModulo[] = [
-  'resumo', 'meu_painel', 'agenda', 'clientes', 'leads', 'profissionais', 'servicos', 'configuracoes', 'plano',
+  'resumo', 'meu_painel', 'agenda', 'clientes', 'fichas', 'leads', 'profissionais', 'servicos', 'configuracoes', 'plano',
 ];
 
 export type SituacaoPlano = { plano: Plano; demo_expira_em: string | null };

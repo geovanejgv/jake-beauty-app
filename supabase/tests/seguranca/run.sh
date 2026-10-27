@@ -31,4 +31,5 @@ rodar "${DB}_leads_backup" leads_backup.test.sql
 rodar "${DB}_comissao" comissao_vigente.test.sql
 rodar "${DB}_permissoes" permissoes.test.sql
 rodar "${DB}_ia" ia.test.sql
+rodar "${DB}_fichas" fichas.test.sql
 echo "Testes de segurança do banco: OK"
