@@ -11,7 +11,8 @@ const PX_HORA = 64;
 const COR_STATUS: Record<string, string> = {
   scheduled: 'bg-rose-50 border-rose-300 text-rose-900',
   confirmed: 'bg-emerald-50 border-emerald-400 text-emerald-900',
-  completed: 'bg-slate-100 border-slate-300 text-slate-500 line-through',
+  // Checkout feito: verde claro (mais forte que o confirmado, sem riscar).
+  completed: 'bg-green-100 border-green-400 text-green-800',
   cancelled: 'bg-slate-50 border-slate-200 text-slate-400 line-through opacity-60',
   no_show: 'bg-amber-50 border-amber-300 text-amber-700 line-through',
 };

@@ -363,7 +363,7 @@ export default function Agenda() {
       const trocouHorario = inicio.getTime() !== new Date(apt.start_time).getTime();
       const trocouProf = agendaOutras && (updatedData.professional_id || null) !== (apt.professional_id || null);
       if (trocouHorario || trocouProf) {
-        // Remarcação passa pela trava de conflito do banco.
+        // Remarcação pela função do banco (confere permissão e recalcula o fim).
         const { error } = await supabase.rpc('remarcar_atendimento', { p_id: apt.id, p_inicio: inicio.toISOString(), p_profissional: trocouProf ? updatedData.professional_id || null : null });
         if (error) throw error;
       }
@@ -547,9 +547,9 @@ export default function Agenda() {
       const atual = itens.length && !novoServico ? null : montarItem();
       if (typeof atual === 'string') return alert(atual);
       const lista = atual ? [...itens, atual] : itens;
-      // Bloqueio impede; atendimento no mesmo horário é permitido, só pede confirmação.
+      // Horário bloqueado e atendimento no mesmo horário são permitidos; só pedem confirmação.
       const choque = lista.map((it) => ({ it, c: conflitoDoItem(eventosAgenda, it) })).find((x) => x.c);
-      if (choque) return alert(`Horário bloqueado em "${choque.it.servicoNome}" (${nomeProf(choque.it.profissionalId)}, ${choque.it.hora}): ${choque.c?.block_reason ?? 'bloqueio'}. Escolha outro horário.`);
+      if (choque && !window.confirm(`Horário bloqueado em "${choque.it.servicoNome}" (${nomeProf(choque.it.profissionalId)}, ${choque.it.hora}): ${choque.c?.block_reason ?? 'bloqueio'}. Agendar mesmo assim?`)) return;
       const juntos = itensSobrepostos(eventosAgenda, lista);
       if (juntos.length && !window.confirm(`${juntos.map((it) => `${nomeProf(it.profissionalId)} às ${it.hora}`).join(', ')}: já há atendimento nesse horário. Agendar mesmo assim?`)) return;
       return agendarItensMutation.mutate({ cliente: selectedClient.id, confirmado: novoConfirmado, lista });
@@ -598,7 +598,7 @@ export default function Agenda() {
     const it = montarItem();
     if (typeof it === 'string') return alert(it);
     const c = conflitoDoItem(eventosAgenda, it);
-    if (c) return alert(`Horário bloqueado: ${nomeProf(it.profissionalId)} tem bloqueio nesse intervalo (${c.block_reason ?? 'bloqueio'}).`);
+    if (c && !window.confirm(`Horário bloqueado: ${nomeProf(it.profissionalId)} tem bloqueio nesse intervalo (${c.block_reason ?? 'bloqueio'}). Incluir mesmo assim?`)) return;
     setItens([...itens, it]);
     setNovoServico('');
     setNovoValor('');
@@ -618,9 +618,9 @@ export default function Agenda() {
       const datas = datasDoBloqueio(blockDate, blockRepeticao, blockTermino === 'data' ? { tipo: 'data', ate: blockAte } : { tipo: 'vezes', vezes: Number(blockVezes) });
       if (typeof datas === 'string') return alert(datas);
       const professional_id = (agendaOutras ? blockProf : perfil?.id) || null;
-      // Mesma regra da trava do banco: bloqueio não entra sobre atendimento ativo.
+      // Bloqueio sobre atendimento ativo é permitido; a tela só pede confirmação.
       const conflitos = professional_id ? datas.filter((d) => conflitoLocal(appointments as any[], professional_id, new Date(`${d}T${blockStartTime}:00`), new Date(`${d}T${blockEndTime}:00`), undefined, true)) : [];
-      if (conflitos.length) return alert(`Conflito de horário: ${nomeProf(professional_id)} já tem atendimento em ${conflitos.slice(0, 10).map(isoParaBR).join(', ')}${conflitos.length > 10 ? ` e mais ${conflitos.length - 10} dia(s)` : ''}. Ajuste o horário ou as datas.`);
+      if (conflitos.length && !window.confirm(`${nomeProf(professional_id)} já tem atendimento em ${conflitos.slice(0, 10).map(isoParaBR).join(', ')}${conflitos.length > 10 ? ` e mais ${conflitos.length - 10} dia(s)` : ''} nesse horário. Bloquear mesmo assim?`)) return;
       addBlockMutation.mutate({ datas, startTime: blockStartTime, endTime: blockEndTime, reason: blockReason, professional_id });
     }
   };
@@ -788,7 +788,7 @@ export default function Agenda() {
     const isInactive = isCompleted || isCancelled || isNoShow;
     let rowBgClass = 'hover:bg-slate-50'; let timeBadgeClass = 'bg-rose-50 text-rose-700'; let nameClass = 'text-slate-800';
 
-    if (isCompleted) { rowBgClass = 'bg-slate-50'; timeBadgeClass = 'bg-slate-200 text-slate-500'; nameClass = 'text-slate-500 line-through opacity-70'; }
+    if (isCompleted) { rowBgClass = 'bg-green-100'; timeBadgeClass = 'bg-green-200 text-green-800'; nameClass = 'text-green-800'; }
     else if (isCancelled) { rowBgClass = 'bg-slate-50 opacity-60'; timeBadgeClass = 'bg-slate-200 text-slate-400'; nameClass = 'text-slate-400 line-through'; }
     else if (isNoShow) { rowBgClass = 'bg-amber-50/30 opacity-70'; timeBadgeClass = 'bg-amber-100 text-amber-700'; nameClass = 'text-amber-700 line-through'; }
 
@@ -986,7 +986,7 @@ export default function Agenda() {
 
                       const isCompleted = ev.status === 'completed'; const isCancelled = ev.status === 'cancelled'; const isNoShow = ev.status === 'no_show';
                       let itemClass = 'bg-rose-50 border-rose-200 text-rose-900 font-bold hover:bg-rose-100';
-                      if (isCompleted) itemClass = 'bg-slate-100 text-slate-400 line-through border-slate-200'; else if (isCancelled) itemClass = 'bg-slate-50 text-slate-400 line-through border-slate-200 opacity-60'; else if (isNoShow) itemClass = 'bg-amber-50 text-amber-600 line-through border-amber-200 opacity-70';
+                      if (isCompleted) itemClass = 'bg-green-100 text-green-800 border-green-300'; else if (isCancelled) itemClass = 'bg-slate-50 text-slate-400 line-through border-slate-200 opacity-60'; else if (isNoShow) itemClass = 'bg-amber-50 text-amber-600 line-through border-amber-200 opacity-70';
                       return (
                         <div key={`apt-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-1 md:p-1.5 rounded border text-[10px] transition-all cursor-pointer flex flex-col ${itemClass}`}>
                           <div className="flex justify-between items-center mb-0.5">
@@ -1046,7 +1046,7 @@ export default function Agenda() {
 
                         const isCompleted = ev.status === 'completed'; const isCancelled = ev.status === 'cancelled'; const isNoShow = ev.status === 'no_show';
                         let itemClass = 'bg-rose-50 border-rose-200 text-rose-900 font-bold hover:bg-rose-100';
-                        if (isCompleted) itemClass = 'bg-slate-100 text-slate-400 line-through border-slate-200'; else if (isCancelled) itemClass = 'bg-slate-50 text-slate-400 line-through border-slate-200 opacity-60'; else if (isNoShow) itemClass = 'bg-amber-50 text-amber-600 line-through border-amber-200 opacity-70';
+                        if (isCompleted) itemClass = 'bg-green-100 text-green-800 border-green-300'; else if (isCancelled) itemClass = 'bg-slate-50 text-slate-400 line-through border-slate-200 opacity-60'; else if (isNoShow) itemClass = 'bg-amber-50 text-amber-600 line-through border-amber-200 opacity-70';
                         return (
                           <div key={`apt-${ev.id}`} onClick={(e) => { e.stopPropagation(); openEditModal(ev); }} className={`p-1 rounded border text-[9px] cursor-pointer transition-all w-full flex items-center justify-between ${itemClass}`} title={`${hour}:${min} - ${ev.clients?.name}`}>
                               <span className="truncate mr-1">{hour}:{min} {ev.clients?.name}</span>
@@ -1308,7 +1308,7 @@ export default function Agenda() {
               {appointmentType === 'appointment' && novoServico === 'avulso' && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Duração (min) *</label><input type="text" inputMode="numeric" value={novaDuracao} onChange={(e) => setNovaDuracao(e.target.value.replace(/\D/g, ''))} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500" /></div>
               )}
-              {appointmentType === 'appointment' && ofertaEscolhida && <p className="text-[11px] text-slate-500 -mt-2">Duração: {duracaoTexto(ofertaEscolhida.c.minutos)}. O horário final é calculado. Pode coincidir com outro atendimento; só o horário bloqueado é recusado.</p>}
+              {appointmentType === 'appointment' && ofertaEscolhida && <p className="text-[11px] text-slate-500 -mt-2">Duração: {duracaoTexto(ofertaEscolhida.c.minutos)}. O horário final é calculado. Pode coincidir com outro atendimento ou com horário bloqueado (a agenda pede confirmação).</p>}
               {appointmentType === 'appointment' && (
                 <label className="flex items-center gap-2 text-xs font-bold text-slate-600"><input type="checkbox" checked={novoConfirmado} onChange={(e) => setNovoConfirmado(e.target.checked)} className="w-4 h-4 accent-emerald-600" /> Já confirmado com a cliente</label>
               )}
@@ -1376,7 +1376,7 @@ export default function Agenda() {
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-slate-800">Editar Agendamento</h3>
-                {editingAppointment.status === 'completed' && <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Concluído</span>}
+                {editingAppointment.status === 'completed' && <span className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Concluído</span>}
                 {editingAppointment.status === 'confirmed' && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Confirmado</span>}
                 {veEquipe && <span className="text-[10px] text-slate-500 ml-2">{nomeProf(editingAppointment.professional_id)}</span>}
                 {editingAppointment.status === 'cancelled' && <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block">Cancelou</span>}
