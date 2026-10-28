@@ -1,6 +1,6 @@
 # Fichas de anamnese, fotodepilação e termo de consentimento
 
-Situação: implementado no código; migração `supabase/migrations/20261031120000_fichas_anamnese.sql` **não aplicada** em produção (pendencias-humanas.md, item 58).
+Situação: implementado no código; migração `supabase/migrations/20261031120000_fichas_anamnese.sql` aplicada em produção em 2026-10-28 (pendencias-humanas.md, item 58).
 
 ## Objetivo
 

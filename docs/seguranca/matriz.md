@@ -4,7 +4,7 @@ Situação de cada requisito de `docs/seguranca/requisitos.md` neste projeto (SP
 
 Situações: `atende`, `parcial`, `aguarda humano`, `não se aplica`, `pendente`.
 
-Última atualização: 2026-10-27 (fichas de anamnese, fotodepilação e termo assinadas pela cliente no celular: migração `20261031120000_fichas_anamnese.sql`, NÃO aplicada; UPL-01 passa a se aplicar à imagem da assinatura). Anterior: 2026-10-20 (integração opcional com IA: Fase 7 passa a se aplicar; Edge Function `ia` e migração `20261028120000_integracao_ia.sql`). Anterior: 2026-10-04 (gestão do salão: papéis, catálogo, agenda, comissões e Kanban; migração 20261012120000 NÃO aplicada). A migração `20261011120000_seguranca_endurecimento.sql` foi **aplicada em produção em 2026-10-04** com aprovação do usuário; conferência: 0 tabelas sem RLS, 0 políticas `using (true)`, 0 funções executáveis por anon.
+Última atualização: 2026-10-27 (fichas de anamnese, fotodepilação e termo assinadas pela cliente no celular: migração `20261031120000_fichas_anamnese.sql`, aplicada em produção em 2026-10-28 com autorização; UPL-01 passa a se aplicar à imagem da assinatura). Anterior: 2026-10-20 (integração opcional com IA: Fase 7 passa a se aplicar; Edge Function `ia` e migração `20261028120000_integracao_ia.sql`). Anterior: 2026-10-04 (gestão do salão: papéis, catálogo, agenda, comissões e Kanban; migração 20261012120000 NÃO aplicada). A migração `20261011120000_seguranca_endurecimento.sql` foi **aplicada em produção em 2026-10-04** com aprovação do usuário; conferência: 0 tabelas sem RLS, 0 políticas `using (true)`, 0 funções executáveis por anon.
 
 Resumo: 57 atende, 17 não se aplica, 32 aguarda humano, 19 parcial, 7 pendente (total 132).
 
