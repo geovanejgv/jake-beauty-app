@@ -1,14 +1,22 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { History, Loader2, UserRoundCheck, UserRoundX, Users, CalendarClock } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CalendarClock, History, Loader2, MessageCircle, MessageSquareText, UserRoundCheck, UserRoundX, Users } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import { brl, dataBR, dataLocal, formatarTelefone, isoParaBR } from '../lib/formatos';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { inputCls } from '../components/ui';
 import { comissoesKeys, listarAtendimentos } from '../features/comissoes/api';
 import { ROTULO_FORMA, type FormaPagamento, type StatusAgendamento } from '../features/comissoes/logic';
 import { equipeKeys, listarAtivos } from '../features/equipe/api';
-import { historicoKeys, listarCatalogoHistorico, listarClientesReativacao, listarTelefones } from '../features/historico/api';
+import {
+  historicoKeys, listarCatalogoHistorico, listarClientesReativacao, listarContatos, listarNaoQuerContato, listarTelefones, registrarResultado,
+  valoresDosAgendamentos,
+} from '../features/historico/api';
+import {
+  convitesParados, filtrarPorConvite, FILTRO_CONVITE_PADRAO, indicadoresConvites, ROTULO_RESULTADO, ultimoPorCliente, type FiltroConvite,
+} from '../features/historico/convites';
+import { EnviarConvite, invalidarConvites, ModelosMensagem, SeletorResultado } from '../features/historico/ConvitesUi';
 import {
   clientesParaReativar, filtrarAtendimentos, FILTROS_ATENDIMENTOS_PADRAO, FILTROS_REATIVAR_PADRAO, indicadoresRetorno, periodoDoAtalho,
   ROTULO_SITUACAO_RETORNO, ROTULO_STATUS_ATENDIMENTO, SITUACOES_RETORNO, totaisAtendimentos,
@@ -64,9 +72,30 @@ function Indicador({ titulo, valor, icone }: { titulo: string; valor: string; ic
 function Reativar() {
   const hoje = dataLocal();
   const [f, setF] = useState<FiltrosReativar>(FILTROS_REATIVAR_PADRAO);
+  const { perfil } = useAuth();
+  const qc = useQueryClient();
+  const [fc, setFc] = useState<FiltroConvite>(FILTRO_CONVITE_PADRAO);
+  // A fila é congelada ao abrir: registrar um convite pode tirar a cliente da lista filtrada.
+  const [envio, setEnvio] = useState<{ fila: typeof lista; inicio: number } | null>(null);
+  const [mensagens, setMensagens] = useState(false);
+  const [erroLote, setErroLote] = useState<string | null>(null);
   const { data = [], isLoading, error } = useQuery({ queryKey: historicoKeys.reativacao, queryFn: listarClientesReativacao });
-  const ind = useMemo(() => indicadoresRetorno(data, hoje), [data, hoje]);
-  const lista = useMemo(() => clientesParaReativar(data, f, hoje), [data, f, hoje]);
+  const { data: contatos = [] } = useQuery({ queryKey: historicoKeys.contatos, queryFn: listarContatos });
+  const { data: naoQuer = new Set<string>() } = useQuery({ queryKey: historicoKeys.naoQuer, queryFn: listarNaoQuerContato });
+  const ultimo = useMemo(() => ultimoPorCliente(contatos), [contatos]);
+  const ind = useMemo(() => indicadoresRetorno(data.filter((c) => !naoQuer.has(c.cliente_id)), hoje), [data, hoje, naoQuer]);
+  const lista = useMemo(() => filtrarPorConvite(clientesParaReativar(data, f, hoje), ultimo, naoQuer, fc), [data, f, hoje, ultimo, naoQuer, fc]);
+  // Indicadores dos convites dos últimos 30 dias.
+  const recentes = useMemo(() => contatos.filter((c) => new Date(c.enviado_em).getTime() >= Date.now() - 30 * 86_400_000), [contatos]);
+  const idsAgendados = useMemo(() => recentes.map((c) => c.agendamento_id).filter((x): x is string => !!x), [recentes]);
+  const { data: valores = new Map<string, number>() } = useQuery({ queryKey: historicoKeys.valores(idsAgendados), queryFn: () => valoresDosAgendamentos(idsAgendados) });
+  const indC = indicadoresConvites(recentes, valores);
+  const parados = convitesParados(contatos);
+  const lote = useMutation({
+    mutationFn: () => registrarResultado(parados.map((c) => c.id), 'sem_resposta'),
+    onSuccess: () => { setErroLote(null); invalidarConvites(qc); },
+    onError: (e) => setErroLote(mensagemDeErro(e, 'Não foi possível marcar.', 'sem_resposta_lote')),
+  });
   const alternar = (s: SituacaoRetorno) => setF({ ...f, situacoes: f.situacoes.includes(s) ? f.situacoes.filter((x) => x !== s) : [...f.situacoes, s] });
 
   return (
@@ -76,6 +105,25 @@ function Reativar() {
         <Indicador titulo="Retorno vencido" valor={String(ind.vencido)} icone={<CalendarClock size={14} />} />
         <Indicador titulo="Inativas (90+ dias)" valor={String(ind.inativas)} icone={<Users size={14} />} />
         <Indicador titulo="Perdidas (180+ dias)" valor={String(ind.perdidas)} icone={<UserRoundX size={14} />} />
+        <Indicador titulo="Convites (30 dias)" valor={String(indC.enviados)} icone={<MessageCircle size={14} />} />
+        <Indicador titulo="Taxa de resposta" valor={`${indC.taxaResposta}%`} icone={<MessageSquareText size={14} />} />
+        <Indicador titulo="Taxa de reativação" valor={`${indC.taxaReativacao}%`} icone={<CalendarClock size={14} />} />
+        <Indicador titulo="Faturamento reativado" valor={brl(indC.faturamentoReativado)} icone={<UserRoundCheck size={14} />} />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => setMensagens(true)} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 flex items-center gap-2">
+          <MessageSquareText size={16} /> Mensagens
+        </button>
+        <button type="button" disabled={lista.length === 0} onClick={() => setEnvio({ fila: lista, inicio: 0 })} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold flex items-center gap-2 disabled:opacity-50">
+          <MessageCircle size={16} /> Enviar em sequência ({lista.length})
+        </button>
+        {parados.length > 0 && (
+          <button type="button" disabled={lote.isPending} onClick={() => lote.mutate()} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700">
+            Marcar {parados.length} convite(s) de mais de 7 dias como "sem resposta"
+          </button>
+        )}
+        {erroLote && <p className="text-sm text-red-600">{erroLote}</p>}
       </div>
 
       <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
@@ -93,6 +141,20 @@ function Reativar() {
             <input type="checkbox" checked={f.semAgendamentoFuturo} onChange={(e) => setF({ ...f, semAgendamentoFuturo: e.target.checked })} className="h-4 w-4 accent-rose-600" />
             Só sem agendamento futuro
           </label>
+          <select aria-label="Convite" value={fc.convite} onChange={(e) => setFc({ ...fc, convite: e.target.value as FiltroConvite['convite'] })} className={`${inputCls} md:max-w-[220px]`}>
+            <option value="todos">Qualquer convite</option>
+            <option value="nunca">Nunca recebeu convite</option>
+            <option value="antigo">Última mensagem há mais de...</option>
+          </select>
+          {fc.convite === 'antigo' && (
+            <label className="flex items-center gap-1 text-sm text-slate-700">
+              <input type="number" min={1} max={365} value={fc.diasSemConvite} onChange={(e) => setFc({ ...fc, diasSemConvite: Math.max(1, Number(e.target.value) || 1) })} className={`${inputCls} !w-20`} /> dias
+            </label>
+          )}
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={fc.incluirNaoQuer} onChange={(e) => setFc({ ...fc, incluirNaoQuer: e.target.checked })} className="h-4 w-4 accent-rose-600" />
+            Incluir quem não quer contato
+          </label>
           <span className="text-xs text-slate-500 md:ml-auto">{lista.length} cliente(s)</span>
         </div>
       </div>
@@ -105,11 +167,11 @@ function Reativar() {
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
               <th className="p-3">Cliente</th><th className="p-3">Último serviço</th><th className="p-3">Retorno previsto</th>
-              <th className="p-3">Frequência (12 meses)</th><th className="p-3">Valor (12 meses)</th><th className="p-3">Ações</th>
+              <th className="p-3">Frequência (12 meses)</th><th className="p-3">Valor (12 meses)</th><th className="p-3">Último convite</th><th className="p-3">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {lista.map((c) => (
+            {lista.map((c, i) => (
               <tr key={c.cliente_id} className="align-top">
                 <td className="p-3">
                   <p className="font-semibold text-slate-800">{c.nome}</p>
@@ -137,17 +199,33 @@ function Reativar() {
                   <p>{brl(c.total_12m)}</p>
                   <p className="text-xs text-slate-500">ticket {c.ticket_medio_12m ? brl(c.ticket_medio_12m) : '-'}</p>
                 </td>
+                <td className="p-3 min-w-[150px]">
+                  {naoQuer.has(c.cliente_id) && <p className="text-xs font-bold text-red-600 mb-1">Não quer contato</p>}
+                  {ultimo.get(c.cliente_id) ? (
+                    <>
+                      <p className="text-xs text-slate-500 mb-1" title={ROTULO_RESULTADO[ultimo.get(c.cliente_id)!.resultado]}>{dataBR(ultimo.get(c.cliente_id)!.enviado_em)}</p>
+                      <SeletorResultado contato={ultimo.get(c.cliente_id)!} />
+                    </>
+                  ) : <p className="text-xs text-slate-400">Nunca recebeu</p>}
+                </td>
                 <td className="p-3">
-                  <Link to={`/clientes?cliente=${c.cliente_id}`} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-bold inline-block">Abrir ficha</Link>
+                  <div className="flex flex-col gap-1.5">
+                    <button type="button" onClick={() => setEnvio({ fila: lista, inicio: i })} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1"><MessageCircle size={14} /> Enviar convite</button>
+                    <Link to={`/clientes?cliente=${c.cliente_id}`} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-bold text-center">Abrir ficha</Link>
+                  </div>
                 </td>
               </tr>
             ))}
             {!isLoading && lista.length === 0 && (
-              <tr><td colSpan={6} className="p-6 text-center text-slate-500">Nenhuma cliente com esses filtros.</td></tr>
+              <tr><td colSpan={7} className="p-6 text-center text-slate-500">Nenhuma cliente com esses filtros.</td></tr>
             )}
           </tbody>
         </table>
       </div>
+      {envio !== null && (
+        <EnviarConvite fila={envio.fila} inicio={envio.inicio} nomeClinica={perfil?.estabelecimento?.nome ?? ''} ultimoConvite={ultimo} naoQuer={naoQuer} onFechar={() => setEnvio(null)} />
+      )}
+      {mensagens && <ModelosMensagem onFechar={() => setMensagens(false)} />}
     </div>
   );
 }

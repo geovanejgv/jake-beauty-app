@@ -19,6 +19,7 @@ import { buscarLead, leadsKeys, vincularCliente } from '../features/leads/api';
 import { AvisoBackup } from '../features/backup/AvisoBackup';
 import { ResumoClienteIa } from '../features/ia/ResumoClienteIa';
 import { useDisponibilidadeIa } from '../features/ia/useIa';
+import { ContatoDaCliente } from '../features/historico/ConvitesUi';
 
 type ModoClientes = 'lista' | 'cartoes' | 'grupos';
 const CHAVE_MODO = 'jb-clientes-modo';
@@ -714,6 +715,7 @@ export default function Clientes() {
               </div>
               <button onClick={() => setSelectedHistoryClient(null)} className="text-slate-400 hover:text-rose-600 p-1"><X size={24} /></button>
             </div>
+            {ehAdmin && <ContatoDaCliente clienteId={selectedHistoryClient.id} />}
             <div className="flex border-b border-slate-100 px-6" role="tablist">
               <button type="button" role="tab" aria-selected={abaHistorico === 'atendimentos'} onClick={() => setAbaHistorico('atendimentos')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'atendimentos' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><Scissors size={14} /> Atendimentos</button>
               <button type="button" role="tab" aria-selected={abaHistorico === 'tecnico'} onClick={() => setAbaHistorico('tecnico')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'tecnico' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><NotebookPen size={14} /> Histórico técnico</button>

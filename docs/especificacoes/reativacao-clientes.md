@@ -5,7 +5,7 @@
 | Fase | Entrega | Situação |
 | --- | --- | --- |
 | 1 | Histórico de atendimentos (filtros e totais) e "Clientes para reativar" pelo ciclo de retorno | Implementada: `src/pages/Historico.tsx`, `src/features/historico/`, função `clientes_reativacao()` (`20261101120000_historico_reativacao.sql`) |
-| 2 | Modelos de mensagem, convite assistido por WhatsApp, registro de envio e resultado, "não quer contato", indicadores | A fazer |
+| 2 | Modelos de mensagem, convite assistido por WhatsApp, registro de envio e resultado, "não quer contato", indicadores | Implementada: `src/features/historico/convites.ts`, `ConvitesUi.tsx`, tabelas `mensagem_modelos` e `contatos_reativacao` (`20261102120000_reativacao_convites.sql`). Modelos ficam em Histórico e Reativação > Mensagens; a trava de 15 dias é fixa por enquanto |
 | 3 | Lembretes de contato na agenda e pendências do dia | A fazer |
 | 4 | Anamnese com validade e alertas no agendamento | Em parte: fichas assinadas no celular (`docs/especificacoes/fichas-anamnese.md`); faltam aba na ficha da cliente, validade e alertas no agendamento |
 | 5 | Termos por procedimento | Em parte: termo assinado com procedimento e valor; falta "exige termo" no serviço e aviso no agendamento |
