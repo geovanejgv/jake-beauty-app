@@ -20,6 +20,7 @@ import { AvisoBackup } from '../features/backup/AvisoBackup';
 import { ResumoClienteIa } from '../features/ia/ResumoClienteIa';
 import { useDisponibilidadeIa } from '../features/ia/useIa';
 import { ContatoDaCliente } from '../features/historico/ConvitesUi';
+import { AgendarLembrete } from '../features/historico/LembretesUi';
 
 type ModoClientes = 'lista' | 'cartoes' | 'grupos';
 const CHAVE_MODO = 'jb-clientes-modo';
@@ -135,6 +136,7 @@ export default function Clientes() {
   const navigate = useNavigate();
   // Cadastro vindo de um lead que fechou: ao salvar, o lead fica vinculado à nova cliente.
   const [leadOrigem, setLeadOrigem] = useState<string | null>(null);
+  const [lembreteCliente, setLembreteCliente] = useState<{ id: string; nome: string } | null>(null);
   const [abaHistorico, setAbaHistorico] = useState<'atendimentos' | 'tecnico' | 'pacotes' | 'ia'>('atendimentos');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -704,6 +706,8 @@ export default function Clientes() {
       </>
       )}
 
+      {lembreteCliente && <AgendarLembrete clienteId={lembreteCliente.id} nome={lembreteCliente.nome} retornoPrevisto={null} onFechar={() => setLembreteCliente(null)} />}
+
       {/* MODAL HISTÓRICO */}
       {selectedHistoryClient && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -715,7 +719,7 @@ export default function Clientes() {
               </div>
               <button onClick={() => setSelectedHistoryClient(null)} className="text-slate-400 hover:text-rose-600 p-1"><X size={24} /></button>
             </div>
-            {ehAdmin && <ContatoDaCliente clienteId={selectedHistoryClient.id} />}
+            {ehAdmin && <ContatoDaCliente clienteId={selectedHistoryClient.id} onAgendarLembrete={() => setLembreteCliente({ id: selectedHistoryClient.id, nome: selectedHistoryClient.name })} />}
             <div className="flex border-b border-slate-100 px-6" role="tablist">
               <button type="button" role="tab" aria-selected={abaHistorico === 'atendimentos'} onClick={() => setAbaHistorico('atendimentos')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'atendimentos' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><Scissors size={14} /> Atendimentos</button>
               <button type="button" role="tab" aria-selected={abaHistorico === 'tecnico'} onClick={() => setAbaHistorico('tecnico')} className={`flex items-center gap-1.5 px-3 py-2.5 text-sm border-b-2 -mb-px ${abaHistorico === 'tecnico' ? 'border-rose-600 text-rose-600 font-bold' : 'border-transparent text-slate-500'}`}><NotebookPen size={14} /> Histórico técnico</button>

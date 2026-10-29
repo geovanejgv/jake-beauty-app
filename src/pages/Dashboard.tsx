@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { listarSaldos, listarVendas, pacotesKeys } from '../features/pacotes/api';
 import { diaLocal, fluxoKeys, listarAtendimentosConcluidos, listarDespesas, receitasDoFluxo } from '../features/fluxo-caixa/api';
 import { fluxoDoMes } from '../features/fluxo-caixa/logic';
+import { PendenciasContato } from '../features/historico/LembretesUi';
 import { TrendingUp, Calendar, Filter, BarChart3, Loader2, DollarSign, CreditCard, X, FileSpreadsheet, Edit2, Trash2, AlertTriangle, Wallet, TrendingDown, Clock, CheckCircle, Package } from 'lucide-react';
 
 export default function Dashboard() {
@@ -248,6 +249,8 @@ export default function Dashboard() {
         <h2 className="text-3xl font-black text-slate-800 tracking-tight">Painel Financeiro</h2>
         <p className="text-sm text-slate-500 mt-1">Gestão de faturamento, despesas e lucro líquido</p>
       </div>
+
+      <PendenciasContato />
 
       {/* Cards Superiores (Faturamento) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -34,4 +34,5 @@ rodar "${DB}_ia" ia.test.sql
 rodar "${DB}_fichas" fichas.test.sql
 rodar "${DB}_reativacao" reativacao.test.sql
 rodar "${DB}_convites" reativacao_convites.test.sql
+rodar "${DB}_lembretes" lembretes_contato.test.sql
 echo "Testes de segurança do banco: OK"

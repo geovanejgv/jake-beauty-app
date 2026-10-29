@@ -3,6 +3,7 @@
 import { supabase } from '../../lib/supabase';
 import type { ClienteReativacao } from './logic';
 import type { Contato, ModeloMensagem, ResultadoConvite } from './convites';
+import type { Lembrete, StatusLembrete } from './lembretes';
 
 export const historicoKeys = {
   reativacao: ['historico', 'reativacao'] as const,
@@ -12,6 +13,8 @@ export const historicoKeys = {
   contatos: ['historico', 'contatos'] as const,
   naoQuer: ['historico', 'nao-quer'] as const,
   valores: (ids: string[]) => ['historico', 'valores', ids] as const,
+  lembretes: ['historico', 'lembretes'] as const,
+  nomes: ['historico', 'nomes'] as const,
 };
 
 async function rodar<T>(p: PromiseLike<{ data: T; error: unknown }>): Promise<T> {
@@ -98,4 +101,33 @@ export async function valoresDosAgendamentos(ids: string[]): Promise<Map<string,
   const linhas = ((await rodar(supabase.from('appointments').select('id, valor_cobrado, status').in('id', ids.slice(0, 500)))) ?? []) as
     { id: string; valor_cobrado: number | null; status: string }[];
   return new Map(linhas.filter((l) => l.status === 'completed').map((l) => [l.id, Number(l.valor_cobrado ?? 0)]));
+}
+
+// ----- Fase 3: lembretes de contato (só a administradora, pelo RLS) -----
+
+const CAMPOS_LEMBRETE = 'id, client_id, data, hora, responsavel_id, modelo_id, observacao, status';
+
+/** Pendentes (inclui atrasados), do mais antigo para o mais novo. */
+export async function listarLembretesPendentes(): Promise<Lembrete[]> {
+  const linhas = ((await rodar(supabase.from('lembretes_contato').select(CAMPOS_LEMBRETE).eq('status', 'pendente')
+    .order('data').limit(2000))) ?? []) as Lembrete[];
+  return linhas.map((l) => ({ ...l, hora: l.hora ? l.hora.slice(0, 5) : null }));
+}
+
+export async function criarLembrete(d: { client_id: string; data: string; hora: string | null; responsavel_id: string | null; modelo_id: string | null; observacao: string }) {
+  await rodar(supabase.from('lembretes_contato').insert([{ ...d, observacao: d.observacao.trim() || null }]));
+}
+
+export async function mudarDataLembrete(id: string, data: string) {
+  await rodar(supabase.from('lembretes_contato').update({ data }).eq('id', id));
+}
+
+export async function mudarStatusLembrete(id: string, status: StatusLembrete) {
+  await rodar(supabase.from('lembretes_contato').update({ status }).eq('id', id));
+}
+
+/** Nome e telefone das clientes (para a faixa da agenda). */
+export async function listarNomesClientes(): Promise<Map<string, { nome: string; telefone: string | null }>> {
+  const linhas = ((await rodar(supabase.from('clientes_visiveis').select('id, name, phone').limit(10000))) ?? []) as { id: string; name: string; phone: string | null }[];
+  return new Map(linhas.map((l) => [l.id, { nome: l.name, telefone: l.phone }]));
 }
