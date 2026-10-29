@@ -18,6 +18,7 @@ import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
 import { itemParaAbater } from '../features/pacotes/logic';
 import { agendarLembreteGrupo, clientesKeys, listarGrupos, listarMembros, listarOrigens } from '../features/clientes/api';
 import { CampoOrigem } from '../features/clientes/CampoOrigem';
+import { FaixaLembretes } from '../features/historico/LembretesUi';
 
 /** Erro de agenda: conflito de horário vem com mensagem própria; o resto, genérica com código. */
 const erroAgenda = (e: unknown, padrao: string, origem: string) => mensagemAgenda(e) ?? mensagemDeErro(e, padrao, origem);
@@ -885,6 +886,8 @@ export default function Agenda() {
           </div>
         </div>
       </div>
+
+      {ehAdmin && <FaixaLembretes dia={selectedDate} nomeClinica={perfil?.estabelecimento?.nome ?? ''} />}
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col min-h-0 overflow-hidden w-full">
         <div className="py-2 px-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between text-slate-600 font-medium shrink-0 text-sm">

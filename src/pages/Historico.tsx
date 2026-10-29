@@ -10,17 +10,19 @@ import { comissoesKeys, listarAtendimentos } from '../features/comissoes/api';
 import { ROTULO_FORMA, type FormaPagamento, type StatusAgendamento } from '../features/comissoes/logic';
 import { equipeKeys, listarAtivos } from '../features/equipe/api';
 import {
-  historicoKeys, listarCatalogoHistorico, listarClientesReativacao, listarContatos, listarNaoQuerContato, listarTelefones, registrarResultado,
+  historicoKeys, listarCatalogoHistorico, listarClientesReativacao, listarContatos, listarLembretesPendentes, listarNaoQuerContato, listarTelefones, registrarResultado,
   valoresDosAgendamentos,
 } from '../features/historico/api';
 import {
   convitesParados, filtrarPorConvite, FILTRO_CONVITE_PADRAO, indicadoresConvites, ROTULO_RESULTADO, ultimoPorCliente, type FiltroConvite,
 } from '../features/historico/convites';
 import { EnviarConvite, invalidarConvites, ModelosMensagem, SeletorResultado } from '../features/historico/ConvitesUi';
+import { AgendarLembrete } from '../features/historico/LembretesUi';
+import { proximoPorCliente } from '../features/historico/lembretes';
 import {
   clientesParaReativar, filtrarAtendimentos, FILTROS_ATENDIMENTOS_PADRAO, FILTROS_REATIVAR_PADRAO, indicadoresRetorno, periodoDoAtalho,
   ROTULO_SITUACAO_RETORNO, ROTULO_STATUS_ATENDIMENTO, SITUACOES_RETORNO, totaisAtendimentos,
-  type Atalho, type FiltrosAtendimentos, type FiltrosReativar, type SituacaoRetorno,
+  type Atalho, type ClienteComRetorno, type FiltrosAtendimentos, type FiltrosReativar, type SituacaoRetorno,
 } from '../features/historico/logic';
 
 const COR_SITUACAO: Record<SituacaoRetorno, string> = {
@@ -81,6 +83,9 @@ function Reativar() {
   const [erroLote, setErroLote] = useState<string | null>(null);
   const { data = [], isLoading, error } = useQuery({ queryKey: historicoKeys.reativacao, queryFn: listarClientesReativacao });
   const { data: contatos = [] } = useQuery({ queryKey: historicoKeys.contatos, queryFn: listarContatos });
+  const { data: lembretes = [] } = useQuery({ queryKey: historicoKeys.lembretes, queryFn: listarLembretesPendentes });
+  const proximoLembrete = useMemo(() => proximoPorCliente(lembretes), [lembretes]);
+  const [lembrete, setLembrete] = useState<ClienteComRetorno | null>(null);
   const { data: naoQuer = new Set<string>() } = useQuery({ queryKey: historicoKeys.naoQuer, queryFn: listarNaoQuerContato });
   const ultimo = useMemo(() => ultimoPorCliente(contatos), [contatos]);
   const ind = useMemo(() => indicadoresRetorno(data.filter((c) => !naoQuer.has(c.cliente_id)), hoje), [data, hoje, naoQuer]);
@@ -207,10 +212,12 @@ function Reativar() {
                       <SeletorResultado contato={ultimo.get(c.cliente_id)!} />
                     </>
                   ) : <p className="text-xs text-slate-400">Nunca recebeu</p>}
+                  {proximoLembrete.get(c.cliente_id) && <p className="text-[11px] text-violet-700 mt-1">Lembrete em {isoParaBR(proximoLembrete.get(c.cliente_id)!.data)}</p>}
                 </td>
                 <td className="p-3">
                   <div className="flex flex-col gap-1.5">
                     <button type="button" onClick={() => setEnvio({ fila: lista, inicio: i })} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1"><MessageCircle size={14} /> Enviar convite</button>
+                    <button type="button" onClick={() => setLembrete(c)} className="px-3 py-1.5 rounded-lg border border-violet-200 text-violet-700 text-xs font-bold">Agendar lembrete</button>
                     <Link to={`/clientes?cliente=${c.cliente_id}`} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-bold text-center">Abrir ficha</Link>
                   </div>
                 </td>
@@ -226,6 +233,7 @@ function Reativar() {
         <EnviarConvite fila={envio.fila} inicio={envio.inicio} nomeClinica={perfil?.estabelecimento?.nome ?? ''} ultimoConvite={ultimo} naoQuer={naoQuer} onFechar={() => setEnvio(null)} />
       )}
       {mensagens && <ModelosMensagem onFechar={() => setMensagens(false)} />}
+      {lembrete && <AgendarLembrete clienteId={lembrete.cliente_id} nome={lembrete.nome} retornoPrevisto={lembrete.retorno.previsto} onFechar={() => setLembrete(null)} />}
     </div>
   );
 }

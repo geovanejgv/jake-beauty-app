@@ -24,6 +24,8 @@ export function useModelos() {
 export function invalidarConvites(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: historicoKeys.contatos });
   void qc.invalidateQueries({ queryKey: historicoKeys.naoQuer });
+  // O banco conclui os lembretes pendentes da cliente ao registrar o convite.
+  void qc.invalidateQueries({ queryKey: historicoKeys.lembretes });
 }
 
 function dadosDaCliente(c: ClienteComRetorno, nomeClinica: string): DadosConvite {
@@ -42,18 +44,20 @@ function dadosDaCliente(c: ClienteComRetorno, nomeClinica: string): DadosConvite
  * Envio assistido: mostra o texto pronto (editável só para este envio), avisa as travas e,
  * ao abrir o WhatsApp, grava o envio. "Enviar para a próxima" percorre a lista filtrada.
  */
-export function EnviarConvite({ fila, inicio, nomeClinica, ultimoConvite, naoQuer, onFechar }: {
+export function EnviarConvite({ fila, inicio, nomeClinica, ultimoConvite, naoQuer, onFechar, modeloId }: {
   fila: ClienteComRetorno[];
   inicio: number;
   nomeClinica: string;
   ultimoConvite: Map<string, Contato>;
   naoQuer: Set<string>;
   onFechar: () => void;
+  /** Modelo escolhido no lembrete; sem ele, o padrão. */
+  modeloId?: string | null;
 }) {
   const qc = useQueryClient();
   const { modelos } = useModelos();
   const [pos, setPos] = useState(inicio);
-  const padrao = modelos.find((m) => m.padrao) ?? modelos[0];
+  const padrao = (modeloId && modelos.find((m) => m.id === modeloId)) || modelos.find((m) => m.padrao) || modelos[0];
   const [modeloIdx, setModeloIdx] = useState(Math.max(0, modelos.indexOf(padrao)));
   const cliente = fila[pos];
   const modelo = modelos[modeloIdx] ?? padrao;
@@ -229,7 +233,7 @@ export function ModelosMensagem({ onFechar }: { onFechar: () => void }) {
 }
 
 /** Na ficha da cliente: último convite e "não quer contato" (só a administradora). */
-export function ContatoDaCliente({ clienteId }: { clienteId: string }) {
+export function ContatoDaCliente({ clienteId, onAgendarLembrete }: { clienteId: string; onAgendarLembrete?: () => void }) {
   const qc = useQueryClient();
   const { data: contatos = [] } = useQuery({ queryKey: historicoKeys.contatos, queryFn: listarContatos });
   const { data: naoQuer = new Set<string>() } = useQuery({ queryKey: historicoKeys.naoQuer, queryFn: listarNaoQuerContato });
@@ -248,6 +252,7 @@ export function ContatoDaCliente({ clienteId }: { clienteId: string }) {
       <button type="button" disabled={alternar.isPending} onClick={() => alternar.mutate()} className="underline text-slate-500 hover:text-slate-800">
         {bloqueada ? 'Voltar a aceitar contato' : 'Marcar "não quer contato"'}
       </button>
+      {onAgendarLembrete && !bloqueada && <button type="button" onClick={onAgendarLembrete} className="underline text-slate-500 hover:text-slate-800">Agendar lembrete</button>}
       {erro && <span className="text-red-600">{erro}</span>}
     </div>
   );
