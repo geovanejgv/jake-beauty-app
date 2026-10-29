@@ -26,8 +26,10 @@ select set_config('request.headers', '{"x-forwarded-for": "203.0.113.7, 10.0.0.1
 -- 1) Estrutura: RLS em toda tabela, nenhuma política aberta, nada executável por anon
 select pg_temp.ok((select count(*) from pg_tables where schemaname = 'public' and not rowsecurity) = 0, 'AUZ-04: toda tabela com RLS');
 select pg_temp.ok((select count(*) from pg_policies where schemaname = 'public' and (qual = 'true' or with_check = 'true')) = 0, 'AUZ-04: nenhuma política using(true)');
+-- Lista pública explícita (AUZ-01): só o link da ficha da cliente, protegido por token de uso único.
 select pg_temp.ok((select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and has_function_privilege('anon', p.oid, 'execute')
-  and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')) = 0, 'anon não executa nenhuma função do app');
+  and p.oid not in ('public.ficha_publica_abrir(text)'::regprocedure, 'public.ficha_publica_assinar(text, jsonb, text, jsonb, text, text)'::regprocedure)
+  and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')) = 0, 'anon não executa nenhuma função do app fora da lista pública');
 select pg_temp.ok(not has_function_privilege('authenticated', 'public.auditoria_gravar(text,text,text,jsonb)', 'execute'), 'auditoria_gravar é interna');
 
 -- 2) Visitante sem sessão

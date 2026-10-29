@@ -2,7 +2,7 @@
 // Importante: esconder um módulo é só interface. Quem barra o acesso aos dados é o RLS
 // do banco (AUZ-07); por isso cada módulo de administradora também é protegido lá.
 import {
-  BarChart3, CalendarDays, ClipboardList, DollarSign, HandCoins, LayoutDashboard, Scissors,
+  BarChart3, CalendarDays, ClipboardList, ClipboardSignature, DollarSign, HandCoins, LayoutDashboard, Scissors,
   Gem, Magnet, Package, Settings, ShoppingCart, SquareKanban, Store, UserCog, Users, Wallet, type LucideIcon,
 } from 'lucide-react';
 
@@ -17,7 +17,7 @@ export type IdGrupo = 'principal' | 'estabelecimento' | 'financeiro' | 'relatori
 
 export type IdModulo =
   | 'resumo' | 'meu_painel' | 'agenda' | 'tarefas'
-  | 'clientes' | 'leads' | 'profissionais' | 'servicos'
+  | 'clientes' | 'fichas' | 'leads' | 'profissionais' | 'servicos'
   | 'financas' | 'pagamentos' | 'pdv' | 'pacotes'
   | 'relatorio_comissoes'
   | 'configuracoes' | 'plano';
@@ -56,6 +56,8 @@ export const MODULOS: Modulo[] = [
     descricao: 'Kanban operacional do salão (reposição, organização, manutenção).' },
   { id: 'clientes', rotulo: 'Clientes', caminho: '/clientes', icone: Users, grupo: 'estabelecimento', papeis: TODOS, ocultavel: true,
     descricao: 'Cadastro de clientes e histórico técnico.' },
+  { id: 'fichas', rotulo: 'Fichas e Termos', caminho: '/fichas', icone: ClipboardSignature, grupo: 'estabelecimento', papeis: TODOS, ocultavel: true,
+    descricao: 'Anamnese, fotodepilação e termos assinados pela cliente no celular.' },
   { id: 'leads', rotulo: 'Leads', caminho: '/leads', icone: Magnet, grupo: 'estabelecimento', papeis: ADMIN, ocultavel: true,
     descricao: 'Funil da possível cliente, do primeiro contato até virar cliente.' },
   { id: 'profissionais', rotulo: 'Profissionais', caminho: '/profissionais', icone: UserCog, grupo: 'estabelecimento', papeis: ADMIN, ocultavel: true,
