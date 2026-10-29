@@ -155,3 +155,8 @@ Responsável padrão: administradora do estúdio (dona das contas Supabase, Verc
 61. **Cifra dos dados de saúde (CRI-04).** Respostas das fichas ficam em texto claro, protegidas pelo RLS. Cifrar em campo exige chave fora do banco e Edge Function para ler e gravar; decidir se vale o custo.
 62. **Quem vê a ficha.** Hoje: a administradora vê todas; a profissional, só as fichas em que é a profissional. Confirmar se a recepção (quando houver) deve ver; e se a ficha deve ficar disponível para módulo pago ou não (hoje segue liberada com a demonstração vencida, como Clientes).
 63. **Responsável técnico e escopo do IPL.** Conferir a exigência local (vigilância sanitária e conselho profissional) para luz intensa pulsada e laser no salão [Confirmar]; a ficha não substitui a avaliação presencial nem o teste em pequena área.
+
+## Histórico e reativação de clientes
+
+64. **Migração `20261101120000_historico_reativacao.sql` (DEV-02).** Fase 1 da reativação: só cria a função de leitura `clientes_reativacao()` (security invoker, o RLS decide; sem execute para `anon`). Testada em `supabase/tests/seguranca/run.sh` (novo `reativacao.test.sql`); não mexe em autenticação nem apaga dados (regra 8). **APLICADA em produção em 2026-10-29** e conferida: `anon` sem execute, `authenticated` com execute, função sem `security definer`.
+65. **Limites da situação de retorno.** Hoje fixos no código (`src/features/historico/logic.ts`): retorno próximo em 7 dias, inativa com mais de 90, perdida com mais de 180, ciclo padrão de 45 dias. Confirmar os valores; a tela de configuração entra numa fase seguinte.

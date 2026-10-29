@@ -32,4 +32,5 @@ rodar "${DB}_comissao" comissao_vigente.test.sql
 rodar "${DB}_permissoes" permissoes.test.sql
 rodar "${DB}_ia" ia.test.sql
 rodar "${DB}_fichas" fichas.test.sql
+rodar "${DB}_reativacao" reativacao.test.sql
 echo "Testes de segurança do banco: OK"
