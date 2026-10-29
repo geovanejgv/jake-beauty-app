@@ -378,7 +378,15 @@ function Atendimentos() {
             {linhas.map((l) => (
               <tr key={l.id}>
                 <td className="p-3 tabular-nums whitespace-nowrap">{dataBR(l.start_time)}</td>
-                <td className="p-3">{l.client_id ? <Link to={`/clientes?cliente=${l.client_id}`} className="text-slate-800 hover:underline">{l.cliente_nome}</Link> : l.cliente_nome}</td>
+                <td className="p-3">
+                  {l.client_id ? <Link to={`/clientes?cliente=${l.client_id}`} className="text-slate-800 hover:underline">{l.cliente_nome}</Link> : l.cliente_nome}
+                  {/* Telefone ao lado do nome para conferir antes do convite. */}
+                  {l.client_id && (
+                    <span className="ml-2 text-xs text-slate-500 whitespace-nowrap tabular-nums">
+                      {telefones.get(l.client_id) ? formatarTelefone(telefones.get(l.client_id)!) : 'Sem telefone'}
+                    </span>
+                  )}
+                </td>
                 <td className="p-3">{l.servico_nome}</td>
                 <td className="p-3 text-slate-500">{(l.servico_id && nomeCategoria.get(categoriaDoServico.get(l.servico_id) ?? '')) || '-'}</td>
                 <td className="p-3">{l.profissional_nome}</td>
