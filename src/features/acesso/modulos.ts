@@ -3,7 +3,7 @@
 // do banco (AUZ-07); por isso cada módulo de administradora também é protegido lá.
 import {
   BarChart3, CalendarDays, ClipboardList, ClipboardSignature, DollarSign, HandCoins, LayoutDashboard, Scissors,
-  Gem, Magnet, Package, Settings, ShoppingCart, SquareKanban, Store, UserCog, Users, Wallet, type LucideIcon,
+  Gem, History, Magnet, Package, Settings, ShoppingCart, SquareKanban, Store, UserCog, Users, Wallet, type LucideIcon,
 } from 'lucide-react';
 
 export type Papel = 'admin' | 'professional';
@@ -19,7 +19,7 @@ export type IdModulo =
   | 'resumo' | 'meu_painel' | 'agenda' | 'tarefas'
   | 'clientes' | 'fichas' | 'leads' | 'profissionais' | 'servicos'
   | 'financas' | 'pagamentos' | 'pdv' | 'pacotes'
-  | 'relatorio_comissoes'
+  | 'relatorio_comissoes' | 'historico'
   | 'configuracoes' | 'plano';
 
 export type Modulo = {
@@ -74,6 +74,8 @@ export const MODULOS: Modulo[] = [
     descricao: 'Venda de pacotes de sessões, saldo, validade e extrato.' },
   { id: 'relatorio_comissoes', rotulo: 'Relatório de Comissões', caminho: '/relatorios/comissoes', icone: ClipboardList, grupo: 'relatorios', papeis: TODOS, ocultavel: true,
     descricao: 'Atendimentos com valor bruto, comissão e líquido, com PDF.' },
+  { id: 'historico', rotulo: 'Histórico e Reativação', caminho: '/historico', icone: History, grupo: 'relatorios', papeis: ADMIN, ocultavel: true,
+    descricao: 'Atendimentos com filtros e clientes para reativar pelo ciclo de retorno.' },
   { id: 'plano', rotulo: 'Plano', caminho: '/plano', icone: Gem, grupo: 'sistema', papeis: TODOS, ocultavel: true,
     descricao: 'Plano do estabelecimento, prazo da demonstração e uso dos limites.' },
   { id: 'configuracoes', rotulo: 'Configurações', caminho: '/configuracoes', icone: Settings, grupo: 'sistema', papeis: TODOS, ocultavel: false,

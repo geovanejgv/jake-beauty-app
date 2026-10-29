@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import Tarefas from './pages/Tarefas';
 import Leads from './pages/Leads';
 import Fichas from './pages/Fichas';
+import Historico from './pages/Historico';
 import FichaPublica from './pages/FichaPublica';
 import ImprimirFicha from './pages/ImprimirFicha';
 import Configuracoes from './pages/Configuracoes';
@@ -148,6 +149,7 @@ export default function App() {
             <Route path="pagamentos" element={<RotaModulo id="pagamentos"><PagamentoProfissionais /></RotaModulo>} />
             <Route path="pdv" element={<RotaModulo id="pdv"><PDV /></RotaModulo>} />
             <Route path="pacotes" element={<RotaModulo id="pacotes"><Pacotes /></RotaModulo>} />
+            <Route path="historico" element={<RotaModulo id="historico"><Historico /></RotaModulo>} />
             <Route path="relatorios/comissoes" element={<RotaModulo id="relatorio_comissoes"><RelatorioComissoes /></RotaModulo>} />
             <Route path="configuracoes" element={<RotaModulo id="configuracoes"><Configuracoes /></RotaModulo>} />
             <Route path="plano" element={<RotaModulo id="plano"><Plano /></RotaModulo>} />
