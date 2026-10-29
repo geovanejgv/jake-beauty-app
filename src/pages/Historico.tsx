@@ -14,13 +14,14 @@ import {
   valoresDosAgendamentos,
 } from '../features/historico/api';
 import {
-  convitesParados, filtrarPorConvite, FILTRO_CONVITE_PADRAO, indicadoresConvites, ROTULO_RESULTADO, ultimoPorCliente, type FiltroConvite,
+  convitesParados, filtrarAtendimentosPorConvite, filtrarPorConvite, FILTRO_CONVITE_ATENDIMENTOS, FILTRO_CONVITE_PADRAO, indicadoresConvites,
+  PERIODOS_SEM_CONVITE, ROTULO_RESULTADO, ultimoPorCliente, type Contato, type FiltroConvite,
 } from '../features/historico/convites';
-import { EnviarConvite, invalidarConvites, ModelosMensagem, SeletorResultado } from '../features/historico/ConvitesUi';
+import { EnviarConvite, HistoricoMensagens, invalidarConvites, ModelosMensagem, SeletorResultado } from '../features/historico/ConvitesUi';
 import { AgendarLembrete } from '../features/historico/LembretesUi';
 import { proximoPorCliente } from '../features/historico/lembretes';
 import {
-  clientesParaReativar, filtrarAtendimentos, FILTROS_ATENDIMENTOS_PADRAO, FILTROS_REATIVAR_PADRAO, indicadoresRetorno, periodoDoAtalho,
+  clientesDosAtendimentos, clientesParaReativar, filtrarAtendimentos, retornoDaCliente, FILTROS_ATENDIMENTOS_PADRAO, FILTROS_REATIVAR_PADRAO, indicadoresRetorno, periodoDoAtalho,
   ROTULO_SITUACAO_RETORNO, ROTULO_STATUS_ATENDIMENTO, SITUACOES_RETORNO, totaisAtendimentos,
   type Atalho, type ClienteComRetorno, type FiltrosAtendimentos, type FiltrosReativar, type SituacaoRetorno,
 } from '../features/historico/logic';
@@ -71,6 +72,44 @@ function Indicador({ titulo, valor, icone }: { titulo: string; valor: string; ic
   );
 }
 
+/** Filtro "quem ainda não recebeu mensagem" no período escolhido. */
+function FiltroMensagem({ fc, setFc }: { fc: FiltroConvite; setFc: (f: FiltroConvite) => void }) {
+  return (
+    <>
+      <select aria-label="Mensagem" value={fc.convite} onChange={(e) => setFc({ ...fc, convite: e.target.value as FiltroConvite['convite'] })} className={`${inputCls} md:max-w-[240px]`}>
+        <option value="todos">Qualquer mensagem</option>
+        <option value="antigo">Sem mensagem no período</option>
+        <option value="nunca">Nunca recebeu mensagem</option>
+      </select>
+      {fc.convite === 'antigo' && (
+        <select aria-label="Período sem mensagem" value={fc.diasSemConvite} onChange={(e) => setFc({ ...fc, diasSemConvite: Number(e.target.value) })} className={`${inputCls} md:max-w-[200px]`}>
+          {PERIODOS_SEM_CONVITE.map((d) => <option key={d} value={d}>Últimos {d} dias</option>)}
+        </select>
+      )}
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" checked={fc.incluirNaoQuer} onChange={(e) => setFc({ ...fc, incluirNaoQuer: e.target.checked })} className="h-4 w-4 accent-rose-600" />
+        Incluir quem não quer contato
+      </label>
+    </>
+  );
+}
+
+/** Última mensagem da cliente, com o resultado e o acesso ao histórico completo. */
+function UltimaMensagem({ contato, naoQuer, onHistorico }: { contato: Contato | undefined; naoQuer: boolean; onHistorico: () => void }) {
+  return (
+    <>
+      {naoQuer && <p className="text-xs font-bold text-red-600 mb-1">Não quer contato</p>}
+      {contato ? (
+        <>
+          <p className="text-xs text-slate-500 mb-1" title={ROTULO_RESULTADO[contato.resultado]}>{dataBR(contato.enviado_em)}</p>
+          <SeletorResultado contato={contato} />
+          <button type="button" onClick={onHistorico} className="text-[11px] text-slate-500 underline hover:text-slate-800 mt-1">Ver histórico</button>
+        </>
+      ) : <p className="text-xs text-slate-400">Nunca recebeu</p>}
+    </>
+  );
+}
+
 function Reativar() {
   const hoje = dataLocal();
   const [f, setF] = useState<FiltrosReativar>(FILTROS_REATIVAR_PADRAO);
@@ -86,6 +125,7 @@ function Reativar() {
   const { data: lembretes = [] } = useQuery({ queryKey: historicoKeys.lembretes, queryFn: listarLembretesPendentes });
   const proximoLembrete = useMemo(() => proximoPorCliente(lembretes), [lembretes]);
   const [lembrete, setLembrete] = useState<ClienteComRetorno | null>(null);
+  const [historico, setHistorico] = useState<{ id: string; nome: string } | null>(null);
   const { data: naoQuer = new Set<string>() } = useQuery({ queryKey: historicoKeys.naoQuer, queryFn: listarNaoQuerContato });
   const ultimo = useMemo(() => ultimoPorCliente(contatos), [contatos]);
   const ind = useMemo(() => indicadoresRetorno(data.filter((c) => !naoQuer.has(c.cliente_id)), hoje), [data, hoje, naoQuer]);
@@ -146,20 +186,7 @@ function Reativar() {
             <input type="checkbox" checked={f.semAgendamentoFuturo} onChange={(e) => setF({ ...f, semAgendamentoFuturo: e.target.checked })} className="h-4 w-4 accent-rose-600" />
             Só sem agendamento futuro
           </label>
-          <select aria-label="Convite" value={fc.convite} onChange={(e) => setFc({ ...fc, convite: e.target.value as FiltroConvite['convite'] })} className={`${inputCls} md:max-w-[220px]`}>
-            <option value="todos">Qualquer convite</option>
-            <option value="nunca">Nunca recebeu convite</option>
-            <option value="antigo">Última mensagem há mais de...</option>
-          </select>
-          {fc.convite === 'antigo' && (
-            <label className="flex items-center gap-1 text-sm text-slate-700">
-              <input type="number" min={1} max={365} value={fc.diasSemConvite} onChange={(e) => setFc({ ...fc, diasSemConvite: Math.max(1, Number(e.target.value) || 1) })} className={`${inputCls} !w-20`} /> dias
-            </label>
-          )}
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={fc.incluirNaoQuer} onChange={(e) => setFc({ ...fc, incluirNaoQuer: e.target.checked })} className="h-4 w-4 accent-rose-600" />
-            Incluir quem não quer contato
-          </label>
+          <FiltroMensagem fc={fc} setFc={setFc} />
           <span className="text-xs text-slate-500 md:ml-auto">{lista.length} cliente(s)</span>
         </div>
       </div>
@@ -205,13 +232,7 @@ function Reativar() {
                   <p className="text-xs text-slate-500">ticket {c.ticket_medio_12m ? brl(c.ticket_medio_12m) : '-'}</p>
                 </td>
                 <td className="p-3 min-w-[150px]">
-                  {naoQuer.has(c.cliente_id) && <p className="text-xs font-bold text-red-600 mb-1">Não quer contato</p>}
-                  {ultimo.get(c.cliente_id) ? (
-                    <>
-                      <p className="text-xs text-slate-500 mb-1" title={ROTULO_RESULTADO[ultimo.get(c.cliente_id)!.resultado]}>{dataBR(ultimo.get(c.cliente_id)!.enviado_em)}</p>
-                      <SeletorResultado contato={ultimo.get(c.cliente_id)!} />
-                    </>
-                  ) : <p className="text-xs text-slate-400">Nunca recebeu</p>}
+                  <UltimaMensagem contato={ultimo.get(c.cliente_id)} naoQuer={naoQuer.has(c.cliente_id)} onHistorico={() => setHistorico({ id: c.cliente_id, nome: c.nome })} />
                   {proximoLembrete.get(c.cliente_id) && <p className="text-[11px] text-violet-700 mt-1">Lembrete em {isoParaBR(proximoLembrete.get(c.cliente_id)!.data)}</p>}
                 </td>
                 <td className="p-3">
@@ -233,6 +254,7 @@ function Reativar() {
         <EnviarConvite fila={envio.fila} inicio={envio.inicio} nomeClinica={perfil?.estabelecimento?.nome ?? ''} ultimoConvite={ultimo} naoQuer={naoQuer} onFechar={() => setEnvio(null)} />
       )}
       {mensagens && <ModelosMensagem onFechar={() => setMensagens(false)} />}
+      {historico && <HistoricoMensagens clienteId={historico.id} nome={historico.nome} onFechar={() => setHistorico(null)} />}
       {lembrete && <AgendarLembrete clienteId={lembrete.cliente_id} nome={lembrete.nome} retornoPrevisto={lembrete.retorno.previsto} onFechar={() => setLembrete(null)} />}
     </div>
   );
@@ -250,11 +272,28 @@ function Atendimentos() {
   const { data: catalogo } = useQuery({ queryKey: historicoKeys.catalogo, queryFn: listarCatalogoHistorico });
   const { data: telefones = new Map<string, string | null>() } = useQuery({ queryKey: historicoKeys.telefones, queryFn: listarTelefones });
   const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos });
+  // Convite por WhatsApp a partir do atendimento (mesmo registro da reativação).
+  const { perfil } = useAuth();
+  const [fc, setFc] = useState<FiltroConvite>(FILTRO_CONVITE_ATENDIMENTOS);
+  const [envio, setEnvio] = useState<{ fila: ClienteComRetorno[]; inicio: number } | null>(null);
+  const [historico, setHistorico] = useState<{ id: string; nome: string } | null>(null);
+  const [mensagens, setMensagens] = useState(false);
+  const { data: reativacao = [] } = useQuery({ queryKey: historicoKeys.reativacao, queryFn: listarClientesReativacao });
+  const { data: contatos = [] } = useQuery({ queryKey: historicoKeys.contatos, queryFn: listarContatos });
+  const { data: naoQuer = new Set<string>() } = useQuery({ queryKey: historicoKeys.naoQuer, queryFn: listarNaoQuerContato });
+  const ultimo = useMemo(() => ultimoPorCliente(contatos), [contatos]);
+  const comRetorno = useMemo(() => reativacao.map((c) => ({ ...c, retorno: retornoDaCliente(c, hoje) })), [reativacao, hoje]);
 
   const categoriaDoServico = useMemo(() => new Map((catalogo?.servicos ?? []).map((s) => [s.id, s.categoria_id])), [catalogo]);
   const nomeCategoria = useMemo(() => new Map((catalogo?.categorias ?? []).map((c) => [c.id, c.nome])), [catalogo]);
-  const linhas = useMemo(() => filtrarAtendimentos(atend.data ?? [], f, categoriaDoServico, telefones), [atend.data, f, categoriaDoServico, telefones]);
+  const linhas = useMemo(
+    () => filtrarAtendimentosPorConvite(filtrarAtendimentos(atend.data ?? [], f, categoriaDoServico, telefones), ultimo, naoQuer, fc),
+    [atend.data, f, categoriaDoServico, telefones, ultimo, naoQuer, fc],
+  );
   const totais = totaisAtendimentos(linhas);
+  // Uma vez por cliente, na ordem da tabela: "Enviar para a próxima" não repete ninguém.
+  const fila = useMemo(() => clientesDosAtendimentos(linhas, comRetorno, telefones, hoje), [linhas, comRetorno, telefones, hoje]);
+  const abrirConvite = (clienteId: string) => setEnvio({ fila, inicio: Math.max(0, fila.findIndex((c) => c.cliente_id === clienteId)) });
 
   const escolherAtalho = (a: Atalho) => {
     setAtalho(a);
@@ -301,6 +340,19 @@ function Atendimentos() {
             {FORMAS.map((x) => <option key={x} value={x}>{ROTULO_FORMA[x]}</option>)}
           </select>
         </div>
+        <div className="flex flex-col md:flex-row gap-3 md:items-center">
+          <FiltroMensagem fc={fc} setFc={setFc} />
+          <span className="text-xs text-slate-500 md:ml-auto">{fila.length} cliente(s)</span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => setMensagens(true)} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 flex items-center gap-2">
+          <MessageSquareText size={16} /> Mensagens
+        </button>
+        <button type="button" disabled={fila.length === 0} onClick={() => setEnvio({ fila, inicio: 0 })} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold flex items-center gap-2 disabled:opacity-50">
+          <MessageCircle size={16} /> Enviar em sequência ({fila.length})
+        </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -314,11 +366,12 @@ function Atendimentos() {
       {atend.error && <p className="text-sm text-red-600">{mensagemDeErro(atend.error, 'Não foi possível carregar os atendimentos.', 'historico_atendimentos')}</p>}
 
       <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[860px]">
+        <table className="w-full text-sm min-w-[1100px]">
           <thead className="bg-slate-50 text-left text-xs text-slate-500">
             <tr>
               <th className="p-3">Data</th><th className="p-3">Cliente</th><th className="p-3">Serviço</th><th className="p-3">Categoria</th>
               <th className="p-3">Profissional</th><th className="p-3 text-right">Valor</th><th className="p-3">Pagamento</th><th className="p-3">Situação</th>
+              <th className="p-3">Última mensagem</th><th className="p-3">WhatsApp</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -332,14 +385,28 @@ function Atendimentos() {
                 <td className="p-3 text-right tabular-nums">{brl(l.valor_cobrado ?? 0)}</td>
                 <td className="p-3">{l.payment_method ? ROTULO_FORMA[l.payment_method as FormaPagamento] ?? l.payment_method : '-'}</td>
                 <td className="p-3">{ROTULO_STATUS_ATENDIMENTO[l.status] ?? l.status}</td>
+                <td className="p-3 min-w-[150px]">
+                  {l.client_id && <UltimaMensagem contato={ultimo.get(l.client_id)} naoQuer={naoQuer.has(l.client_id)} onHistorico={() => setHistorico({ id: l.client_id!, nome: l.cliente_nome })} />}
+                </td>
+                <td className="p-3">
+                  {l.client_id && (
+                    <button type="button" onClick={() => abrirConvite(l.client_id!)} aria-label={`Enviar convite por WhatsApp para ${l.cliente_nome}`}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1"><MessageCircle size={14} /> Convite</button>
+                  )}
+                </td>
               </tr>
             ))}
             {!atend.isLoading && linhas.length === 0 && (
-              <tr><td colSpan={8} className="p-6 text-center text-slate-500">Nenhum atendimento no período com esses filtros.</td></tr>
+              <tr><td colSpan={10} className="p-6 text-center text-slate-500">Nenhum atendimento no período com esses filtros.</td></tr>
             )}
           </tbody>
         </table>
       </div>
+      {envio !== null && (
+        <EnviarConvite fila={envio.fila} inicio={envio.inicio} nomeClinica={perfil?.estabelecimento?.nome ?? ''} ultimoConvite={ultimo} naoQuer={naoQuer} onFechar={() => setEnvio(null)} />
+      )}
+      {mensagens && <ModelosMensagem onFechar={() => setMensagens(false)} />}
+      {historico && <HistoricoMensagens clienteId={historico.id} nome={historico.nome} onFechar={() => setHistorico(null)} />}
     </div>
   );
 }

@@ -2,14 +2,14 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, MessageCircle, Plus, SkipForward, Trash2 } from 'lucide-react';
 import { Campo, Confirmar, Modal, inputCls } from '../../components/ui';
-import { isoParaBR } from '../../lib/formatos';
+import { dataHoraBR, isoParaBR } from '../../lib/formatos';
 import { mensagemDeErro } from '../../lib/seguranca/erros';
 import {
   DADOS_EXEMPLO, linkConvite, MODELOS_SUGERIDOS, preencherMensagem, primeiroNome, RESULTADOS_MANUAIS, ROTULO_RESULTADO,
   telefoneWhatsapp, travasDoConvite, VARIAVEIS, type Contato, type DadosConvite, type ModeloMensagem, type ResultadoConvite,
 } from './convites';
 import {
-  definirNaoQuerContato, excluirModelo, historicoKeys, listarContatos, listarModelos, listarNaoQuerContato, registrarContato,
+  definirNaoQuerContato, excluirModelo, historicoKeys, listarContatos, listarContatosDaCliente, listarModelos, listarNaoQuerContato, registrarContato,
   registrarResultado, salvarModelo,
 } from './api';
 import type { ClienteComRetorno } from './logic';
@@ -129,6 +129,34 @@ export function EnviarConvite({ fila, inicio, nomeClinica, ultimoConvite, naoQue
         {enviado && <p className="text-sm text-emerald-700">Envio registrado. Depois marque o resultado na lista.</p>}
         {erro && <p role="alert" className="text-sm text-red-700">{erro}</p>}
       </div>
+    </Modal>
+  );
+}
+
+/** Todas as mensagens que a cliente recebeu, com o texto enviado e o resultado de cada uma. */
+export function HistoricoMensagens({ clienteId, nome, onFechar }: { clienteId: string; nome: string; onFechar: () => void }) {
+  const { modelos } = useModelos();
+  const { data = [], isLoading, error } = useQuery({ queryKey: historicoKeys.contatosDaCliente(clienteId), queryFn: () => listarContatosDaCliente(clienteId) });
+  const nomeModelo = new Map(modelos.filter((m) => m.id).map((m) => [m.id!, m.nome]));
+  return (
+    <Modal titulo={`Mensagens de ${nome}`} onClose={onFechar}>
+      {isLoading && <p className="text-sm text-slate-500">Carregando...</p>}
+      {error && <p role="alert" className="text-sm text-red-700">{mensagemDeErro(error, 'Não foi possível carregar as mensagens.', 'historico_mensagens')}</p>}
+      {!isLoading && !error && data.length === 0 && <p className="text-sm text-slate-600">A cliente ainda não recebeu nenhuma mensagem pelo sistema.</p>}
+      <ol className="space-y-3">
+        {data.map((c) => (
+          <li key={c.id} className="rounded-xl border border-slate-200 p-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-bold text-slate-800">
+                {dataHoraBR(c.enviado_em)}
+                {c.modelo_id && nomeModelo.get(c.modelo_id) && <span className="font-normal text-slate-500"> · {nomeModelo.get(c.modelo_id)}</span>}
+              </p>
+              <div className="w-40"><SeletorResultado contato={c} /></div>
+            </div>
+            <p className="text-sm text-slate-700 whitespace-pre-line bg-emerald-50 rounded-lg p-2.5">{c.texto_enviado}</p>
+          </li>
+        ))}
+      </ol>
     </Modal>
   );
 }

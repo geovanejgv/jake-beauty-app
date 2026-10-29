@@ -121,16 +121,33 @@ export function indicadoresConvites(contatos: Contato[], valorDoAgendamento: Map
 export type FiltroConvite = { convite: 'todos' | 'nunca' | 'antigo'; diasSemConvite: number; incluirNaoQuer: boolean };
 export const FILTRO_CONVITE_PADRAO: FiltroConvite = { convite: 'todos', diasSemConvite: 30, incluirNaoQuer: false };
 
-/** Filtros de relacionamento: quem pediu para sair fica fora, salvo pedido expresso. */
+/** Períodos do filtro "sem mensagem há mais de...", em dias. */
+export const PERIODOS_SEM_CONVITE = [7, 15, 30, 60, 90, 180, 365] as const;
+
+/** Regra do filtro para uma cliente: quem pediu para sair fica fora, salvo pedido expresso. */
+export function passaFiltroConvite(
+  clienteId: string, ultimo: Map<string, Contato>, naoQuer: Set<string>, f: FiltroConvite, agora = new Date(),
+): boolean {
+  if (!f.incluirNaoQuer && naoQuer.has(clienteId)) return false;
+  const u = ultimo.get(clienteId);
+  if (f.convite === 'nunca') return !u;
+  if (f.convite === 'antigo') return !u || new Date(u.enviado_em).getTime() < agora.getTime() - f.diasSemConvite * 86_400_000;
+  return true;
+}
+
+/** Filtros de relacionamento na lista de reativação. */
 export function filtrarPorConvite<T extends { cliente_id: string }>(
   lista: T[], ultimo: Map<string, Contato>, naoQuer: Set<string>, f: FiltroConvite, agora = new Date(),
 ): T[] {
-  const limite = agora.getTime() - f.diasSemConvite * 86_400_000;
-  return lista.filter((c) => {
-    if (!f.incluirNaoQuer && naoQuer.has(c.cliente_id)) return false;
-    const u = ultimo.get(c.cliente_id);
-    if (f.convite === 'nunca') return !u;
-    if (f.convite === 'antigo') return !u || new Date(u.enviado_em).getTime() < limite;
-    return true;
-  });
+  return lista.filter((c) => passaFiltroConvite(c.cliente_id, ultimo, naoQuer, f, agora));
+}
+
+/** No histórico de atendimentos o padrão mostra todas, inclusive quem não quer contato. */
+export const FILTRO_CONVITE_ATENDIMENTOS: FiltroConvite = { convite: 'todos', diasSemConvite: 30, incluirNaoQuer: true };
+
+/** Mesmo filtro nos atendimentos; atendimento sem cliente só aparece sem filtro de convite. */
+export function filtrarAtendimentosPorConvite<T extends { client_id: string | null }>(
+  lista: T[], ultimo: Map<string, Contato>, naoQuer: Set<string>, f: FiltroConvite, agora = new Date(),
+): T[] {
+  return lista.filter((l) => (l.client_id ? passaFiltroConvite(l.client_id, ultimo, naoQuer, f, agora) : f.convite === 'todos' && f.incluirNaoQuer));
 }
