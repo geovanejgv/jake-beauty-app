@@ -130,3 +130,27 @@ export async function assinarFichaPublica(d: {
     p_dispositivo: navigator.userAgent.slice(0, 300),
   }))) as { assinado_em: string; hash: string };
 }
+
+// ----- Fase 4: ficha da cliente, alertas no agendamento e auditoria de acesso -----
+
+export type AlertaAnamnese = { cliente_id: string; ficha_id: string; tipo: TipoFicha; assinado_em: string; valida_ate: string; alertas: string[] };
+
+/** Fichas da cliente que quem está logado pode ver (RLS: a profissional, só as dela). */
+export async function listarFichasDaCliente(clienteId: string): Promise<(FichaResumo & { campos: Pick<EsquemaFicha, 'validadeMeses'> })[]> {
+  const linhas = ((await rodar(supabase.from('fichas').select(`${RESUMO}, campos->validadeMeses`).eq('client_id', clienteId)
+    .order('created_at', { ascending: false }).limit(200))) ?? []) as unknown as (FichaResumo & { validadeMeses: number | null })[];
+  return linhas.map(({ validadeMeses, ...f }) => ({ ...f, campos: { validadeMeses: validadeMeses ?? undefined } }));
+}
+
+/** Última anamnese e fotodepilação assinadas por cliente, com validade e alertas (só rótulos). */
+export async function alertasAnamnese(clientes: string[]): Promise<AlertaAnamnese[]> {
+  const ids = [...new Set(clientes)].slice(0, 500);
+  if (!ids.length) return [];
+  return ((await rodar(supabase.rpc('alertas_anamnese', { p_clientes: ids }))) ?? []) as AlertaAnamnese[];
+}
+
+/** Trilha LGPD: quem visualizou ou baixou a ficha (falha não bloqueia a tela). */
+export async function registrarAcessoFicha(id: string, baixou: boolean) {
+  const { error } = await supabase.rpc('ficha_registrar_acesso', { p_ficha: id, p_baixou: baixou });
+  return !error;
+}

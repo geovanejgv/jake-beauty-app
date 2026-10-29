@@ -1,10 +1,12 @@
 import React, { useMemo } from 'react';
-import { Lock } from 'lucide-react';
+import { AlertTriangle, Lock } from 'lucide-react';
 import { colunasSobrepostas, posicaoNaLinha, type Faixa } from './logic';
 
 export type EventoLinha = {
   id: string; start_time: string; end_time: string; status: string | null; professional_id: string | null;
   is_block?: boolean | null; block_reason?: string | null; cliente: string; servico: string; cor?: string;
+  /** Alertas da anamnese da cliente (rótulos), para a profissional ver antes do atendimento. */
+  alerta?: string;
 };
 
 const PX_HORA = 64;
@@ -86,11 +88,11 @@ export function LinhaDoTempo({ eventos, profissionais, mostrarSemProfissional, u
                   return (
                     <button key={e.id} type="button"
                       onClick={(ev) => { ev.stopPropagation(); onAbrir(e.id); }}
-                      title={e.is_block ? `${faixa} Bloqueado: ${e.block_reason ?? ''}` : `${faixa} ${e.cliente} - ${e.servico}`}
+                      title={e.is_block ? `${faixa} Bloqueado: ${e.block_reason ?? ''}` : `${faixa} ${e.cliente} - ${e.servico}${e.alerta ? `\nAtenção: ${e.alerta}` : ''}`}
                       className={`absolute rounded-lg border-l-4 border px-1.5 py-1 text-left overflow-hidden text-[11px] leading-tight shadow-sm hover:z-10 hover:shadow-md ${e.is_block ? 'bg-red-500 border-red-700 text-white' : COR_STATUS[e.status ?? 'scheduled'] ?? COR_STATUS.scheduled}`}
                       style={{ top: `${pos.topo}%`, height: `max(${pos.altura}%, 22px)`, left: `${e.faixa * largura}%`, width: `calc(${largura}% - 2px)`, borderLeftColor: e.is_block ? undefined : e.cor }}>
                       <span className="font-bold">{faixa}</span>{' '}
-                      {e.is_block ? <span className="block font-semibold"><Lock size={10} className="inline" /> Bloqueado{e.block_reason ? `: ${e.block_reason}` : ''}</span> : <span className="block font-semibold truncate">{e.cliente}</span>}
+                      {e.is_block ? <span className="block font-semibold"><Lock size={10} className="inline" /> Bloqueado{e.block_reason ? `: ${e.block_reason}` : ''}</span> : <span className="block font-semibold truncate">{e.alerta && <AlertTriangle size={10} className="inline mr-0.5 text-red-600" aria-label="Atenção na anamnese" />}{e.cliente}</span>}
                       {!e.is_block && <span className="block truncate opacity-80">{e.servico}</span>}
                     </button>
                   );

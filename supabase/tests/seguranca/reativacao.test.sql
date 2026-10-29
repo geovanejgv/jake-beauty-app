@@ -23,10 +23,11 @@ insert into public.clients (id, name, phone) values
   ('c2000000-0000-0000-0000-000000000002', 'Bia Agendada', '11999990002'),
   ('c3000000-0000-0000-0000-000000000003', 'Carla Sem Atendimento', '11999990003');
 insert into public.appointments (client_id, professional_id, servico_id, start_time, end_time, status, valor_cobrado, is_manual_reminder, is_block) values
-  -- Ana: duas visitas em 12 meses (60 dias de intervalo); a última tem manicure e pedicure no mesmo dia
-  ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '5e000000-0000-0000-0000-000000000003', now() - interval '80 days', now() - interval '80 days' + interval '1 hour', 'completed', 100, false, false),
-  ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '5e000000-0000-0000-0000-000000000002', now() - interval '20 days' - interval '1 hour', now() - interval '20 days', 'completed', 60, false, false),
-  ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '5e000000-0000-0000-0000-000000000001', now() - interval '20 days', now() - interval '20 days' + interval '1 hour', 'completed', 40, false, false),
+  -- Ana: duas visitas em 12 meses (60 dias de intervalo); a última tem manicure e pedicure no mesmo dia.
+  -- Horários no meio do dia em São Paulo: "agora menos N dias" falha perto da meia-noite local.
+  ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '5e000000-0000-0000-0000-000000000003', (((current_date - 80)::timestamp + time '14:00') at time zone 'America/Sao_Paulo'), (((current_date - 80)::timestamp + time '15:00') at time zone 'America/Sao_Paulo'), 'completed', 100, false, false),
+  ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '5e000000-0000-0000-0000-000000000002', (((current_date - 20)::timestamp + time '13:00') at time zone 'America/Sao_Paulo'), (((current_date - 20)::timestamp + time '14:00') at time zone 'America/Sao_Paulo'), 'completed', 60, false, false),
+  ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '5e000000-0000-0000-0000-000000000001', (((current_date - 20)::timestamp + time '14:00') at time zone 'America/Sao_Paulo'), (((current_date - 20)::timestamp + time '15:00') at time zone 'America/Sao_Paulo'), 'completed', 40, false, false),
   ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', '5e000000-0000-0000-0000-000000000001', now() - interval '5 days', now() - interval '5 days' + interval '1 hour', 'cancelled', 40, false, false),
   ('c1000000-0000-0000-0000-000000000001', 'bb000000-0000-0000-0000-0000000000b1', null, now() + interval '3 days', now() + interval '3 days' + interval '1 hour', 'scheduled', null, true, false),
   -- Bia: atendida há 400 dias e com horário marcado
@@ -36,7 +37,7 @@ insert into public.appointments (client_id, professional_id, servico_id, start_t
 set role authenticated;
 select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
 select pg_temp.ok((select count(*) = 2 from public.clientes_reativacao()), 'só clientes com atendimento concluído');
-select pg_temp.ok((select ultimo_atendimento::date = (now() - interval '20 days')::date and retorno_ciclo_dias = 15
+select pg_temp.ok((select (ultimo_atendimento at time zone 'America/Sao_Paulo')::date = current_date - 20 and retorno_ciclo_dias = 15
                           and visitas_12m = 2 and intervalo_medio_dias = 60 and total_12m = 200 and ticket_medio_12m = 100
                           and ultimo_profissional = 'Pro Um' and proximo_agendamento is null and telefone = '11999990001'
                      from public.clientes_reativacao() where cliente_id = 'c1000000-0000-0000-0000-000000000001'),

@@ -42,6 +42,7 @@ export const ANAMNESE: EsquemaFicha = {
   titulo: 'Ficha de Anamnese',
   subtitulo: 'Estética facial e corporal',
   campoNascimento: 'data_nascimento',
+  validadeMeses: 12,
   declaracaoFinal: 'Declaro que as informações acima são verdadeiras e completas e que vou avisar a profissional sobre qualquer mudança na minha saúde antes das próximas sessões.',
   secoes: [
     {
@@ -126,6 +127,7 @@ export const FOTODEPILACAO: EsquemaFicha = {
   titulo: 'Fotodepilação: Laser / Luz Intensa Pulsada',
   subtitulo: 'Avaliação e termo de autorização',
   campoNascimento: 'data_nascimento',
+  validadeMeses: 12,
   declaracaoFinal: 'Declaro que as informações acima são verdadeiras e completas, que recebi as orientações e tirei minhas dúvidas, e autorizo a fotodepilação nas áreas indicadas.',
   secoes: [
     {
