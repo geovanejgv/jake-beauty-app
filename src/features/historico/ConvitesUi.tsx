@@ -2,14 +2,14 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, MessageCircle, Plus, SkipForward, Trash2 } from 'lucide-react';
 import { Campo, Confirmar, Modal, inputCls } from '../../components/ui';
-import { dataHoraBR, isoParaBR } from '../../lib/formatos';
+import { dataHoraBR, formatarTelefone, isoParaBR } from '../../lib/formatos';
 import { mensagemDeErro } from '../../lib/seguranca/erros';
 import {
   DADOS_EXEMPLO, linkConvite, MODELOS_SUGERIDOS, preencherMensagem, primeiroNome, RESULTADOS_MANUAIS, ROTULO_RESULTADO,
   telefoneWhatsapp, travasDoConvite, VARIAVEIS, type Contato, type DadosConvite, type ModeloMensagem, type ResultadoConvite,
 } from './convites';
 import {
-  definirNaoQuerContato, excluirModelo, historicoKeys, listarContatos, listarContatosDaCliente, listarModelos, listarNaoQuerContato, registrarContato,
+  atualizarTelefone, definirNaoQuerContato, excluirModelo, historicoKeys, listarContatos, listarContatosDaCliente, listarModelos, listarNaoQuerContato, registrarContato,
   registrarResultado, salvarModelo,
 } from './api';
 import type { ClienteComRetorno } from './logic';
@@ -157,6 +157,44 @@ export function HistoricoMensagens({ clienteId, nome, onFechar }: { clienteId: s
           </li>
         ))}
       </ol>
+    </Modal>
+  );
+}
+
+/** Corrige o telefone da cliente sem sair do histórico; avisa quando o número não serve para o WhatsApp. */
+export function EditarTelefone({ clienteId, nome, telefone, onFechar }: { clienteId: string; nome: string; telefone: string | null; onFechar: () => void }) {
+  const qc = useQueryClient();
+  const [valor, setValor] = useState(formatarTelefone(telefone));
+  const [erro, setErro] = useState<string | null>(null);
+  const digitos = valor.replace(/\D/g, '');
+  const valido = digitos.length === 10 || digitos.length === 11;
+  const salvar = useMutation({
+    mutationFn: () => atualizarTelefone(clienteId, valor),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: historicoKeys.telefones });
+      void qc.invalidateQueries({ queryKey: historicoKeys.reativacao });
+      void qc.invalidateQueries({ queryKey: historicoKeys.nomes });
+      void qc.invalidateQueries({ queryKey: ['clients'] });
+      onFechar();
+    },
+    onError: (e) => setErro(mensagemDeErro(e, 'Não foi possível salvar o telefone.', 'historico_editar_telefone')),
+  });
+  return (
+    <Modal titulo={`Telefone de ${nome}`} onClose={onFechar} rodape={
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onFechar} className="px-4 py-2 text-sm font-bold text-slate-600 border border-slate-200 rounded-lg">Cancelar</button>
+        <button type="button" disabled={!valido || salvar.isPending} onClick={() => salvar.mutate()} className="px-4 py-2 text-sm font-bold text-white bg-rose-600 rounded-lg disabled:opacity-50">Salvar</button>
+      </div>
+    }>
+      <div className="space-y-3">
+        <Campo rotulo="Telefone (com DDD)" obrigatorio>
+          <input type="tel" autoFocus value={valor} placeholder="(11) 99999-9999" onChange={(e) => setValor(formatarTelefone(e.target.value))} className={inputCls} />
+        </Campo>
+        {valido && !telefoneWhatsapp(valor) && <p className="text-sm text-amber-700">Esse número não parece um celular válido para o WhatsApp.</p>}
+        {!valido && digitos.length > 0 && <p className="text-sm text-slate-500">Informe DDD e número: 10 ou 11 dígitos.</p>}
+        <p className="text-xs text-slate-500">A alteração vale para o cadastro da cliente.</p>
+        {erro && <p role="alert" className="text-sm text-red-700">{erro}</p>}
+      </div>
     </Modal>
   );
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, History, Loader2, MessageCircle, MessageSquareText, UserRoundCheck, UserRoundX, Users } from 'lucide-react';
+import { CalendarClock, History, Loader2, MessageCircle, MessageSquareText, Pencil, UserRoundCheck, UserRoundX, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { brl, dataBR, dataLocal, formatarTelefone, isoParaBR } from '../lib/formatos';
 import { mensagemDeErro } from '../lib/seguranca/erros';
@@ -17,7 +17,7 @@ import {
   convitesParados, filtrarAtendimentosPorConvite, filtrarPorConvite, FILTRO_CONVITE_ATENDIMENTOS, FILTRO_CONVITE_PADRAO, indicadoresConvites,
   PERIODOS_SEM_CONVITE, ROTULO_RESULTADO, ultimoPorCliente, type Contato, type FiltroConvite,
 } from '../features/historico/convites';
-import { EnviarConvite, HistoricoMensagens, invalidarConvites, ModelosMensagem, SeletorResultado } from '../features/historico/ConvitesUi';
+import { EditarTelefone, EnviarConvite, HistoricoMensagens, invalidarConvites, ModelosMensagem, SeletorResultado } from '../features/historico/ConvitesUi';
 import { AgendarLembrete } from '../features/historico/LembretesUi';
 import { proximoPorCliente } from '../features/historico/lembretes';
 import {
@@ -278,6 +278,7 @@ function Atendimentos() {
   const [envio, setEnvio] = useState<{ fila: ClienteComRetorno[]; inicio: number } | null>(null);
   const [historico, setHistorico] = useState<{ id: string; nome: string } | null>(null);
   const [mensagens, setMensagens] = useState(false);
+  const [editarTelefone, setEditarTelefone] = useState<{ id: string; nome: string } | null>(null);
   const { data: reativacao = [] } = useQuery({ queryKey: historicoKeys.reativacao, queryFn: listarClientesReativacao });
   const { data: contatos = [] } = useQuery({ queryKey: historicoKeys.contatos, queryFn: listarContatos });
   const { data: naoQuer = new Set<string>() } = useQuery({ queryKey: historicoKeys.naoQuer, queryFn: listarNaoQuerContato });
@@ -382,8 +383,10 @@ function Atendimentos() {
                   {l.client_id ? <Link to={`/clientes?cliente=${l.client_id}`} className="text-slate-800 hover:underline">{l.cliente_nome}</Link> : l.cliente_nome}
                   {/* Telefone ao lado do nome para conferir antes do convite. */}
                   {l.client_id && (
-                    <span className="ml-2 text-xs text-slate-500 whitespace-nowrap tabular-nums">
+                    <span className="ml-2 text-xs text-slate-500 whitespace-nowrap tabular-nums inline-flex items-center gap-1">
                       {telefones.get(l.client_id) ? formatarTelefone(telefones.get(l.client_id)!) : 'Sem telefone'}
+                      <button type="button" onClick={() => setEditarTelefone({ id: l.client_id!, nome: l.cliente_nome })} aria-label={`Editar telefone de ${l.cliente_nome}`}
+                        title="Editar telefone" className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50"><Pencil size={12} /></button>
                     </span>
                   )}
                 </td>
@@ -415,6 +418,9 @@ function Atendimentos() {
       )}
       {mensagens && <ModelosMensagem onFechar={() => setMensagens(false)} />}
       {historico && <HistoricoMensagens clienteId={historico.id} nome={historico.nome} onFechar={() => setHistorico(null)} />}
+      {editarTelefone && (
+        <EditarTelefone clienteId={editarTelefone.id} nome={editarTelefone.nome} telefone={telefones.get(editarTelefone.id) ?? null} onFechar={() => setEditarTelefone(null)} />
+      )}
     </div>
   );
 }

@@ -103,6 +103,11 @@ export async function definirNaoQuerContato(clienteId: string, valor: boolean) {
   await rodar(supabase.from('clients').update({ nao_quer_contato: valor, nao_quer_contato_em: valor ? new Date().toISOString() : null }).eq('id', clienteId));
 }
 
+/** Corrige o telefone da cliente pela tela de histórico (o RLS de clients decide quem pode). */
+export async function atualizarTelefone(clienteId: string, telefone: string) {
+  await rodar(supabase.from('clients').update({ phone: telefone }).eq('id', clienteId));
+}
+
 /** Valor dos atendimentos realizados que vieram de convites (faturamento reativado). */
 export async function valoresDosAgendamentos(ids: string[]): Promise<Map<string, number>> {
   if (!ids.length) return new Map();
