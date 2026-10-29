@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  clientesParaReativar, diasEntre, filtrarAtendimentos, FILTROS_ATENDIMENTOS_PADRAO, FILTROS_REATIVAR_PADRAO,
+  clientesDosAtendimentos, clientesParaReativar, diasEntre, filtrarAtendimentos, FILTROS_ATENDIMENTOS_PADRAO, FILTROS_REATIVAR_PADRAO,
   indicadoresRetorno, periodoDoAtalho, retornoDaCliente, somarDias, totaisAtendimentos,
   type ClienteReativacao, type LinhaHistorico,
 } from './logic';
@@ -86,5 +86,26 @@ describe('atendimentos', () => {
   });
   it('totais só com realizados, como o relatório de comissões', () => {
     expect(totaisAtendimentos(linhas)).toEqual({ quantidade: 4, realizados: 2, faturamento: 150.5, ticketMedio: 75.25 });
+  });
+});
+
+describe('clientes dos atendimentos para o convite', () => {
+  const linha = (id: string, client_id: string | null, dia: string, extra: Partial<LinhaHistorico> = {}): LinhaHistorico => ({
+    id, start_time: meioDia(dia), status: 'completed', valor_cobrado: 100, payment_method: null, professional_id: 'p', client_id,
+    servico_id: 's', cliente_nome: `Cliente ${client_id}`, servico_nome: 'Laser', profissional_nome: 'Jakeline de Jesus', ...extra,
+  });
+  const reativacao = [{ ...cliente('a', '2026-10-10', { ultimo_servico: 'Drenagem' }), retorno: retornoDaCliente(cliente('a', '2026-10-10'), HOJE) }];
+  const agora = new Date(meioDia(HOJE));
+  it('uma vez por cliente, na ordem; último serviço concluído vem da reativação', () => {
+    const r = clientesDosAtendimentos([linha('1', 'a', '2026-09-01'), linha('2', null, '2026-09-02'), linha('3', 'b', '2026-09-03'), linha('4', 'a', '2026-09-04')],
+      reativacao, new Map([['b', '11988887777']]), HOJE, agora);
+    expect(r.map((c) => c.cliente_id)).toEqual(['a', 'b']);
+    expect(r[0].ultimo_servico).toBe('Drenagem');
+    expect(r[1]).toMatchObject({ ultimo_servico: 'Laser', ultimo_profissional: 'Jakeline de Jesus', telefone: '11988887777', proximo_agendamento: null });
+    expect(r[1].retorno.ultimoDia).toBe('2026-09-03');
+  });
+  it('sem atendimento concluído, horário futuro da linha vira próximo agendamento', () => {
+    const r = clientesDosAtendimentos([linha('1', 'c', '2026-11-05', { status: 'scheduled' })], [], new Map(), HOJE, agora);
+    expect(r[0].proximo_agendamento).toBe(meioDia('2026-11-05'));
   });
 });

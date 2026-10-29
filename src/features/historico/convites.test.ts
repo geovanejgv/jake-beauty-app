@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  convitesParados, DADOS_EXEMPLO, filtrarPorConvite, FILTRO_CONVITE_PADRAO, indicadoresConvites, linkConvite, MODELOS_SUGERIDOS, preencherMensagem, telefoneWhatsapp,
+  convitesParados, DADOS_EXEMPLO, filtrarAtendimentosPorConvite, filtrarPorConvite, FILTRO_CONVITE_ATENDIMENTOS, FILTRO_CONVITE_PADRAO, indicadoresConvites, linkConvite, MODELOS_SUGERIDOS, preencherMensagem, telefoneWhatsapp,
   travasDoConvite, ultimoPorCliente, type Contato,
 } from './convites';
 
@@ -64,5 +64,23 @@ describe('filtro de convite', () => {
     expect(filtrarPorConvite(lista, ultimo, naoQuer, { ...FILTRO_CONVITE_PADRAO, convite: 'nunca' }, AGORA).map((c) => c.cliente_id)).toEqual(['c3']);
     expect(filtrarPorConvite(lista, ultimo, naoQuer, { ...FILTRO_CONVITE_PADRAO, convite: 'antigo' }, AGORA).map((c) => c.cliente_id)).toEqual(['c2', 'c3']);
     expect(filtrarPorConvite(lista, ultimo, naoQuer, { ...FILTRO_CONVITE_PADRAO, incluirNaoQuer: true }, AGORA)).toHaveLength(4);
+  });
+});
+
+describe('filtro de mensagem nos atendimentos', () => {
+  const linhas = [{ client_id: 'c1' }, { client_id: 'c2' }, { client_id: 'c2' }, { client_id: 'c3' }, { client_id: null }];
+  const ultimo = ultimoPorCliente([contato('a', { enviado_em: '2026-10-25T12:00:00Z' }), contato('b', { client_id: 'c2', enviado_em: '2026-09-20T12:00:00Z' })]);
+  const naoQuer = new Set(['c3']);
+  it('padrão mostra todas, inclusive sem cliente e quem não quer contato', () => {
+    expect(filtrarAtendimentosPorConvite(linhas, ultimo, naoQuer, FILTRO_CONVITE_ATENDIMENTOS, AGORA)).toHaveLength(5);
+  });
+  it('sem mensagem no período escolhido', () => {
+    const f = { ...FILTRO_CONVITE_ATENDIMENTOS, convite: 'antigo' as const, diasSemConvite: 30 };
+    expect(filtrarAtendimentosPorConvite(linhas, ultimo, naoQuer, f, AGORA).map((l) => l.client_id)).toEqual(['c2', 'c2', 'c3']);
+    expect(filtrarAtendimentosPorConvite(linhas, ultimo, naoQuer, { ...f, diasSemConvite: 60 }, AGORA).map((l) => l.client_id)).toEqual(['c3']);
+    expect(filtrarAtendimentosPorConvite(linhas, ultimo, naoQuer, { ...f, incluirNaoQuer: false }, AGORA).map((l) => l.client_id)).toEqual(['c2', 'c2']);
+  });
+  it('nunca recebeu', () => {
+    expect(filtrarAtendimentosPorConvite(linhas, ultimo, naoQuer, { ...FILTRO_CONVITE_ATENDIMENTOS, convite: 'nunca' }, AGORA).map((l) => l.client_id)).toEqual(['c3']);
   });
 });

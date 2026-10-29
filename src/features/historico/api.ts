@@ -11,6 +11,8 @@ export const historicoKeys = {
   telefones: ['historico', 'telefones'] as const,
   modelos: ['historico', 'modelos'] as const,
   contatos: ['historico', 'contatos'] as const,
+  /** Debaixo de contatos: invalidar os convites também atualiza o histórico da cliente. */
+  contatosDaCliente: (id: string) => ['historico', 'contatos', id] as const,
   naoQuer: ['historico', 'nao-quer'] as const,
   valores: (ids: string[]) => ['historico', 'valores', ids] as const,
   lembretes: ['historico', 'lembretes'] as const,
@@ -75,6 +77,12 @@ export async function listarContatos(): Promise<Contato[]> {
   const desde = new Date(Date.now() - 365 * 86_400_000).toISOString();
   return ((await rodar(supabase.from('contatos_reativacao').select(CAMPOS_CONTATO).gte('enviado_em', desde)
     .order('enviado_em', { ascending: false }).limit(5000))) ?? []) as Contato[];
+}
+
+/** Todas as mensagens de uma cliente, sem limite de data, da mais nova para a mais antiga. */
+export async function listarContatosDaCliente(clienteId: string): Promise<Contato[]> {
+  return ((await rodar(supabase.from('contatos_reativacao').select(CAMPOS_CONTATO).eq('client_id', clienteId)
+    .order('enviado_em', { ascending: false }).limit(500))) ?? []) as Contato[];
 }
 
 /** Grava o envio; autor, data e canal são do banco. */

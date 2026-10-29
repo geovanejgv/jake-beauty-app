@@ -205,3 +205,33 @@ export const ROTULO_STATUS_ATENDIMENTO: Record<StatusAgendamento, string> = {
   cancelled: 'Cancelado',
   no_show: 'Faltou',
 };
+
+/**
+ * Clientes das linhas, sem repetir, na ordem da tabela, para o convite por WhatsApp.
+ * O último serviço vem do último atendimento concluído (clientes_reativacao); quem nunca
+ * concluiu um atendimento usa a própria linha, e um horário futuro dela vira o próximo agendamento.
+ */
+export function clientesDosAtendimentos(
+  linhas: LinhaHistorico[],
+  reativacao: ClienteComRetorno[],
+  telefoneDaCliente: Map<string, string | null>,
+  hoje: string,
+  agora = new Date(),
+): ClienteComRetorno[] {
+  const porId = new Map(reativacao.map((c) => [c.cliente_id, c]));
+  const vistas = new Map<string, ClienteComRetorno>();
+  for (const l of linhas) {
+    if (!l.client_id || vistas.has(l.client_id)) continue;
+    const achada = porId.get(l.client_id);
+    if (achada) { vistas.set(l.client_id, achada); continue; }
+    const futuro = (l.status === 'scheduled' || l.status === 'confirmed') && new Date(l.start_time).getTime() > agora.getTime();
+    const base: ClienteReativacao = {
+      cliente_id: l.client_id, nome: l.cliente_nome, telefone: telefoneDaCliente.get(l.client_id) ?? null,
+      ultimo_atendimento: l.start_time, ultimo_servico: l.servico_nome || null, ultimo_profissional: l.profissional_nome || null,
+      retorno_ciclo_dias: null, visitas_12m: 0, intervalo_medio_dias: null, total_12m: 0, ticket_medio_12m: null,
+      proximo_agendamento: futuro ? l.start_time : null,
+    };
+    vistas.set(l.client_id, { ...base, retorno: retornoDaCliente(base, hoje) });
+  }
+  return [...vistas.values()];
+}
