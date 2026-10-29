@@ -1,10 +1,10 @@
-import { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Printer } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { mensagemDeErro } from '../lib/seguranca/erros';
-import { buscarFicha, fichasKeys } from '../features/fichas/api';
+import { buscarFicha, fichasKeys, registrarAcessoFicha } from '../features/fichas/api';
 import { DocumentoFicha } from '../features/fichas/DocumentoFicha';
 import { temaDe } from '../features/fichas/temas';
 import { equipeKeys, listarAtivos } from '../features/equipe/api';
@@ -18,6 +18,18 @@ export default function ImprimirFicha() {
   const { perfil } = useAuth();
   const { data: ficha, isLoading, error } = useQuery({ queryKey: fichasKeys.uma(id), queryFn: () => buscarFicha(id), enabled: !!id });
   const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos });
+  const [params] = useSearchParams();
+  const baixar = params.get('baixar') === '1';
+  const registrado = useRef(false);
+
+  // Trilha LGPD (dado de saúde): quem abriu e quem baixou. Com ?baixar=1, já abre a impressão.
+  useEffect(() => {
+    if (!ficha || registrado.current) return;
+    registrado.current = true;
+    void registrarAcessoFicha(ficha.id, baixar);
+    if (baixar) { const t = setTimeout(() => window.print(), 400); return () => clearTimeout(t); }
+  }, [ficha, baixar]);
+  const imprimir = () => { if (ficha && !baixar) void registrarAcessoFicha(ficha.id, true); window.print(); };
 
   useEffect(() => {
     const raiz = document.documentElement;
@@ -39,7 +51,7 @@ export default function ImprimirFicha() {
           <p className="text-sm text-slate-600">
             {ficha.status === 'pendente' ? 'Ficha ainda não assinada pela cliente.' : ficha.status === 'cancelada' ? 'Ficha cancelada.' : 'Ficha assinada.'}
           </p>
-          <button type="button" onClick={() => window.print()} className={`${tema.botao} inline-flex items-center gap-2 px-4 py-2 text-sm font-bold`}>
+          <button type="button" onClick={imprimir} className={`${tema.botao} inline-flex items-center gap-2 px-4 py-2 text-sm font-bold`}>
             <Printer size={16} /> Imprimir / Salvar PDF
           </button>
         </div>

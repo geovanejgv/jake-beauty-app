@@ -42,6 +42,8 @@ export type EsquemaFicha = {
   subtitulo?: string;
   /** Campo com a data de nascimento: menor de 18 anos assina com o responsável legal. */
   campoNascimento?: string;
+  /** Validade em meses de um questionário de saúde assinado (padrão 12). */
+  validadeMeses?: number;
   /** Texto final, acima das assinaturas. */
   declaracaoFinal?: string;
   secoes: Secao[];

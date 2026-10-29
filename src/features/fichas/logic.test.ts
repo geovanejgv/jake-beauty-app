@@ -135,3 +135,14 @@ describe('exemplos fictícios', () => {
     expect(validarRespostas(m, EXEMPLO_SALAO[m.tipo], 'salao', HOJE)).toBeNull();
   });
 });
+
+describe('validade da anamnese', () => {
+  it('vigente, vence em breve e vencida', async () => {
+    const { validadeDaFicha } = await import('./logic');
+    const hoje = new Date('2026-10-29T12:00:00Z');
+    expect(validadeDaFicha('2026-01-10T12:00:00Z', 12, hoje).situacao).toBe('vigente');
+    expect(validadeDaFicha('2025-11-10T12:00:00Z', 12, hoje)).toMatchObject({ situacao: 'vence_em_breve', dias: 12 });
+    expect(validadeDaFicha('2025-10-01T12:00:00Z', undefined, hoje).situacao).toBe('vencida');
+    expect(validadeDaFicha('2026-01-10T12:00:00Z', 6, hoje).situacao).toBe('vencida');
+  });
+});

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, ClipboardSignature, Copy, ExternalLink, Eye, FileText, Link2, Loader2, MessageCircle, Palette, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -39,7 +39,13 @@ export default function Fichas() {
   const admin = perfil?.role === 'admin';
   const queryClient = useQueryClient();
   const [filtro, setFiltro] = useState<StatusFicha>('pendente');
-  const [nova, setNova] = useState(false);
+  const [params, setParams] = useSearchParams();
+  // Vindo da ficha da cliente: ?nova=<tipo>&cliente=<id> abre a criação; ?link=<ficha> gera novo link.
+  const tipoParam = params.get('nova');
+  const novaInicial = tipoParam && ['anamnese', 'fotodepilacao', 'termo'].includes(tipoParam)
+    ? { tipo: tipoParam as TipoFicha, cliente: params.get('cliente') ?? '' } : null;
+  const [nova, setNova] = useState<boolean>(!!novaInicial);
+  const [novaPadrao] = useState(novaInicial);
   const [link, setLink] = useState<LinkGerado | null>(null);
   const [cancelando, setCancelando] = useState<FichaResumo | null>(null);
   const [excluindo, setExcluindo] = useState<FichaResumo | null>(null);
@@ -65,6 +71,17 @@ export default function Fichas() {
     onSuccess: () => { setExcluindo(null); void atualizar(); },
     onError: (e) => setAviso(mensagemDeErro(e, 'Não foi possível excluir.', 'excluir_ficha')),
   });
+
+  const linkPedido = useRef(params.get('link'));
+  useEffect(() => {
+    const id = linkPedido.current;
+    if (!id || isLoading) return;
+    linkPedido.current = null;
+    const f = fichas.find((x) => x.id === id && x.status === 'pendente');
+    if (f) enviarLink.mutate(f);
+    params.delete('link');
+    setParams(params, { replace: true });
+  }, [fichas, isLoading, params, setParams, enviarLink]);
 
   const lista = fichas.filter((f) => f.status === filtro);
   const contagem = (s: StatusFicha) => fichas.filter((f) => f.status === s).length;
@@ -147,7 +164,8 @@ export default function Fichas() {
       {nova && (
         <NovaFicha
           clientes={clientes} equipe={equipe} admin={admin} meuId={perfil?.id ?? null}
-          onFechar={() => setNova(false)}
+          tipoInicial={novaPadrao?.tipo} clienteInicial={novaPadrao?.cliente}
+          onFechar={() => { setNova(false); if (params.get('nova')) { params.delete('nova'); params.delete('cliente'); setParams(params, { replace: true }); } }}
           onCriada={(f) => { setNova(false); setFiltro('pendente'); enviarLink.mutate(f); }}
         />
       )}
@@ -166,17 +184,19 @@ export default function Fichas() {
   );
 }
 
-function NovaFicha({ clientes, equipe, admin, meuId, onFechar, onCriada }: {
+function NovaFicha({ clientes, equipe, admin, meuId, onFechar, onCriada, tipoInicial, clienteInicial }: {
   clientes: { id: string; name: string }[];
   equipe: { id: string; name: string; apelido: string | null }[];
   admin: boolean;
   meuId: string | null;
   onFechar: () => void;
   onCriada: (f: FichaResumo) => void;
+  tipoInicial?: TipoFicha;
+  clienteInicial?: string;
 }) {
-  const [tipo, setTipo] = useState<TipoFicha>('anamnese');
+  const [tipo, setTipo] = useState<TipoFicha>(tipoInicial ?? 'anamnese');
   const [busca, setBusca] = useState('');
-  const [clienteId, setClienteId] = useState('');
+  const [clienteId, setClienteId] = useState(clienteInicial ?? '');
   const [profissionalId, setProfissionalId] = useState(admin ? '' : meuId ?? '');
   const [dadosSalao, setDadosSalao] = useState<Respostas>({});
   const [erro, setErro] = useState<{ campo: string | null; mensagem: string } | null>(null);
@@ -184,8 +204,11 @@ function NovaFicha({ clientes, equipe, admin, meuId, onFechar, onCriada }: {
   const temCamposSalao = esquema.secoes.some((s) => s.campos.some((c) => c.origem === 'salao'));
   const filtrados = useMemo(() => {
     const t = busca.trim().toLowerCase();
-    return (t ? clientes.filter((c) => c.name.toLowerCase().includes(t)) : clientes).slice(0, 50);
-  }, [busca, clientes]);
+    const lista = (t ? clientes.filter((c) => c.name.toLowerCase().includes(t)) : clientes).slice(0, 50);
+    // A cliente já escolhida (vinda da ficha dela) continua na lista.
+    const escolhida = clientes.find((c) => c.id === clienteId);
+    return escolhida && !lista.includes(escolhida) ? [escolhida, ...lista] : lista;
+  }, [busca, clientes, clienteId]);
 
   const criar = useMutation({
     mutationFn: async () => {

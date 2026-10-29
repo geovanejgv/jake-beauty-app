@@ -248,3 +248,15 @@ export function tokenDoFragmento(hash: string): string | null {
   const t = hash.replace(/^#/, '');
   return /^[0-9a-f]{64}$/.test(t) ? t : null;
 }
+
+export type SituacaoValidade = 'vigente' | 'vence_em_breve' | 'vencida';
+export const DIAS_AVISO_VENCIMENTO = 30;
+
+/** Validade de anamnese assinada: vigente, vence em breve (30 dias) ou vencida. */
+export function validadeDaFicha(assinadoEm: string, validadeMeses: number | undefined, hoje = new Date()): { validaAte: Date; situacao: SituacaoValidade; dias: number } {
+  const validaAte = new Date(assinadoEm);
+  validaAte.setMonth(validaAte.getMonth() + (validadeMeses ?? 12));
+  const dias = Math.ceil((validaAte.getTime() - hoje.getTime()) / 86_400_000);
+  const situacao: SituacaoValidade = dias < 0 ? 'vencida' : dias <= DIAS_AVISO_VENCIMENTO ? 'vence_em_breve' : 'vigente';
+  return { validaAte, situacao, dias };
+}

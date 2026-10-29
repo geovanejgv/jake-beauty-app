@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AvisoBackup } from '../features/backup/AvisoBackup';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus, Users, BadgeCheck, Package } from 'lucide-react';
@@ -19,6 +19,7 @@ import { itemParaAbater } from '../features/pacotes/logic';
 import { agendarLembreteGrupo, clientesKeys, listarGrupos, listarMembros, listarOrigens } from '../features/clientes/api';
 import { CampoOrigem } from '../features/clientes/CampoOrigem';
 import { FaixaLembretes } from '../features/historico/LembretesUi';
+import { alertasAnamnese, type AlertaAnamnese } from '../features/fichas/api';
 
 /** Erro de agenda: conflito de horário vem com mensagem própria; o resto, genérica com código. */
 const erroAgenda = (e: unknown, padrao: string, origem: string) => mensagemAgenda(e) ?? mensagemDeErro(e, padrao, origem);
@@ -720,6 +721,20 @@ export default function Agenda() {
     }
   });
 
+  // Alertas da anamnese das clientes visíveis (só rótulos; o banco limita a quem atende a cliente).
+  const idsClientesVisiveis = useMemo(() => [...new Set(allEvents.filter((ev: any) => !ev.is_block && !ev.is_reminder_event && ev.client_id).map((ev: any) => ev.client_id as string))].sort(), [allEvents]);
+  const { data: alertasFichas = [] } = useQuery({ queryKey: ['fichas', 'alertas-agenda', idsClientesVisiveis], queryFn: () => alertasAnamnese(idsClientesVisiveis), enabled: idsClientesVisiveis.length > 0 });
+  const alertasPorCliente = useMemo(() => {
+    const m = new Map<string, AlertaAnamnese[]>();
+    for (const a of alertasFichas) m.set(a.cliente_id, [...(m.get(a.cliente_id) ?? []), a]);
+    return m;
+  }, [alertasFichas]);
+  const textoAlerta = (clienteId: string | null | undefined) => {
+    const lista = clienteId ? alertasPorCliente.get(clienteId) : undefined;
+    const t = (lista ?? []).flatMap((a) => a.alertas);
+    return t.length ? [...new Set(t)].join('; ') : undefined;
+  };
+
   const filteredEvents = allEvents.filter((ev: any) => {
     if (viewMode === 'day') return ev.event_date === selectedDate;
     if (viewMode === 'week') return weekDates.includes(ev.event_date);
@@ -908,7 +923,7 @@ export default function Agenda() {
             eventos={filteredEvents.filter((ev: any) => !ev.is_reminder_event).map((ev: any) => ({
               id: ev.id, start_time: ev.start_time, end_time: ev.end_time, status: ev.status, professional_id: ev.professional_id,
               is_block: ev.is_block, block_reason: ev.block_reason, cliente: ev.clients?.name || 'Cliente', servico: ev.services?.name || 'Procedimento',
-              cor: corCategoria(ev.servicos?.categoria_id),
+              cor: corCategoria(ev.servicos?.categoria_id), alerta: textoAlerta(ev.client_id),
             }))}
             profissionais={equipe.filter((p) => !filtroProf || p.id === filtroProf)}
             mostrarSemProfissional={(!filtroProf || filtroProf === 'sem') && filteredEvents.some((ev: any) => !ev.is_reminder_event && !ev.professional_id)}
@@ -931,7 +946,7 @@ export default function Agenda() {
               eventos={filteredEvents.filter((ev: any) => !ev.is_reminder_event).map((ev: any) => ({
                 id: ev.id, start_time: ev.start_time, end_time: ev.end_time, status: ev.status, professional_id: ev.professional_id,
                 is_block: ev.is_block, block_reason: ev.block_reason, cliente: ev.clients?.name || 'Cliente', servico: ev.services?.name || 'Procedimento',
-                cor: corCategoria(ev.servicos?.categoria_id),
+                cor: corCategoria(ev.servicos?.categoria_id), alerta: textoAlerta(ev.client_id),
               }))}
               profissionais={[]}
               mostrarSemProfissional={false}
@@ -996,7 +1011,7 @@ export default function Agenda() {
                             <span>{hour}:{min}</span>
                             <button onClick={(e) => { e.stopPropagation(); setAppointmentToDelete(ev); }} className="opacity-50 hover:opacity-100 hover:text-red-500"><Trash2 size={10} /></button>
                           </div>
-                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words max-md:tracking-tight">{ev.clients?.name}</p>
+                          <p className="font-bold truncate max-lg:whitespace-normal max-lg:line-clamp-2 max-lg:break-words max-md:tracking-tight" title={textoAlerta(ev.client_id) ? `Atenção: ${textoAlerta(ev.client_id)}` : undefined}>{textoAlerta(ev.client_id) && <AlertTriangle size={10} className="inline mr-0.5 text-red-600" aria-label="Atenção na anamnese" />}{ev.clients?.name}</p>
                           {ev.whatsapp_sent_at && (
                             <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded mt-0.5 uppercase font-bold flex items-center gap-0.5 w-max">
                               <CheckCircle size={8}/> {new Date(ev.whatsapp_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
@@ -1394,6 +1409,7 @@ export default function Agenda() {
 
             <form onSubmit={handleEditSubmit} className="space-y-4">
               <div><label className="block text-xs font-bold text-slate-500 mb-1">Cliente (Somente Leitura)</label><input type="text" disabled value={editingAppointment.clients?.name || ''} className="w-full border bg-slate-100 p-2.5 rounded-lg text-slate-500 cursor-not-allowed font-medium" /></div>
+              <AvisoAnamnese fichas={editingAppointment.client_id ? alertasPorCliente.get(editingAppointment.client_id) : undefined} />
               {agendaOutras && (
                 <div><label className="block text-xs font-bold text-slate-500 mb-1">Profissional</label>
                   <select value={editProf} onChange={(e) => setEditProf(e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 text-sm bg-white">
@@ -1460,6 +1476,26 @@ export default function Agenda() {
             <div className="flex space-x-3 pt-4"><button onClick={() => setAppointmentToDelete(null)} className="w-1/2 border border-slate-200 bg-slate-50 text-slate-600 p-2.5 rounded-lg font-medium">Voltar</button><button onClick={() => deleteAppointmentMutation.mutate(appointmentToDelete)} disabled={deleteAppointmentMutation.isPending} className="w-1/2 bg-red-600 text-white p-2.5 rounded-lg font-bold">Sim, Excluir</button></div>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Na tela do atendimento: alertas da anamnese, ou aviso de anamnese vencida ou ausente (não bloqueia). */
+function AvisoAnamnese({ fichas }: { fichas: AlertaAnamnese[] | undefined }) {
+  if (!fichas || fichas.length === 0) {
+    return <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">Sem anamnese assinada (ou sem acesso a ela). Confira antes do procedimento.</p>;
+  }
+  const alertas = [...new Set(fichas.flatMap((f) => f.alertas))];
+  const vencida = fichas.every((f) => new Date(f.valida_ate).getTime() < Date.now());
+  return (
+    <div className="space-y-1.5">
+      {vencida && <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">Anamnese vencida. Peça uma nova para a cliente.</p>}
+      {alertas.length > 0 && (
+        <div className="text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg p-2.5">
+          <p className="font-bold flex items-center gap-1"><AlertTriangle size={12} /> Atenção na anamnese</p>
+          <ul className="list-disc pl-4 mt-1">{alertas.map((a) => <li key={a}>{a}</li>)}</ul>
         </div>
       )}
     </div>
