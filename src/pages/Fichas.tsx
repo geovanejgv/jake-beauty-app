@@ -250,9 +250,18 @@ function NovaFicha({ clientes, equipe, admin, meuId, onFechar, onCriada, tipoIni
         </Campo>
         <Campo rotulo="Cliente" obrigatorio composto dica="A cliente nova é cadastrada em Clientes.">
           <input type="search" placeholder="Buscar pelo nome" value={busca} onChange={(e) => setBusca(e.target.value)} className={inputCls} />
-          <select size={5} value={clienteId} onChange={(e) => { setClienteId(e.target.value); setErro(null); }} className={`${inputCls} mt-2`} aria-label="Cliente">
-            {filtrados.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          {/* Lista de botões, não <select size>: sem cliente escolhida, o React marca a primeira opção na tela
+              e o clique nela não dispara onChange, então a ficha seguia sem cliente. */}
+          <div role="radiogroup" aria-label="Cliente" className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+            {filtrados.length === 0 && <p className="p-3 text-sm text-slate-500">Nenhuma cliente encontrada.</p>}
+            {filtrados.map((c) => (
+              <button key={c.id} type="button" role="radio" aria-checked={clienteId === c.id}
+                onClick={() => { setClienteId(c.id); setErro(null); }}
+                className={`block w-full px-3 py-2 text-left text-sm ${clienteId === c.id ? 'bg-rose-600 text-white font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>
+                {c.name}
+              </button>
+            ))}
+          </div>
         </Campo>
         {admin && (
           <Campo rotulo="Profissional" dica="A profissional escolhida vê a ficha e as respostas de saúde.">
