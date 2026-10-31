@@ -928,7 +928,7 @@ export default function Agenda() {
       </div>
 
       {/* Barra inferior do celular: visão, filtros e ações; o calendário fica com o resto da tela. */}
-      <div className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.08)] px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] space-y-2">
+      <div className="md:hidden fixed inset-x-0 bottom-0 z-30 glass bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.08)] px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] space-y-2">
         <div className="flex items-center gap-2">
           <div className="flex-1 min-w-0">{modosVisao}</div>
           <AvisoBackup tipo="agenda" exibir="botao" compacto />
