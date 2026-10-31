@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BellRing, CalendarHeart, CheckCircle, Send } from 'lucide-react';
 import { Modal, inputCls } from '../../components/ui';
@@ -36,13 +36,15 @@ const ROTULO: Record<ReturnType<typeof situacaoLembrete>, string> = {
  * Lista do dia (padrão: amanhã) para lembrar cada cliente pelo WhatsApp, uma por vez,
  * e os lembretes de retorno do mesmo dia (chamar a cliente para agendar de novo).
  */
-export function LembretesDoDia<T extends RetornoLembrete>({ agendamentos, diaInicial, podeEnviar, nomeProf, onChamarRetorno, onErro, onFechar }: {
+export function LembretesDoDia<T extends RetornoLembrete>({ agendamentos, diaInicial, podeEnviar, nomeProf, onChamarRetorno, secaoContato, onErro, onFechar }: {
   agendamentos: T[];
   diaInicial: string;
   podeEnviar: (a: T) => boolean;
   nomeProf: (id: string | null) => string;
   /** Abre a mensagem de retorno no WhatsApp e registra a chamada (mesma ação da faixa Lembretes). */
   onChamarRetorno: (a: T) => void;
+  /** Lembretes de contato da reativação do dia (só a administradora; a tela passa a lista). */
+  secaoContato?: (dia: string) => ReactNode;
   onErro: (texto: string) => void;
   onFechar: () => void;
 }) {
@@ -127,6 +129,7 @@ export function LembretesDoDia<T extends RetornoLembrete>({ agendamentos, diaIni
             </ul>
           </section>
         )}
+        {secaoContato?.(dia)}
       </div>
     </Modal>
   );
