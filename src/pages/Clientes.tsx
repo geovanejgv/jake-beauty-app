@@ -415,16 +415,16 @@ export default function Clientes() {
   };
 
   /** Ordenação por lista (celular e cartões, onde não há cabeçalho de coluna). */
-  const seletorOrdem = (classe = '') => (
+  const seletorOrdem = (classe = '', compacto = false) => (
     <div className={`flex items-center gap-2 ${classe}`}>
-      <label className="text-sm md:text-xs font-bold text-slate-600 md:text-slate-500 whitespace-nowrap" htmlFor="ordem-clientes">Ordenar por</label>
-      <select id="ordem-clientes" value={ordem.coluna} onChange={(e) => setOrdem({ coluna: e.target.value as Coluna, direcao: 'asc' })}
-        className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
+      <label className={compacto ? 'sr-only' : 'text-sm md:text-xs font-bold text-slate-600 md:text-slate-500 whitespace-nowrap'} htmlFor={compacto ? 'ordem-clientes-barra' : 'ordem-clientes'}>Ordenar por</label>
+      <select id={compacto ? 'ordem-clientes-barra' : 'ordem-clientes'} value={ordem.coluna} onChange={(e) => setOrdem({ coluna: e.target.value as Coluna, direcao: 'asc' })}
+        className={`flex-1 min-w-0 bg-white border border-slate-200 rounded-xl shadow-sm ${compacto ? 'h-9 px-2 text-xs' : 'px-3 py-2.5 text-sm'}`}>
         {colunasDisponiveis.map((c) => <option key={c} value={c}>{ROTULO_COLUNA[c]}</option>)}
       </select>
       <button type="button" onClick={() => setOrdem((o) => ({ ...o, direcao: o.direcao === 'asc' ? 'desc' : 'asc' }))}
         aria-label={ordem.direcao === 'asc' ? 'Ordem crescente; tocar para decrescente' : 'Ordem decrescente; tocar para crescente'}
-        className="sem-hover shrink-0 w-11 h-11 rounded-xl border border-slate-200 bg-white text-slate-600 flex items-center justify-center shadow-sm">
+        className={`sem-hover shrink-0 rounded-xl border border-slate-200 bg-white text-slate-600 flex items-center justify-center shadow-sm ${compacto ? 'w-9 h-9' : 'w-11 h-11'}`}>
         {ordem.direcao === 'asc' ? <ArrowUp size={18} /> : <ArrowDown size={18} />}
       </button>
     </div>
@@ -501,15 +501,39 @@ export default function Clientes() {
 
   const botaoModo = (m: ModoClientes, rotulo: string, Icone: typeof List) => (
     <button type="button" role="radio" aria-checked={modo === m} onClick={() => trocarModo(m)}
-      className={`sem-hover flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold transition-colors ${modo === m ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-rose-500'}`}>
+      className={`sem-hover flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold transition-colors ${modo === m ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-rose-500'}`}>
       <Icone size={16} /> <span>{rotulo}</span>
     </button>
   );
 
+  const modosExibicao = (
+    <div role="radiogroup" aria-label="Forma de exibição" className="flex p-1 rounded-xl bg-slate-100">
+      {botaoModo('lista', 'Lista', List)}
+      {botaoModo('cartoes', 'Cartões', LayoutGrid)}
+      {ehAdmin && botaoModo('grupos', 'Grupos', Users)}
+    </div>
+  );
+
+  const filtroOrigemEl = (
+    <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)} aria-label="Filtrar por origem" className="min-w-0 flex-1 md:flex-none h-9 md:h-auto px-2 md:px-3 md:py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm shadow-sm">
+      <option value="">Todas as origens</option>
+      {origens.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
+      <option value="sem">Sem origem</option>
+    </select>
+  );
+
+  const filtroGrupoEl = ehAdmin && grupos.length > 0 && (
+    <select value={grupoFiltro ?? ''} onChange={(e) => setGrupoFiltro(e.target.value || null)} aria-label="Filtrar por grupo" className="min-w-0 flex-1 md:flex-none h-9 md:h-auto px-2 md:px-3 md:py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm shadow-sm">
+      <option value="">Todos os grupos</option>
+      {grupos.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
+    </select>
+  );
+
   return (
-    <div className="w-full space-y-4 md:space-y-6">
+    <div className="w-full space-y-4 md:space-y-6 pb-32 md:pb-0">
       <div className="flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-3 md:gap-4">
-        <div className="flex items-start justify-between gap-3">
+        {/* Celular: no topo só a busca; título, modos, filtros e ações ficam na barra fixa embaixo. */}
+        <div className="hidden md:flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-2xl md:text-3xl font-black text-slate-800">Clientes</h2>
             <p className="text-sm text-slate-600 md:text-slate-500 mt-1">{ehAdmin ? 'Gestão de contatos e histórico de atendimentos' : 'Nome e histórico técnico. O contato das clientes fica com a administração do salão.'}</p>
@@ -518,12 +542,8 @@ export default function Clientes() {
             <Plus size={18} /> <span className="hidden sm:inline">Nova Cliente</span>
           </button>}
         </div>
-        <div className="flex flex-col sm:flex-row sm:flex-wrap w-full xl:w-auto gap-2 md:gap-3 sm:items-center">
-          <div role="radiogroup" aria-label="Forma de exibição" className="flex p-1 rounded-xl bg-slate-100">
-            {botaoModo('lista', 'Lista', List)}
-            {botaoModo('cartoes', 'Cartões', LayoutGrid)}
-            {ehAdmin && botaoModo('grupos', 'Grupos', Users)}
-          </div>
+        <div className="flex flex-col md:flex-row md:flex-wrap w-full xl:w-auto gap-2 md:gap-3 md:items-center">
+          <div className="hidden md:block">{modosExibicao}</div>
           {modo !== 'grupos' && <>
             <div className="relative flex-1 sm:min-w-[12rem] xl:w-72">
               <Search size={18} className="absolute left-3 top-3 text-slate-400" />
@@ -536,18 +556,9 @@ export default function Clientes() {
                 className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm shadow-sm"
               />
             </div>
-            <div className={`grid gap-2 ${ehAdmin && grupos.length > 0 ? 'grid-cols-2' : 'grid-cols-1'} sm:flex sm:gap-3`}>
-              <select value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)} aria-label="Filtrar por origem" className="min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
-                <option value="">Todas as origens</option>
-                {origens.map((o) => <option key={o.id} value={o.id}>{o.nome}</option>)}
-                <option value="sem">Sem origem</option>
-              </select>
-              {ehAdmin && grupos.length > 0 && (
-                <select value={grupoFiltro ?? ''} onChange={(e) => setGrupoFiltro(e.target.value || null)} aria-label="Filtrar por grupo" className="min-w-0 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm">
-                  <option value="">Todos os grupos</option>
-                  {grupos.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
-                </select>
-              )}
+            <div className="hidden md:flex gap-3">
+              {filtroOrigemEl}
+              {filtroGrupoEl}
             </div>
           </>}
           {ehAdmin && <button onClick={() => { resetForm(); setShowAddModal(true); }} className="hidden xl:flex bg-rose-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-rose-700 transition-colors items-center space-x-2 shadow-sm whitespace-nowrap">
@@ -556,11 +567,28 @@ export default function Clientes() {
         </div>
       </div>
 
-      <AvisoBackup tipo="clientes" />
+      <div className="hidden md:block"><AvisoBackup tipo="clientes" /></div>
+      <div className="md:hidden empty:hidden"><AvisoBackup tipo="clientes" exibir="faixa" /></div>
 
       {ehAdmin && modo !== 'grupos' && <AniversariantesMes clientes={clients as any[]} hoje={dataLocal()} recolhivel />}
 
-      {modo !== 'grupos' && seletorOrdem(modo === 'lista' ? (colunasAbaixo.length ? 'sm:max-w-sm' : 'md:hidden') : 'sm:max-w-sm')}
+      {modo !== 'grupos' && (modo === 'cartoes' || colunasAbaixo.length > 0) && seletorOrdem('hidden md:flex md:max-w-sm')}
+
+      {/* Barra inferior do celular: modos, backup, nova cliente, filtros e ordenação. */}
+      <div className="md:hidden fixed inset-x-0 bottom-0 z-30 glass bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.08)] px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0">{modosExibicao}</div>
+          <AvisoBackup tipo="clientes" exibir="botao" compacto />
+          {ehAdmin && <button onClick={() => { resetForm(); setShowAddModal(true); }} aria-label="Nova cliente" title="Nova cliente" className="shrink-0 bg-rose-600 text-white w-10 h-10 rounded-xl font-bold hover:bg-rose-700 transition-colors flex items-center justify-center shadow-sm"><Plus size={18} /></button>}
+        </div>
+        {modo !== 'grupos' && (
+          <div className="flex items-center gap-2">
+            {filtroOrigemEl}
+            {filtroGrupoEl}
+            {seletorOrdem('flex-1 min-w-0 gap-1', true)}
+          </div>
+        )}
+      </div>
 
       {grupoFiltrado && modo !== 'grupos' && (
         <div className="flex flex-wrap items-center gap-3 bg-rose-50 border border-rose-100 rounded-2xl px-4 py-3">
