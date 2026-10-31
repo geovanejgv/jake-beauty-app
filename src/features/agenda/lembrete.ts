@@ -54,3 +54,25 @@ export function diaSeguinte(dia: string): string {
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
 }
+
+export type RetornoLembrete = AgendamentoLembrete & {
+  return_reminder_date?: string | null;
+  return_reminder_sent_at?: string | null;
+};
+
+/**
+ * Lembretes de retorno do dia (a cliente deve ser chamada para agendar de novo):
+ * o retorno marcado num atendimento ou o lembrete manual, que fica na data do horário.
+ */
+export function retornosDoDia<T extends RetornoLembrete>(lista: T[], dia: string): T[] {
+  return lista
+    .filter((a) => !!a.client_id && !a.is_block
+      && (a.is_manual_reminder ? dataLocal(a.start_time) === dia : a.return_reminder_date === dia))
+    .sort((x, y) => (x.clients?.name ?? '').localeCompare(y.clients?.name ?? '', 'pt-BR'));
+}
+
+export function situacaoRetorno(a: RetornoLembrete): SituacaoLembrete {
+  if (!a.clients?.contato_visivel) return 'contato_restrito';
+  if (!telefoneValido(a.clients.phone)) return 'sem_telefone';
+  return a.return_reminder_sent_at ? 'enviado' : 'pronto';
+}
