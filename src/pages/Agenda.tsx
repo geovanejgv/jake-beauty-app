@@ -866,47 +866,77 @@ export default function Agenda() {
     document.querySelector('[data-today]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
   }, [viewMode, isLoading, selectedDate]);
 
+  const modosVisao = (
+    <div className="bg-slate-200 p-0.5 rounded-lg flex items-center space-x-0.5">
+      <button onClick={() => setViewMode('day')} className={`flex-1 md:flex-none flex items-center justify-center space-x-1 px-2.5 py-1.5 md:py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'day' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><LayoutList size={12} /> <span>Dia</span></button>
+      <button onClick={() => setViewMode('week')} className={`flex-1 md:flex-none flex items-center justify-center space-x-1 px-2.5 py-1.5 md:py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'week' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><Columns size={12} /> <span>Semana</span></button>
+      <button onClick={() => setViewMode('month')} className={`flex-1 md:flex-none flex items-center justify-center space-x-1 px-2.5 py-1.5 md:py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'month' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><Grid size={12} /> <span>Mês</span></button>
+      {veEquipe && <button onClick={() => setViewMode('equipe')} className={`flex-1 md:flex-none flex items-center justify-center space-x-1 px-2.5 py-1.5 md:py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'equipe' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`} title="Linha do tempo por profissional"><Users size={12} /> <span>Equipe</span></button>}
+    </div>
+  );
+
+  const filtroProfissional = veEquipe && (
+    <select value={filtroProf} onChange={(e) => setFiltroProf(e.target.value)} aria-label="Filtrar por profissional"
+      className="h-8 min-w-0 flex-1 md:flex-none bg-white border border-slate-300 rounded-lg px-2 text-[11px] font-bold text-slate-700 shadow-sm md:max-w-[180px]">
+      <option value="">Todos os profissionais</option>
+      {equipe.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      <option value="sem">Sem profissional</option>
+    </select>
+  );
+
+  const mostrarCamadas = (
+    <div className="bg-slate-200 p-0.5 rounded-lg flex items-center space-x-0.5 h-8 shrink-0">
+      <button onClick={() => setShowAppointments(!showAppointments)} aria-pressed={showAppointments} className={`flex items-center px-2 md:px-2.5 py-1 rounded-md text-[11px] font-bold transition-all h-full ${showAppointments ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><span className="md:hidden">Agend.</span><span className="hidden md:inline">Agendamentos</span></button>
+      <button onClick={() => setShowReminders(!showReminders)} aria-pressed={showReminders} className={`flex items-center px-2 md:px-2.5 py-1 rounded-md text-[11px] font-bold transition-all h-full ${showReminders ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><span className="md:hidden">Lembr.</span><span className="hidden md:inline">Lembretes</span></button>
+    </div>
+  );
+
+  const navegacaoData = (
+    <div className="flex items-center bg-white border border-slate-300 rounded-lg shadow-sm overflow-hidden h-9 md:h-8 w-full md:w-auto">
+      <button onClick={() => handleNavigateDate('prev')} aria-label="Anterior" className="px-3 md:px-2 hover:text-rose-600 hover:bg-rose-50 transition-colors border-r border-slate-200 h-full flex items-center"><ChevronLeft size={16} /></button>
+      <button onClick={() => setSelectedDate(todayStr)} className="px-3 text-xs font-bold text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors border-r border-slate-200 h-full flex items-center">Hoje</button>
+      <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} aria-label="Data" className="flex-1 md:flex-none min-w-0 px-2 text-xs font-bold text-slate-700 outline-none focus:ring-0 bg-transparent border-none h-full" />
+      <button onClick={() => handleNavigateDate('next')} aria-label="Próximo" className="px-3 md:px-2 hover:text-rose-600 hover:bg-rose-50 transition-colors border-l border-slate-200 h-full flex items-center"><ChevronRight size={16} /></button>
+    </div>
+  );
+
+  const acoesAgenda = (
+    <div className={`flex space-x-2 h-8 shrink-0 ${podeEditarAgenda ? '' : 'hidden'} ${veEquipe ? '' : 'ml-auto md:ml-0'}`}>
+      <button onClick={() => setShowLembretesDia(true)} title="Lembrar clientes do horário pelo WhatsApp" aria-label="Lembrar clientes" className="bg-emerald-600 text-white px-2.5 md:px-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors flex items-center space-x-1.5 shadow-sm text-xs"><BellRing size={14} /> <span className="hidden lg:inline">Lembrar clientes</span></button>
+      <button onClick={() => openBlockModalForDate(selectedDate)} title="Bloquear horário" aria-label="Bloquear horário" className="bg-slate-200 text-slate-700 px-2.5 md:px-3 rounded-lg font-semibold hover:bg-slate-300 transition-colors flex items-center shadow-sm"><Coffee size={14} /></button>
+      <button onClick={() => openAddModalForType('appointment', selectedDate)} title="Agendar" aria-label="Agendar" className="bg-rose-600 text-white px-2.5 md:px-3 rounded-lg font-bold hover:bg-rose-700 transition-colors flex items-center space-x-1.5 shadow-sm text-xs"><Plus size={14} /> <span className="hidden lg:inline">Agendar</span></button>
+    </div>
+  );
+
   return (
-    <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3">
+    <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
       <div className="shrink-0 empty:hidden"><AvisoBackup tipo="agenda" exibir="faixa" /></div>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 shrink-0">
         <div className="hidden md:block"><h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Agenda Conectada</h2>{!veEquipe && perfil && <p className="text-xs text-slate-500 mt-1">Sua agenda, {perfil.name.split(' ')[0]}</p>}</div>
-        
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+
+        {/* Celular: no topo só a data; os demais controles ficam na barra fixa embaixo. */}
+        <div className="md:hidden w-full">{navegacaoData}</div>
+
+        <div className="hidden md:flex flex-wrap items-center gap-2 w-auto">
           <AvisoBackup tipo="agenda" exibir="botao" />
-          <div className="bg-slate-200 p-0.5 rounded-lg flex items-center space-x-0.5">
-            <button onClick={() => setViewMode('day')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'day' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><LayoutList size={12} /> <span>Dia</span></button>
-            <button onClick={() => setViewMode('week')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'week' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><Columns size={12} /> <span>Semana</span></button>
-            <button onClick={() => setViewMode('month')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'month' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><Grid size={12} /> <span>Mês</span></button>
-            {veEquipe && <button onClick={() => setViewMode('equipe')} className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${viewMode === 'equipe' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`} title="Linha do tempo por profissional"><Users size={12} /> <span>Equipe</span></button>}
-          </div>
+          {modosVisao}
+          {filtroProfissional}
+          {mostrarCamadas}
+          {navegacaoData}
+          {acoesAgenda}
+        </div>
+      </div>
 
-          {veEquipe && (
-            <select value={filtroProf} onChange={(e) => setFiltroProf(e.target.value)} aria-label="Filtrar por profissional"
-              className="h-8 bg-white border border-slate-300 rounded-lg px-2 text-[11px] font-bold text-slate-700 shadow-sm max-w-[180px]">
-              <option value="">Todos os profissionais</option>
-              {equipe.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              <option value="sem">Sem profissional</option>
-            </select>
-          )}
-
-          <div className="bg-slate-200 p-0.5 rounded-lg flex items-center space-x-0.5 h-8">
-            <button onClick={() => setShowAppointments(!showAppointments)} className={`flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold transition-all h-full ${showAppointments ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><span>Agendamentos</span></button>
-            <button onClick={() => setShowReminders(!showReminders)} className={`flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold transition-all h-full ${showReminders ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><span>Lembretes</span></button>
-          </div>
-
-          <div className="flex items-center bg-white border border-slate-300 rounded-lg shadow-sm overflow-hidden h-8">
-            <button onClick={() => handleNavigateDate('prev')} className="px-2 hover:text-rose-600 hover:bg-rose-50 transition-colors border-r border-slate-200 h-full flex items-center"><ChevronLeft size={16} /></button>
-            <button onClick={() => setSelectedDate(todayStr)} className="px-3 text-xs font-bold text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors border-r border-slate-200 h-full flex items-center">Hoje</button>
-            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="px-2 text-xs font-bold text-slate-700 outline-none focus:ring-0 bg-transparent border-none h-full" />
-            <button onClick={() => handleNavigateDate('next')} className="px-2 hover:text-rose-600 hover:bg-rose-50 transition-colors border-l border-slate-200 h-full flex items-center"><ChevronRight size={16} /></button>
-          </div>
-          
-          <div className={`flex space-x-2 h-8 ${podeEditarAgenda ? '' : 'hidden'}`}>
-            <button onClick={() => setShowLembretesDia(true)} title="Lembrar clientes do horário pelo WhatsApp" className="bg-emerald-600 text-white px-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors flex items-center space-x-1.5 shadow-sm text-xs"><BellRing size={14} /> <span className="hidden sm:inline">Lembrar clientes</span></button>
-            <button onClick={() => openBlockModalForDate(selectedDate)} className="bg-slate-200 text-slate-700 px-3 rounded-lg font-semibold hover:bg-slate-300 transition-colors flex items-center shadow-sm"><Coffee size={14} /></button>
-            <button onClick={() => openAddModalForType('appointment', selectedDate)} className="bg-rose-600 text-white px-3 rounded-lg font-bold hover:bg-rose-700 transition-colors flex items-center space-x-1.5 shadow-sm text-xs"><Plus size={14} /> <span className="hidden sm:inline">Agendar</span></button>
-          </div>
+      {/* Barra inferior do celular: visão, filtros e ações; o calendário fica com o resto da tela. */}
+      <div className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.08)] px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0">{modosVisao}</div>
+          <AvisoBackup tipo="agenda" exibir="botao" compacto />
+        </div>
+        <div className="flex items-center gap-2">
+          {filtroProfissional}
+          {mostrarCamadas}
+          {acoesAgenda}
         </div>
       </div>
 
