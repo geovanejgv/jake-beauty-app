@@ -97,15 +97,24 @@ function clienteDoLembrete(id: string, lista: ClienteComRetorno[], nomes: Map<st
  * Faixa no topo do dia da agenda: lembretes de contato (cor e ícone próprios), com
  * Enviar agora, Adiar e Cancelar. Só a administradora.
  */
-export function FaixaLembretes({ dia, nomeClinica }: { dia: string; nomeClinica: string }) {
+/** Lembretes de contato pendentes do dia (hoje inclui os atrasados). Só a administradora lê (RLS). */
+function useLembretesContatoDoDia(dia: string) {
+  const hoje = dataLocal();
+  const { data: lembretes = [] } = useQuery({ queryKey: historicoKeys.lembretes, queryFn: listarLembretesPendentes });
+  return useMemo(() => lembretesDoDia(lembretes, dia, hoje), [lembretes, dia, hoje]);
+}
+
+/**
+ * Lista dos lembretes de contato do dia, com enviar o convite, adiar e cancelar.
+ * Usada na faixa da agenda e na janela "Lembrar clientes"; some quando não há lembrete.
+ */
+export function ListaLembretesContato({ dia, nomeClinica, titulo = false }: { dia: string; nomeClinica: string; titulo?: boolean }) {
   const qc = useQueryClient();
   const hoje = dataLocal();
-  const [visivel, setVisivel] = useState(true);
   const [enviar, setEnviar] = useState<Lembrete | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const { data: lembretes = [] } = useQuery({ queryKey: historicoKeys.lembretes, queryFn: listarLembretesPendentes });
+  const doDia = useLembretesContatoDoDia(dia);
   const { data: nomes = new Map() } = useQuery({ queryKey: historicoKeys.nomes, queryFn: listarNomesClientes });
-  const doDia = useMemo(() => lembretesDoDia(lembretes, dia, hoje), [lembretes, dia, hoje]);
   const precisaConvite = enviar !== null;
   const { data: reativacao = [] } = useQuery({ queryKey: historicoKeys.reativacao, queryFn: listarClientesReativacao, enabled: precisaConvite });
   const { data: contatos = [] } = useQuery({ queryKey: historicoKeys.contatos, queryFn: listarContatos, enabled: precisaConvite });
@@ -117,11 +126,48 @@ export function FaixaLembretes({ dia, nomeClinica }: { dia: string; nomeClinica:
     onError: (e) => setErro(mensagemDeErro(e, 'Não foi possível alterar o lembrete.', 'alterar_lembrete')),
   });
 
+  if (doDia.length === 0 && !enviar) return null;
+  const listaConvite = enviar ? [clienteDoLembrete(enviar.client_id, reativacao.map((c) => ({ ...c, retorno: retornoDaCliente(c, hoje) })), nomes, hoje)] : [];
+
+  return (
+    <div className="space-y-2">
+      {titulo && <h4 className="text-xs font-bold text-violet-800 flex items-center gap-1.5"><BellRing size={14} /> Lembretes de contato da reativação ({doDia.length})</h4>}
+      <ul className="flex flex-col gap-1.5">
+        {doDia.map((l) => (
+          <li key={l.id} className="bg-white rounded-lg border border-violet-100 px-2.5 py-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+            <span className="font-semibold text-slate-800">{nomes.get(l.client_id)?.nome ?? 'Cliente'}</span>
+            <span className="text-xs text-slate-500">
+              {l.data < hoje ? `atrasado desde ${isoParaBR(l.data)}` : l.hora ? `às ${l.hora}` : 'no dia'}{l.observacao ? ` · ${l.observacao}` : ''}
+            </span>
+            <span className="flex flex-wrap gap-1.5 ml-auto">
+              <button type="button" onClick={() => setEnviar(l)} className="px-2.5 py-1 rounded-md bg-emerald-600 text-white text-xs font-bold flex items-center gap-1"><MessageCircle size={12} /> Enviar agora</button>
+              {ADIAMENTOS.map((d) => (
+                <button key={d} type="button" disabled={mudar.isPending} onClick={() => mudar.mutate({ id: l.id, data: adiar(l.data, d, hoje) })}
+                  className="px-2 py-1 rounded-md border border-slate-200 text-xs text-slate-600">+{d}d</button>
+              ))}
+              <button type="button" disabled={mudar.isPending} onClick={() => mudar.mutate({ id: l.id, cancelar: true })} aria-label="Cancelar lembrete"
+                className="px-2 py-1 rounded-md border border-slate-200 text-xs text-slate-500"><X size={12} /></button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {erro && <p className="text-xs text-red-600">{erro}</p>}
+      {enviar && listaConvite.length > 0 && (
+        <EnviarConvite fila={listaConvite} inicio={0} nomeClinica={nomeClinica} modeloId={enviar.modelo_id}
+          ultimoConvite={ultimoPorCliente(contatos)} naoQuer={naoQuer} onFechar={() => setEnviar(null)} />
+      )}
+    </div>
+  );
+}
+
+export function FaixaLembretes({ dia, nomeClinica }: { dia: string; nomeClinica: string }) {
+  const [visivel, setVisivel] = useState(true);
+  const doDia = useLembretesContatoDoDia(dia);
+
   // Mostrar/esconder vale enquanto a agenda está aberta (sem gravar no navegador, SES-02).
   const alternar = () => setVisivel(!visivel);
 
   if (doDia.length === 0 && visivel) return null;
-  const listaConvite = enviar ? [clienteDoLembrete(enviar.client_id, reativacao.map((c) => ({ ...c, retorno: retornoDaCliente(c, hoje) })), nomes, hoje)] : [];
 
   return (
     <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 shrink-0">
@@ -131,32 +177,7 @@ export function FaixaLembretes({ dia, nomeClinica }: { dia: string; nomeClinica:
           {visivel ? <><EyeOff size={14} /> Esconder</> : <><Eye size={14} /> Mostrar</>}
         </button>
       </div>
-      {visivel && (
-        <ul className="mt-2 flex flex-col gap-1.5">
-          {doDia.map((l) => (
-            <li key={l.id} className="bg-white rounded-lg border border-violet-100 px-2.5 py-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-              <span className="font-semibold text-slate-800">{nomes.get(l.client_id)?.nome ?? 'Cliente'}</span>
-              <span className="text-xs text-slate-500">
-                {l.data < hoje ? `atrasado desde ${isoParaBR(l.data)}` : l.hora ? `às ${l.hora}` : 'no dia'}{l.observacao ? ` · ${l.observacao}` : ''}
-              </span>
-              <span className="flex flex-wrap gap-1.5 ml-auto">
-                <button type="button" onClick={() => setEnviar(l)} className="px-2.5 py-1 rounded-md bg-emerald-600 text-white text-xs font-bold flex items-center gap-1"><MessageCircle size={12} /> Enviar agora</button>
-                {ADIAMENTOS.map((d) => (
-                  <button key={d} type="button" disabled={mudar.isPending} onClick={() => mudar.mutate({ id: l.id, data: adiar(l.data, d, hoje) })}
-                    className="px-2 py-1 rounded-md border border-slate-200 text-xs text-slate-600">+{d}d</button>
-                ))}
-                <button type="button" disabled={mudar.isPending} onClick={() => mudar.mutate({ id: l.id, cancelar: true })} aria-label="Cancelar lembrete"
-                  className="px-2 py-1 rounded-md border border-slate-200 text-xs text-slate-500"><X size={12} /></button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {erro && <p className="text-xs text-red-600 mt-1">{erro}</p>}
-      {enviar && listaConvite.length > 0 && (
-        <EnviarConvite fila={listaConvite} inicio={0} nomeClinica={nomeClinica} modeloId={enviar.modelo_id}
-          ultimoConvite={ultimoPorCliente(contatos)} naoQuer={naoQuer} onFechar={() => setEnviar(null)} />
-      )}
+      {visivel && <div className="mt-2"><ListaLembretesContato dia={dia} nomeClinica={nomeClinica} /></div>}
     </div>
   );
 }

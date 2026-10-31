@@ -20,7 +20,7 @@ import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
 import { itemParaAbater } from '../features/pacotes/logic';
 import { agendarLembreteGrupo, clientesKeys, listarGrupos, listarMembros, listarOrigens } from '../features/clientes/api';
 import { CampoOrigem } from '../features/clientes/CampoOrigem';
-import { FaixaLembretes } from '../features/historico/LembretesUi';
+import { FaixaLembretes, ListaLembretesContato } from '../features/historico/LembretesUi';
 import { alertasAnamnese, type AlertaAnamnese } from '../features/fichas/api';
 
 /** Erro de agenda: conflito de horário vem com mensagem própria; o resto, genérica com código. */
@@ -1461,6 +1461,7 @@ export default function Agenda() {
       {showLembretesDia && (
         <LembretesDoDia agendamentos={agendamentos} diaInicial={diaSeguinte(dataLocal())} podeEnviar={podeMexer} nomeProf={nomeProf}
           onChamarRetorno={handleSendReminderWhatsApp}
+          secaoContato={ehAdmin ? (dia) => <ListaLembretesContato dia={dia} nomeClinica={perfil?.estabelecimento?.nome ?? ''} titulo /> : undefined}
           onErro={(texto) => alert(texto)} onFechar={() => setShowLembretesDia(false)} />
       )}
       {appointmentToDelete && (
