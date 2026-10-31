@@ -43,8 +43,9 @@ async function gerarEBaixar(tipo: TipoBackup) {
  * Sem o segundo fator confirmado na sessão, pede o código do autenticador antes.
  * exibir: 'faixa' mostra só a pendência; 'botao' só o botão quando em dia (telas de altura
  * fixa, como Agenda e Finanças, põem a faixa no topo e o botão na barra de controles).
+ * compacto: só o ícone (barra inferior da Agenda no celular).
  */
-export function AvisoBackup({ tipo, exibir = 'tudo' }: { tipo: TipoBackup; exibir?: 'tudo' | 'faixa' | 'botao' }) {
+export function AvisoBackup({ tipo, exibir = 'tudo', compacto = false }: { tipo: TipoBackup; exibir?: 'tudo' | 'faixa' | 'botao'; compacto?: boolean }) {
   const { perfil, nivel, atualizarNivel } = useAuth();
   const queryClient = useQueryClient();
   const ehAdmin = perfil?.role === 'admin';
@@ -107,9 +108,10 @@ export function AvisoBackup({ tipo, exibir = 'tudo' }: { tipo: TipoBackup; exibi
   const botao = (
     <button type="button" onClick={iniciar} disabled={ocupado}
       title={ultimo ? `Último backup em ${new Date(ultimo).toLocaleDateString('pt-BR')}` : 'Nenhum backup ainda'}
+      aria-label={compacto ? (emDia ? `Backup (${rotulo})` : 'Fazer backup agora') : undefined}
       className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold whitespace-nowrap disabled:opacity-60 ${emDia ? 'bg-white border border-slate-200 text-slate-600 hover:text-rose-600' : 'bg-amber-500 text-white hover:bg-amber-600'}`}>
       {ocupado ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-      {emDia ? `Backup (${rotulo})` : 'Fazer backup agora'}
+      {!compacto && (emDia ? `Backup (${rotulo})` : 'Fazer backup agora')}
     </button>
   );
 
