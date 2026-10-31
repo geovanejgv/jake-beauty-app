@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { agendamentosParaLembrar, diaSeguinte, linkLembrete, mensagemLembrete, situacaoLembrete, telefoneValido, type AgendamentoLembrete } from './lembrete';
+import { agendamentosParaLembrar, diaSeguinte, linkLembrete, mensagemLembrete, retornosDoDia, situacaoLembrete, situacaoRetorno, telefoneValido, type RetornoLembrete } from './lembrete';
 
-const ag = (p: Partial<AgendamentoLembrete> = {}): AgendamentoLembrete => ({
+const ag = (p: Partial<RetornoLembrete> = {}): RetornoLembrete => ({
   id: 'a1',
   start_time: '2026-11-05T17:00:00Z', // 14:00 em São Paulo
   status: 'scheduled',
@@ -76,5 +76,25 @@ describe('diaSeguinte', () => {
   it('vira mês e ano', () => {
     expect(diaSeguinte('2026-11-05')).toBe('2026-11-06');
     expect(diaSeguinte('2026-12-31')).toBe('2027-01-01');
+  });
+});
+
+describe('retornosDoDia', () => {
+  it('retorno marcado no atendimento e lembrete manual do dia, por nome', () => {
+    const lista = [
+      ag({ id: 'retorno', status: 'completed', start_time: '2026-10-01T17:00:00Z', return_reminder_date: '2026-11-05', clients: { name: 'Zélia', phone: '11987654321', contato_visivel: true } }),
+      ag({ id: 'manual', is_manual_reminder: true, start_time: '2026-11-05T12:00:00Z', clients: { name: 'Bia', phone: '11987654321', contato_visivel: true } }),
+      ag({ id: 'retorno-outro-dia', return_reminder_date: '2026-11-06' }),
+      ag({ id: 'manual-outro-dia', is_manual_reminder: true, start_time: '2026-11-06T12:00:00Z' }),
+      ag({ id: 'atendimento-do-dia' }),
+      ag({ id: 'sem-cliente', is_manual_reminder: true, start_time: '2026-11-05T12:00:00Z', client_id: null }),
+    ];
+    expect(retornosDoDia(lista, '2026-11-05').map((a) => a.id)).toEqual(['manual', 'retorno']);
+  });
+
+  it('situação usa a data em que a cliente foi chamada', () => {
+    expect(situacaoRetorno(ag())).toBe('pronto');
+    expect(situacaoRetorno(ag({ return_reminder_sent_at: '2026-11-05T13:00:00Z' }))).toBe('enviado');
+    expect(situacaoRetorno(ag({ clients: { name: 'Ana', phone: null, contato_visivel: true } }))).toBe('sem_telefone');
   });
 });

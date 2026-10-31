@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { BellRing, CheckCircle, Send } from 'lucide-react';
+import { BellRing, CalendarHeart, CheckCircle, Send } from 'lucide-react';
 import { Modal, inputCls } from '../../components/ui';
 import { horaBR, isoParaBR } from '../../lib/formatos';
 import { mensagemDeErro } from '../../lib/seguranca/erros';
 import { marcarLembreteEnviado } from './api';
-import { agendamentosParaLembrar, linkLembrete, situacaoLembrete, type AgendamentoLembrete } from './lembrete';
+import { agendamentosParaLembrar, linkLembrete, retornosDoDia, situacaoLembrete, situacaoRetorno, type AgendamentoLembrete, type RetornoLembrete } from './lembrete';
 
 /** Abre o WhatsApp da cliente com o lembrete e registra o envio no atendimento. */
 export function useEnviarLembrete(onErro: (texto: string) => void) {
@@ -32,12 +32,17 @@ const ROTULO: Record<ReturnType<typeof situacaoLembrete>, string> = {
   contato_restrito: 'Contato com a administração',
 };
 
-/** Lista do dia (padrão: amanhã) para lembrar cada cliente pelo WhatsApp, uma por vez. */
-export function LembretesDoDia<T extends AgendamentoLembrete>({ agendamentos, diaInicial, podeEnviar, nomeProf, onErro, onFechar }: {
+/**
+ * Lista do dia (padrão: amanhã) para lembrar cada cliente pelo WhatsApp, uma por vez,
+ * e os lembretes de retorno do mesmo dia (chamar a cliente para agendar de novo).
+ */
+export function LembretesDoDia<T extends RetornoLembrete>({ agendamentos, diaInicial, podeEnviar, nomeProf, onChamarRetorno, onErro, onFechar }: {
   agendamentos: T[];
   diaInicial: string;
   podeEnviar: (a: T) => boolean;
   nomeProf: (id: string | null) => string;
+  /** Abre a mensagem de retorno no WhatsApp e registra a chamada (mesma ação da faixa Lembretes). */
+  onChamarRetorno: (a: T) => void;
   onErro: (texto: string) => void;
   onFechar: () => void;
 }) {
@@ -46,6 +51,7 @@ export function LembretesDoDia<T extends AgendamentoLembrete>({ agendamentos, di
   const lista = agendamentosParaLembrar(agendamentos, dia);
   const avisadas = lista.filter((a) => situacaoLembrete(a) === 'enviado').length;
   const proxima = lista.find((a) => situacaoLembrete(a) === 'pronto' && podeEnviar(a));
+  const retornos = retornosDoDia(agendamentos, dia);
 
   return (
     <Modal titulo="Lembrar clientes do horário" onClose={onFechar} rodape={
@@ -92,6 +98,35 @@ export function LembretesDoDia<T extends AgendamentoLembrete>({ agendamentos, di
             );
           })}
         </ul>
+        {retornos.length > 0 && (
+          <section className="space-y-2">
+            <h4 className="text-xs font-bold text-indigo-700 flex items-center gap-1.5"><CalendarHeart size={14} /> Lembretes de retorno do dia ({retornos.length})</h4>
+            <ul className="divide-y divide-indigo-100 border border-indigo-200 bg-indigo-50/50 rounded-xl">
+              {retornos.map((a) => {
+                const situacao = situacaoRetorno(a);
+                const pode = podeEnviar(a) && (situacao === 'pronto' || situacao === 'enviado');
+                return (
+                  <li key={`ret-${a.id}`} className="p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-bold text-indigo-900 text-sm truncate">{a.clients?.name ?? 'Cliente'}</p>
+                      <p className="text-xs text-indigo-600 truncate">Lembrar de agendar: {a.services.name}</p>
+                      <p className={`text-[11px] font-semibold mt-0.5 flex items-center gap-1 ${situacao === 'enviado' ? 'text-emerald-600' : situacao === 'pronto' ? 'text-amber-700' : 'text-slate-400'}`}>
+                        {situacao === 'enviado' && <CheckCircle size={11} />}
+                        {situacao === 'enviado' ? `Chamada${a.return_reminder_sent_at ? ` às ${horaBR(a.return_reminder_sent_at)}` : ''}` : situacao === 'pronto' ? 'Falta chamar' : ROTULO[situacao]}
+                      </p>
+                    </div>
+                    {pode && (
+                      <button type="button" onClick={() => onChamarRetorno(a)}
+                        className={`shrink-0 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${situacao === 'enviado' ? 'border border-slate-200 text-slate-600' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                        <Send size={14} /> {situacao === 'enviado' ? 'Chamar de novo' : 'Chamar'}
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
       </div>
     </Modal>
   );

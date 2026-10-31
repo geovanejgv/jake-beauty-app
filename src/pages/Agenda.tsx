@@ -1460,6 +1460,7 @@ export default function Agenda() {
 
       {showLembretesDia && (
         <LembretesDoDia agendamentos={agendamentos} diaInicial={diaSeguinte(dataLocal())} podeEnviar={podeMexer} nomeProf={nomeProf}
+          onChamarRetorno={handleSendReminderWhatsApp}
           onErro={(texto) => alert(texto)} onFechar={() => setShowLembretesDia(false)} />
       )}
       {appointmentToDelete && (
