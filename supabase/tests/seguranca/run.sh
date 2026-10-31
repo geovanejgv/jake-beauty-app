@@ -36,4 +36,5 @@ rodar "${DB}_reativacao" reativacao.test.sql
 rodar "${DB}_convites" reativacao_convites.test.sql
 rodar "${DB}_lembretes" lembretes_contato.test.sql
 rodar "${DB}_anamnese" anamnese_alertas.test.sql
+rodar "${DB}_lembrete_agendamento" lembrete_agendamento.test.sql
 echo "Testes de segurança do banco: OK"

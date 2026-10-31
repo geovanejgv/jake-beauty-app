@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AvisoBackup } from '../features/backup/AvisoBackup';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus, Users, BadgeCheck, Package } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus, Users, BadgeCheck, Package, BellRing } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { useNetworkState } from 'react-use';
@@ -13,7 +13,9 @@ import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '
 import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
 import { BLOQUEIO_MAX_REPETICOES, conflitoDoItem, conflitoLocal, datasDoBloqueio, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, itensSobrepostos, mensagemAgenda, ocupaAgenda, type ItemAgendamento, type RepeticaoBloqueio } from '../features/agenda/logic';
 import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
-import { brl, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
+import { LembretesDoDia, useEnviarLembrete } from '../features/agenda/LembreteAgendamento';
+import { diaSeguinte } from '../features/agenda/lembrete';
+import { brl, dataLocal, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
 import { itemParaAbater } from '../features/pacotes/logic';
 import { agendarLembreteGrupo, clientesKeys, listarGrupos, listarMembros, listarOrigens } from '../features/clientes/api';
@@ -40,6 +42,8 @@ export default function Agenda() {
 
   const [showAppointments, setShowAppointments] = useState(true);
   const [showReminders, setShowReminders] = useState(true);
+  // Lista para lembrar as clientes do horário pelo WhatsApp (padrão: amanhã).
+  const [showLembretesDia, setShowLembretesDia] = useState(false);
 
   // Celular e tablet (abaixo de 1024px) abrem na visão semanal; computador abre na mensal
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'equipe'>(
@@ -111,7 +115,7 @@ export default function Agenda() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('appointments')
-        .select(`id, start_time, end_time, status, is_block, block_reason, whatsapp_sent_at, return_reminder_date, return_reminder_sent, return_reminder_sent_at, is_manual_reminder, is_recurring, recurring_group_id, professional_id, client_id, servico_id, valor_cobrado, pacote_item_id, notes, services ( id, name, price, commission_rate ), servicos ( id, nome, categoria_id )`)
+        .select(`id, start_time, end_time, status, is_block, block_reason, whatsapp_sent_at, lembrete_enviado_em, return_reminder_date, return_reminder_sent, return_reminder_sent_at, is_manual_reminder, is_recurring, recurring_group_id, professional_id, client_id, servico_id, valor_cobrado, pacote_item_id, notes, services ( id, name, price, commission_rate ), servicos ( id, nome, categoria_id )`)
         .order('start_time', { ascending: true });
       if (error) throw error;
       return data || [];
@@ -661,6 +665,8 @@ export default function Agenda() {
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
+  const enviarLembrete = useEnviarLembrete((texto) => alert(texto));
+
   const handleSendReminderWhatsApp = (apt: any) => {
     if (!apt.clients?.contato_visivel) return alert('O contato da cliente fica com a administração do salão.');
     const phone = apt.clients?.phone;
@@ -828,6 +834,7 @@ export default function Agenda() {
                {ev.clients?.contato_visivel && <div className="flex items-center space-x-1">
                  {ev.whatsapp_sent_at && (<span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-1 rounded flex items-center gap-1 border border-emerald-100"><CheckCircle size={10} /> {new Date(ev.whatsapp_sent_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</span>)}
                  <button onClick={(e) => { e.stopPropagation(); handleSendWhatsApp(ev); }} className="p-1.5 border border-emerald-100 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 rounded-lg transition-colors flex items-center justify-center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></button>
+                 <button onClick={(e) => { e.stopPropagation(); enviarLembrete(ev); }} title={ev.lembrete_enviado_em ? `Lembrete enviado às ${new Date(ev.lembrete_enviado_em).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}. Reenviar` : 'Enviar lembrete do horário'} aria-label="Enviar lembrete do horário pelo WhatsApp" className={`p-1.5 border rounded-lg transition-colors flex items-center justify-center ${ev.lembrete_enviado_em ? 'border-emerald-200 text-white bg-emerald-500 hover:bg-emerald-600' : 'border-emerald-100 text-emerald-600 bg-emerald-50 hover:bg-emerald-100'}`}><BellRing size={14} /></button>
                </div>}
                <button onClick={(e) => { e.stopPropagation(); marcarFalta(ev) }} className="px-2.5 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold rounded-lg transition-colors text-xs border border-amber-100 hidden sm:block">Faltou</button>
                <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({id: ev.id, status: 'cancelled'}) }} className="px-2.5 py-1.5 bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold rounded-lg transition-colors text-xs border border-slate-200 hidden sm:block">Cancelou</button>
@@ -896,6 +903,7 @@ export default function Agenda() {
           </div>
           
           <div className={`flex space-x-2 h-8 ${podeEditarAgenda ? '' : 'hidden'}`}>
+            <button onClick={() => setShowLembretesDia(true)} title="Lembrar clientes do horário pelo WhatsApp" className="bg-emerald-600 text-white px-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors flex items-center space-x-1.5 shadow-sm text-xs"><BellRing size={14} /> <span className="hidden sm:inline">Lembrar clientes</span></button>
             <button onClick={() => openBlockModalForDate(selectedDate)} className="bg-slate-200 text-slate-700 px-3 rounded-lg font-semibold hover:bg-slate-300 transition-colors flex items-center shadow-sm"><Coffee size={14} /></button>
             <button onClick={() => openAddModalForType('appointment', selectedDate)} className="bg-rose-600 text-white px-3 rounded-lg font-bold hover:bg-rose-700 transition-colors flex items-center space-x-1.5 shadow-sm text-xs"><Plus size={14} /> <span className="hidden sm:inline">Agendar</span></button>
           </div>
@@ -1450,6 +1458,10 @@ export default function Agenda() {
         </div>
       )}
 
+      {showLembretesDia && (
+        <LembretesDoDia agendamentos={agendamentos} diaInicial={diaSeguinte(dataLocal())} podeEnviar={podeMexer} nomeProf={nomeProf}
+          onErro={(texto) => alert(texto)} onFechar={() => setShowLembretesDia(false)} />
+      )}
       {appointmentToDelete && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 text-center space-y-4">
