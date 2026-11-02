@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Check, Eye, EyeOff, LogOut, Moon, Palette, Settings, SlidersHorizontal, Sun, UserCircle } from 'lucide-react';
+import { Check, DatabaseBackup, Eye, EyeOff, LogOut, Moon, Palette, Settings, SlidersHorizontal, Sun, UserCircle } from 'lucide-react';
 import SegurancaMfa from '../components/SegurancaMfa';
 import { useTheme } from '../hooks/useTheme';
 import { OPCOES_VISUAL } from '../features/acesso/visual';
@@ -12,6 +12,8 @@ import { GRUPOS, ROTULO_PAPEL, modulosDoPapel, type IdModulo } from '../features
 import { MODULOS_COM_PERMISSAO } from '../features/acesso/permissoes';
 import { Aviso } from '../components/ui';
 import IntegracaoIa from '../features/ia/IntegracaoIa';
+import { AvisoBackup } from '../features/backup/AvisoBackup';
+import { TIPOS_BACKUP } from '../features/backup/logic';
 
 export default function Configuracoes() {
   const { perfil, user, salvarPreferencias, signOut } = useAuth();
@@ -48,7 +50,7 @@ export default function Configuracoes() {
     <div className="w-full space-y-6 pb-12">
       <div>
         <h2 className="text-2xl md:text-3xl font-black text-slate-800 flex items-center gap-2"><Settings className="text-rose-600" /> Configurações</h2>
-        <p className="text-sm text-slate-500 mt-1">Conta, aparência, integração com IA e preferências da sua interface{ehAdmin ? ', e regras de comissão do salão' : ''}.</p>
+        <p className="text-sm text-slate-500 mt-1">Conta, aparência, integração com IA e preferências da sua interface{ehAdmin ? ', backup mensal e regras de comissão do salão' : ''}.</p>
       </div>
 
       <section id="conta" className="scroll-mt-4 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4" aria-labelledby="titulo-conta">
@@ -111,6 +113,21 @@ export default function Configuracoes() {
       </section>
 
       <div id="seguranca" className="scroll-mt-4"><SegurancaMfa onAviso={setAviso} /></div>
+
+      {ehAdmin && (
+        <section id="backup" className="scroll-mt-4 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4" aria-labelledby="titulo-backup">
+          <div className="flex items-center gap-2">
+            <DatabaseBackup size={18} className="text-rose-600" />
+            <h3 id="titulo-backup" className="font-bold text-slate-800">Backup mensal</h3>
+          </div>
+          <p className="text-xs text-slate-500">
+            Baixe uma planilha de cada área por mês e guarde em local protegido. Exige a verificação em duas etapas.
+          </p>
+          <div className="space-y-3">
+            {TIPOS_BACKUP.map((tipo) => <AvisoBackup key={tipo} tipo={tipo} />)}
+          </div>
+        </section>
+      )}
 
       <IntegracaoIa />
 

@@ -16,7 +16,6 @@ import { GruposCartoes } from '../features/clientes/GruposCartoes';
 import { CampoOrigem } from '../features/clientes/CampoOrigem';
 import { GruposClientes } from '../features/clientes/GruposClientes';
 import { buscarLead, leadsKeys, vincularCliente } from '../features/leads/api';
-import { AvisoBackup } from '../features/backup/AvisoBackup';
 import { ResumoClienteIa } from '../features/ia/ResumoClienteIa';
 import { useDisponibilidadeIa } from '../features/ia/useIa';
 import { ContatoDaCliente } from '../features/historico/ConvitesUi';
@@ -567,18 +566,14 @@ export default function Clientes() {
         </div>
       </div>
 
-      <div className="hidden md:block"><AvisoBackup tipo="clientes" /></div>
-      <div className="md:hidden empty:hidden"><AvisoBackup tipo="clientes" exibir="faixa" /></div>
-
       {ehAdmin && modo !== 'grupos' && <AniversariantesMes clientes={clients as any[]} hoje={dataLocal()} recolhivel />}
 
       {modo !== 'grupos' && (modo === 'cartoes' || colunasAbaixo.length > 0) && seletorOrdem('hidden md:flex md:max-w-sm')}
 
-      {/* Barra inferior do celular: modos, backup, nova cliente, filtros e ordenação. */}
+      {/* Barra inferior do celular: modos, nova cliente, filtros e ordenação. */}
       <div className="md:hidden fixed inset-x-0 bottom-0 z-30 glass bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.08)] px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] space-y-2">
         <div className="flex items-center gap-2">
           <div className="flex-1 min-w-0">{modosExibicao}</div>
-          <AvisoBackup tipo="clientes" exibir="botao" compacto />
           {ehAdmin && <button onClick={() => { resetForm(); setShowAddModal(true); }} aria-label="Nova cliente" title="Nova cliente" className="shrink-0 bg-rose-600 text-white w-10 h-10 rounded-xl font-bold hover:bg-rose-700 transition-colors flex items-center justify-center shadow-sm"><Plus size={18} /></button>}
         </div>
         {modo !== 'grupos' && (
