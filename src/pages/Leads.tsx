@@ -6,7 +6,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { brl, dataLocal, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
 import { mensagemDeErro } from '../lib/seguranca/erros';
 import { Aviso, Campo, Modal, inputCls } from '../components/ui';
-import { AvisoBackup } from '../features/backup/AvisoBackup';
 import { PALAVRA_EXCLUSAO, confirmacaoExclusaoValida } from '../features/clientes/logic';
 import {
   COR_ETAPA, ETAPAS_LEAD, ORIGENS_LEAD, ROTULO_ETAPA, ROTULO_ORIGEM, acaoAtrasada, dadosDoFormulario, indicadoresLeads,
@@ -68,8 +67,6 @@ export default function Leads() {
           <Plus size={18} /> Novo lead
         </button>
       </div>
-
-      <AvisoBackup tipo="leads" />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Indicador titulo="Em andamento" valor={String(ind.emAndamento)} />

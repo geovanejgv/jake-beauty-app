@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AvisoBackup } from '../features/backup/AvisoBackup';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar as CalendarIcon, Clock, User, Plus, Loader2, Edit2, X, LayoutList, Columns, Grid, Trash2, AlertTriangle, Search, Lock, Coffee, ChevronLeft, ChevronRight, CheckCircle, CalendarHeart, Repeat, UserPlus, Users, BadgeCheck, Package, BellRing } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -910,7 +909,6 @@ export default function Agenda() {
 
   return (
     <div className="w-full h-[calc(100dvh-100px)] md:h-[calc(100vh-4rem)] flex flex-col space-y-2 md:space-y-3 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0">
-      <div className="shrink-0 empty:hidden"><AvisoBackup tipo="agenda" exibir="faixa" /></div>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 shrink-0">
         <div className="hidden md:block"><h2 className="text-xl md:text-2xl font-black text-slate-800 leading-none">Agenda Conectada</h2>{!veEquipe && perfil && <p className="text-xs text-slate-500 mt-1">Sua agenda, {perfil.name.split(' ')[0]}</p>}</div>
 
@@ -918,7 +916,6 @@ export default function Agenda() {
         <div className="md:hidden w-full">{navegacaoData}</div>
 
         <div className="hidden md:flex flex-wrap items-center gap-2 w-auto">
-          <AvisoBackup tipo="agenda" exibir="botao" />
           {modosVisao}
           {filtroProfissional}
           {mostrarCamadas}
@@ -931,7 +928,6 @@ export default function Agenda() {
       <div className="md:hidden fixed inset-x-0 bottom-0 z-30 glass bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.08)] px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] space-y-2">
         <div className="flex items-center gap-2">
           <div className="flex-1 min-w-0">{modosVisao}</div>
-          <AvisoBackup tipo="agenda" exibir="botao" compacto />
         </div>
         <div className="flex items-center gap-2">
           {filtroProfissional}
