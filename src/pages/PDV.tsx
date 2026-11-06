@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { mensagemDeErro } from '../lib/seguranca/erros';
-import { ShoppingCart, CalendarHeart, CheckCircle, ArrowLeft, CreditCard, Banknote, Smartphone, Wallet, HandCoins, NotebookPen, Package, MessageCircle } from 'lucide-react';
+import { ShoppingCart, CalendarHeart, CheckCircle, ArrowLeft, CreditCard, Banknote, Smartphone, Wallet, HandCoins, NotebookPen, Package, MessageCircle, Plus, Trash2 } from 'lucide-react';
 import { brl, dataLocal, lerValor, valorParaCampo } from '../lib/formatos';
-import { catalogoKeys, listarServicos } from '../features/catalogo/api';
+import { catalogoKeys, listarServicos, listarVinculos } from '../features/catalogo/api';
+import { FormServicoExtra } from '../features/agenda/FormServicoExtra';
+import { iniciosEmSequencia, ofertasDoProfissional, totalExtras, type ServicoExtra } from '../features/agenda/servicoExtra';
 import { comissoesKeys } from '../features/comissoes/api';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
 import { itemParaAbater, linkWhatsApp, mensagemBaixa } from '../features/pacotes/logic';
@@ -43,6 +45,11 @@ export default function PDV() {
   // Recebe o agendamento da tela de Agenda
   const appointment = location.state?.appointment;
   const { data: servicos = [] } = useQuery({ queryKey: catalogoKeys.servicos, queryFn: listarServicos });
+  const { data: vinculos = [] } = useQuery({ queryKey: catalogoKeys.vinculos(), queryFn: () => listarVinculos() });
+  const ofertas = useMemo(() => ofertasDoProfissional(servicos, vinculos, appointment?.professional_id), [servicos, vinculos, appointment?.professional_id]);
+  // Serviços feitos a mais no atendimento: viram atendimentos próprios ao concluir.
+  const [extras, setExtras] = useState<ServicoExtra[]>([]);
+  const criados = useRef(new Map<string, string>()); // chave do extra -> id já criado (nova tentativa não duplica)
   const servico = useMemo(() => servicos.find((s) => s.id === appointment?.servico_id), [servicos, appointment?.servico_id]);
 
   const valorInicial = appointment?.services?.price ?? appointment?.valor_cobrado ?? 0;
@@ -75,6 +82,34 @@ export default function PDV() {
     mutationFn: async () => {
       const g = gorjeta.trim() ? lerValor(gorjeta) : 0;
       if (g === null) throw Object.assign(new Error('GORJETA'), { publico: 'Gorjeta inválida.' });
+      if (!(modoAtual === 'pacote' && itemPacote) && lerValor(valor) === null) throw Object.assign(new Error('VALOR'), { publico: 'Valor final inválido.' });
+      const forma = { payment_method: paymentMethod, installments: paymentMethod === 'credito' && parcelado ? parcelas : 1 };
+      // Extras primeiro: cada um vira um atendimento logo depois deste, já concluído com a mesma forma de pagamento.
+      const inicios = iniciosEmSequencia(new Date(appointment.end_time), extras);
+      for (const [i, ex] of extras.entries()) {
+        let id = criados.current.get(ex.chave);
+        if (!id) {
+          const { data, error } = await supabase.rpc('agendar_atendimento', {
+            p_cliente: appointment.client_id,
+            p_profissional: appointment.professional_id,
+            p_servico: ex.servicoId,
+            p_inicio: inicios[i].toISOString(),
+            p_servico_avulso: ex.servicoId ? null : ex.nome,
+            p_valor: ex.valor ?? ex.valorExibido,
+            p_duracao_minutos: ex.servicoId ? null : ex.minutos,
+            p_status: 'confirmed',
+            p_observacao: null,
+            p_pacote_item: null,
+          });
+          if (error) throw error;
+          id = data as string;
+          criados.current.set(ex.chave, id);
+        }
+        const { error } = await supabase.from('appointments')
+          .update({ status: 'completed', ...forma, valor_cobrado: ex.valorExibido, gorjeta: 0 })
+          .eq('id', id);
+        if (error) throw error;
+      }
       const observacao = notes.trim() ? [appointment.notes, notes.trim()].filter(Boolean).join('\n') : appointment.notes ?? null;
       if (modoAtual === 'pacote' && itemPacote) {
         // Abatimento: o banco grava valor da sessão, comissão da venda e taxa do pacote (gatilho appointments_pacote).
@@ -92,8 +127,7 @@ export default function PDV() {
           .from('appointments')
           .update({
             status: 'completed',
-            payment_method: paymentMethod,
-            installments: paymentMethod === 'credito' && parcelado ? parcelas : 1,
+            ...forma,
             valor_cobrado: v,
             gorjeta: g,
             notes: observacao,
@@ -158,6 +192,9 @@ export default function PDV() {
   const sName = appointment.services?.name ?? 'Atendimento';
   const valorNum = lerValor(valor) ?? 0;
   const gorjetaNum = lerValor(gorjeta || '0') ?? 0;
+  const extrasNum = totalExtras(extras);
+  const cobrarAgora = (modoAtual === 'pacote' && itemPacote ? 0 : valorNum) + extrasNum;
+  const pedePagamento = modoAtual === 'pagamento' || extras.length > 0;
 
   return (
     <div className="w-full space-y-6 pb-12">
@@ -175,10 +212,33 @@ export default function PDV() {
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Cliente em Atendimento</p>
           <div className="flex justify-between items-center gap-3">
             <h3 className="text-xl font-bold text-slate-800">{appointment.clients?.name ?? 'Cliente'}</h3>
-            <span className="text-xl font-black text-rose-600">{modoAtual === 'pacote' && itemPacote ? (gorjetaNum ? `Gorjeta ${brl(gorjetaNum)}` : 'Pacote') : brl(valorNum + gorjetaNum)}</span>
+            <span className="text-xl font-black text-rose-600">{modoAtual === 'pacote' && itemPacote && !extras.length ? (gorjetaNum ? `Gorjeta ${brl(gorjetaNum)}` : 'Pacote') : brl(cobrarAgora + gorjetaNum)}</span>
           </div>
           <p className="text-sm text-slate-500 mt-1">Serviço: {sName}</p>
+          {extras.length > 0 && (
+            <ul className="mt-2 space-y-1" aria-label="Serviços adicionais">
+              {extras.map((ex) => (
+                <li key={ex.chave} className="flex items-center gap-2 text-sm text-slate-600">
+                  <Plus size={12} className="text-rose-500 shrink-0" />
+                  <span className="flex-1 min-w-0 truncate">{ex.nome}</span>
+                  <span className="font-bold text-slate-700">{brl(ex.valorExibido)}</span>
+                  <button type="button" onClick={() => setExtras(extras.filter((x) => x.chave !== ex.chave))}
+                    disabled={criados.current.has(ex.chave) || completeCheckoutMutation.isPending} aria-label={`Remover ${ex.nome}`}
+                    className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-40"><Trash2 size={14} /></button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
+
+        {appointment.client_id && appointment.professional_id && (
+          <div className="space-y-2">
+            <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Adicionar serviço feito neste atendimento</span>
+            <FormServicoExtra ofertas={ofertas} podeDefinirValor rotuloBotao="Adicionar"
+              onAdicionar={(ex) => { setExtras((lista) => [...lista, ex]); }} />
+            <p className="text-xs text-slate-400">Cada serviço entra na agenda logo depois deste, com a mesma profissional, e é concluído junto, na mesma forma de pagamento.</p>
+          </div>
+        )}
 
         {itemPacote && (
           <div className="space-y-2" role="radiogroup" aria-label="Como finalizar">
@@ -202,9 +262,9 @@ export default function PDV() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Forma de Pagamento */}
-          {modoAtual === 'pagamento' ? (
+          {pedePagamento ? (
           <div className="space-y-3">
-            <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Forma de Pagamento</span>
+            <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Forma de Pagamento{modoAtual === 'pacote' && itemPacote ? ' (serviços adicionais)' : ''}</span>
             <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Forma de pagamento">
               {FORMAS.map((f) => (
                 <button key={f.id} type="button" role="radio" aria-checked={paymentMethod === f.id} onClick={() => setPaymentMethod(f.id)}
@@ -222,10 +282,9 @@ export default function PDV() {
                 {parcelado && (
                   <label className="block text-xs font-bold text-slate-500">Quantidade de parcelas
                     <select value={parcelas} onChange={(e) => setParcelas(Number(e.target.value))} className="mt-1 w-full border border-slate-200 bg-white p-2.5 rounded-lg text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-violet-500">
-                      {Array.from({ length: MAX_PARCELAS - 1 }, (_, i) => i + 2).map((n) => {
-                        const v = lerValor(valor);
-                        return <option key={n} value={n}>{n}x{v ? ` de ${brl(v / n)}` : ''}</option>;
-                      })}
+                      {Array.from({ length: MAX_PARCELAS - 1 }, (_, i) => i + 2).map((n) => (
+                        <option key={n} value={n}>{n}x{cobrarAgora ? ` de ${brl(cobrarAgora / n)}` : ''}</option>
+                      ))}
                     </select>
                   </label>
                 )}
@@ -236,7 +295,7 @@ export default function PDV() {
 
           <div className="space-y-4">
             {modoAtual === 'pagamento' && (
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Valor final do serviço (R$)
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Valor final de {sName} (R$)
               <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} className="mt-1 w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm font-bold text-slate-800 normal-case" />
             </label>
             )}

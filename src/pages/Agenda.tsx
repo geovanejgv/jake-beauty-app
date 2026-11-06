@@ -12,6 +12,8 @@ import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '
 import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
 import { BLOQUEIO_MAX_REPETICOES, conflitoDoItem, conflitoLocal, datasDoBloqueio, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, itensSobrepostos, mensagemAgenda, ocupaAgenda, type ItemAgendamento, type RepeticaoBloqueio } from '../features/agenda/logic';
 import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
+import { FormServicoExtra } from '../features/agenda/FormServicoExtra';
+import { ofertasDoProfissional, type ServicoExtra } from '../features/agenda/servicoExtra';
 import { LembretesDoDia, useEnviarLembrete } from '../features/agenda/LembreteAgendamento';
 import { diaSeguinte } from '../features/agenda/lembrete';
 import { brl, dataLocal, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
@@ -72,6 +74,7 @@ export default function Agenda() {
   const [itens, setItens] = useState<ItemAgendamento[]>([]);
   const [blockProf, setBlockProf] = useState('');
   const [editProf, setEditProf] = useState('');
+  const [extraAdicionado, setExtraAdicionado] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -389,6 +392,35 @@ export default function Agenda() {
     onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível atualizar o agendamento.', 'agenda.editar'))
   });
 
+  // Serviço a mais para a cliente já agendada: novo atendimento logo depois dos dela com o mesmo
+  // profissional no dia, pela função do banco (permissão, catálogo e valor conferidos lá).
+  const adicionarServicoMutation = useMutation({
+    mutationFn: async ({ apt, extra }: { apt: any; extra: ServicoExtra }) => {
+      const dia = dataLocal(apt.start_time);
+      const fimBase = (appointments as any[])
+        .filter((a) => a.client_id === apt.client_id && a.professional_id === apt.professional_id && !a.is_block && !a.is_manual_reminder
+          && ['scheduled', 'confirmed'].includes(a.status) && dataLocal(a.start_time) === dia && new Date(a.start_time) >= new Date(apt.start_time))
+        .reduce((max, a) => Math.max(max, new Date(a.end_time).getTime()), new Date(apt.end_time).getTime());
+      const inicio = new Date(fimBase);
+      const { error } = await supabase.rpc('agendar_atendimento', {
+        p_cliente: apt.client_id,
+        p_profissional: apt.professional_id,
+        p_servico: extra.servicoId,
+        p_inicio: inicio.toISOString(),
+        p_servico_avulso: extra.servicoId ? null : extra.nome,
+        p_valor: extra.valor,
+        p_duracao_minutos: extra.servicoId ? null : extra.minutos,
+        p_status: apt.status === 'confirmed' ? 'confirmed' : 'scheduled',
+        p_observacao: null,
+        p_pacote_item: null,
+      });
+      if (error) throw error;
+      return `${extra.nome} adicionado às ${hhmmLocal(inicio)}.`;
+    },
+    onSuccess: (texto) => { queryClient.invalidateQueries({ queryKey: ['appointments-list'] }); setExtraAdicionado(texto); },
+    onError: (error: unknown) => alert(erroAgenda(error, 'Não foi possível adicionar o serviço.', 'agenda.servico_extra'))
+  });
+
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string, status: string }) => {
       const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
@@ -634,7 +666,7 @@ export default function Agenda() {
 
   const openEditModal = (apt: any) => {
     if (!podeMexer(apt)) return;
-    setEditingAppointment(apt); setEditServiceName(apt.services?.name || ''); setEditServicePrice(apt.services?.price != null ? valorParaCampo(apt.services.price) : ''); setEditProf(apt.professional_id || '');
+    setEditingAppointment(apt); setExtraAdicionado(null); setEditServiceName(apt.services?.name || ''); setEditServicePrice(apt.services?.price != null ? valorParaCampo(apt.services.price) : ''); setEditProf(apt.professional_id || '');
     const aptDate = new Date(apt.start_time); setEditDate(aptDate.toISOString().split('T')[0]); setEditTime(aptDate.toTimeString().slice(0, 5));
   };
 
@@ -1424,7 +1456,7 @@ export default function Agenda() {
 
       {editingAppointment && !editingAppointment.is_block && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-40">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 max-h-[92dvh] overflow-y-auto">
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-slate-800">Editar Agendamento</h3>
@@ -1463,6 +1495,18 @@ export default function Agenda() {
                 <button type="submit" disabled={updateAppointmentMutation.isPending} className="w-1/2 bg-rose-600 text-white p-2.5 rounded-lg font-bold disabled:bg-rose-400">Atualizar</button>
               </div>
             </form>
+
+            {!editingAppointment.is_manual_reminder && !editingAppointment.is_reminder_event && editingAppointment.client_id && editingAppointment.professional_id
+              && (editingAppointment.status === 'scheduled' || editingAppointment.status === 'confirmed') && (
+              <div className="pt-4 border-t border-slate-100 space-y-2">
+                <p className="text-xs font-bold text-slate-500 flex items-center gap-1"><Plus size={14} className="text-rose-600" /> Adicionar outro serviço para a cliente</p>
+                <p className="text-[11px] text-slate-400">Entra na agenda logo depois deste atendimento, com {nomeProf(editingAppointment.professional_id)}.</p>
+                <FormServicoExtra ofertas={ofertasDoProfissional(servicosCatalogo, vinculos, editingAppointment.professional_id)} podeDefinirValor={ehAdmin}
+                  ocupado={adicionarServicoMutation.isPending}
+                  onAdicionar={(extra) => { setExtraAdicionado(null); return adicionarServicoMutation.mutateAsync({ apt: editingAppointment, extra }); }} />
+                {extraAdicionado && <p role="status" className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">{extraAdicionado}</p>}
+              </div>
+            )}
 
             <div className="pt-4 mt-4 border-t border-slate-100 flex flex-col gap-2">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center mb-1">Ações Rápidas</p>
