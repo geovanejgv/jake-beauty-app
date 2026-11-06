@@ -10,7 +10,10 @@ import { FormServicoExtra } from '../features/agenda/FormServicoExtra';
 import { iniciosEmSequencia, ofertasDoProfissional, totalExtras, type ServicoExtra } from '../features/agenda/servicoExtra';
 import { comissoesKeys } from '../features/comissoes/api';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
-import { itemParaAbater, linkWhatsApp, mensagemBaixa } from '../features/pacotes/logic';
+import { linkWhatsApp, mensagemBaixa } from '../features/pacotes/logic';
+import { equipeKeys, listarAtivos, nomeNaAgenda } from '../features/equipe/api';
+import { hhmmLocal } from '../features/agenda/logic';
+import { atendimentosDoCheckout, fimDoUltimo, pacotesPorAtendimento, totalCobranca } from '../features/agenda/checkout';
 
 const FORMAS = [
   { id: 'pix', rotulo: 'PIX', icone: Smartphone, cor: 'emerald' },
@@ -42,22 +45,32 @@ export default function PDV() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  // Recebe o agendamento da tela de Agenda
+  // Recebe da Agenda o atendimento escolhido e os demais em aberto da cliente no mesmo dia.
   const appointment = location.state?.appointment;
+  const itens: any[] = useMemo(
+    () => (appointment ? atendimentosDoCheckout(appointment, [appointment, ...((location.state?.relacionados as any[]) ?? [])]) : []),
+    [appointment, location.state?.relacionados],
+  );
   const { data: servicos = [] } = useQuery({ queryKey: catalogoKeys.servicos, queryFn: listarServicos });
   const { data: vinculos = [] } = useQuery({ queryKey: catalogoKeys.vinculos(), queryFn: () => listarVinculos() });
+  const { data: equipe = [] } = useQuery({ queryKey: equipeKeys.ativos, queryFn: listarAtivos });
+  const nomeProf = (id: string | null | undefined) => { const p = equipe.find((x) => x.id === id); return p ? nomeNaAgenda(p) : 'Sem profissional'; };
   const ofertas = useMemo(() => ofertasDoProfissional(servicos, vinculos, appointment?.professional_id), [servicos, vinculos, appointment?.professional_id]);
   // Serviços feitos a mais no atendimento: viram atendimentos próprios ao concluir.
   const [extras, setExtras] = useState<ServicoExtra[]>([]);
   const criados = useRef(new Map<string, string>()); // chave do extra -> id já criado (nova tentativa não duplica)
   const servico = useMemo(() => servicos.find((s) => s.id === appointment?.servico_id), [servicos, appointment?.servico_id]);
 
-  const valorInicial = appointment?.services?.price ?? appointment?.valor_cobrado ?? 0;
+  // Por atendimento: incluir na cobrança, valor (o do agendamento, editável) e se abate do pacote.
+  const [linhas, setLinhas] = useState<Record<string, { incluir: boolean; valor: string; pacote: boolean | null }>>(() =>
+    Object.fromEntries(itens.map((a) => [a.id, { incluir: true, valor: valorParaCampo(a.services?.price ?? a.valor_cobrado ?? 0), pacote: null }])));
+  const linha = (id: string) => linhas[id] ?? { incluir: true, valor: '', pacote: null };
+  const mudar = (id: string, x: Partial<{ incluir: boolean; valor: string; pacote: boolean | null }>) => setLinhas((l) => ({ ...l, [id]: { ...linha(id), ...x } }));
+
   const [paymentMethod, setPaymentMethod] = useState<string>('pix');
   // Crédito: à vista (1x) ou parcelado (2x a 12x).
   const [parcelado, setParcelado] = useState(false);
   const [parcelas, setParcelas] = useState(2);
-  const [valor, setValor] = useState(valorParaCampo(valorInicial));
   const [gorjeta, setGorjeta] = useState('');
   const [returnDate, setReturnDate] = useState(''); // Data do lembrete de retorno
   const [notes, setNotes] = useState('');
@@ -65,27 +78,30 @@ export default function PDV() {
   const [erro, setErro] = useState<string | null>(null);
   const [concluido, setConcluido] = useState<{ mensagem: string; link: string | null } | null>(null);
 
-  // Pacote: o vinculado no agendamento ou o do mesmo serviço que vence primeiro.
+  // Pacote: o reservado no agendamento ou o do mesmo serviço que vence primeiro (sem repetir sessão).
   const { data: saldos = [] } = useQuery({
     queryKey: pacotesKeys.saldos(appointment?.client_id ?? null, true),
     queryFn: () => listarSaldos(appointment.client_id, true),
     enabled: !!appointment?.client_id,
   });
-  const itemPacote = useMemo(
-    () => (appointment?.pacote_item_id ? saldos.find((l) => l.item_id === appointment.pacote_item_id) ?? null : itemParaAbater(saldos, appointment?.servico_id)),
-    [saldos, appointment?.pacote_item_id, appointment?.servico_id],
-  );
-  const [modo, setModo] = useState<'pacote' | 'pagamento' | null>(null);
-  const modoAtual = modo ?? (itemPacote ? 'pacote' : 'pagamento');
+  const pacotes = useMemo(() => pacotesPorAtendimento(itens, saldos), [itens, saldos]);
+  const usaPacote = (id: string) => !!pacotes.get(id) && linha(id).pacote !== false;
 
   const completeCheckoutMutation = useMutation({
     mutationFn: async () => {
       const g = gorjeta.trim() ? lerValor(gorjeta) : 0;
       if (g === null) throw Object.assign(new Error('GORJETA'), { publico: 'Gorjeta inválida.' });
-      if (!(modoAtual === 'pacote' && itemPacote) && lerValor(valor) === null) throw Object.assign(new Error('VALOR'), { publico: 'Valor final inválido.' });
+      const incluidos = itens.filter((a) => a.id === appointment.id || linha(a.id).incluir);
+      const valores = new Map<string, number>();
+      for (const a of incluidos) {
+        if (usaPacote(a.id)) continue;
+        const v = lerValor(linha(a.id).valor);
+        if (v === null || v > 100000) throw Object.assign(new Error('VALOR'), { publico: `Valor inválido em ${a.services?.name ?? 'atendimento'}.` });
+        valores.set(a.id, v);
+      }
       const forma = { payment_method: paymentMethod, installments: paymentMethod === 'credito' && parcelado ? parcelas : 1 };
-      // Extras primeiro: cada um vira um atendimento logo depois deste, já concluído com a mesma forma de pagamento.
-      const inicios = iniciosEmSequencia(new Date(appointment.end_time), extras);
+      // Extras: cada um vira um atendimento logo depois do último, já concluído com a mesma forma de pagamento.
+      const inicios = iniciosEmSequencia(fimDoUltimo(itens), extras);
       for (const [i, ex] of extras.entries()) {
         let id = criados.current.get(ex.chave);
         if (!id) {
@@ -110,48 +126,47 @@ export default function PDV() {
           .eq('id', id);
         if (error) throw error;
       }
-      const observacao = notes.trim() ? [appointment.notes, notes.trim()].filter(Boolean).join('\n') : appointment.notes ?? null;
-      if (modoAtual === 'pacote' && itemPacote) {
-        // Abatimento: o banco grava valor da sessão, comissão da venda e taxa do pacote (gatilho appointments_pacote).
-        const { error } = await supabase
-          .from('appointments')
-          .update({ status: 'completed', pacote_item_id: itemPacote.item_id, gorjeta: g, notes: observacao, return_reminder_date: returnDate || null, return_reminder_sent: false })
-          .eq('id', appointment.id);
-        if (error) throw error;
-      } else {
-        const v = lerValor(valor);
-        if (v === null) throw Object.assign(new Error('VALOR'), { publico: 'Valor final inválido.' });
-        // Forma de pagamento, valor e gorjeta alimentam o cálculo de comissão (taxas por forma).
-        // Atendimento reservado num pacote e pago à parte: o vínculo é desfeito e a sessão volta ao saldo.
-        const { error } = await supabase
-          .from('appointments')
-          .update({
-            status: 'completed',
-            ...forma,
-            valor_cobrado: v,
-            gorjeta: g,
-            notes: observacao,
-            return_reminder_date: returnDate || null,
-            return_reminder_sent: false,
-            ...(appointment.pacote_item_id ? { pacote_item_id: null } : {})
-          })
-          .eq('id', appointment.id);
+      // O atendimento escolhido fica por último e leva gorjeta, observação e lembrete de retorno.
+      const ordem = [...incluidos.filter((a) => a.id !== appointment.id), appointment];
+      for (const a of ordem) {
+        const principal = a.id === appointment.id;
+        const proprios = principal ? {
+          gorjeta: g,
+          notes: notes.trim() ? [a.notes, notes.trim()].filter(Boolean).join('\n') : a.notes ?? null,
+          return_reminder_date: returnDate || null,
+          return_reminder_sent: false,
+        } : { gorjeta: 0 };
+        const pacote = usaPacote(a.id) ? pacotes.get(a.id)! : null;
+        // Pacote: o banco grava valor da sessão, comissão da venda e taxa (gatilho appointments_pacote).
+        // Pago à parte: forma, valor e gorjeta alimentam a comissão; reserva de pacote é desfeita e a sessão volta ao saldo.
+        const { error } = await supabase.from('appointments')
+          .update(pacote
+            ? { status: 'completed', pacote_item_id: pacote.item_id, ...proprios }
+            : { status: 'completed', ...forma, valor_cobrado: valores.get(a.id), ...proprios, ...(a.pacote_item_id ? { pacote_item_id: null } : {}) })
+          .eq('id', a.id);
         if (error) throw error;
       }
       if (tecnico.trim() && appointment.client_id) {
         const { error: e2 } = await supabase.from('cliente_historico').insert([{ cliente_id: appointment.client_id, agendamento_id: appointment.id, tipo: 'tecnico', texto: tecnico.trim() }]);
         if (e2) throw e2;
       }
+      return incluidos.filter((a) => usaPacote(a.id)).map((a) => pacotes.get(a.id)!);
     },
-    onSuccess: () => {
+    onSuccess: (baixas) => {
       queryClient.invalidateQueries({ queryKey: ['appointments-list'] });
       queryClient.invalidateQueries({ queryKey: comissoesKeys.base });
       queryClient.invalidateQueries({ queryKey: pacotesKeys.base });
-      if (modoAtual === 'pacote' && itemPacote) {
-        const mensagem = mensagemBaixa({
-          cliente: appointment.clients?.name ?? 'cliente', servico: itemPacote.servico_nome, pacote: itemPacote.pacote_nome,
-          restantes: Math.max(itemPacote.sessoes - itemPacote.usadas - itemPacote.faltas - 1, 0), validade: itemPacote.validade,
-        });
+      if (baixas.length) {
+        // Mesma sessão de pacote usada mais de uma vez: o saldo cai a cada uso.
+        const usos = new Map<string, number>();
+        const mensagem = baixas.map((p) => {
+          const n = (usos.get(p.item_id) ?? 0) + 1;
+          usos.set(p.item_id, n);
+          return mensagemBaixa({
+            cliente: appointment.clients?.name ?? 'cliente', servico: p.servico_nome, pacote: p.pacote_nome,
+            restantes: Math.max(p.sessoes - p.usadas - p.faltas - n, 0), validade: p.validade,
+          });
+        }).join('\n\n');
         setConcluido({ mensagem, link: appointment.clients?.contato_visivel ? linkWhatsApp(appointment.clients?.phone, mensagem) : null });
         return;
       }
@@ -189,12 +204,13 @@ export default function PDV() {
     );
   }
 
-  const sName = appointment.services?.name ?? 'Atendimento';
-  const valorNum = lerValor(valor) ?? 0;
   const gorjetaNum = lerValor(gorjeta || '0') ?? 0;
-  const extrasNum = totalExtras(extras);
-  const cobrarAgora = (modoAtual === 'pacote' && itemPacote ? 0 : valorNum) + extrasNum;
-  const pedePagamento = modoAtual === 'pagamento' || extras.length > 0;
+  const cobrarAgora = totalCobranca(
+    itens.map((a) => ({ incluir: a.id === appointment.id || linha(a.id).incluir, pacote: usaPacote(a.id), valor: lerValor(linha(a.id).valor) })),
+    totalExtras(extras),
+  );
+  const pedePagamento = cobrarAgora > 0 || itens.some((a) => (a.id === appointment.id || linha(a.id).incluir) && !usaPacote(a.id)) || extras.length > 0;
+  const horario = (a: any) => `${hhmmLocal(new Date(a.start_time))} - ${hhmmLocal(new Date(a.end_time))}`;
 
   return (
     <div className="w-full space-y-6 pb-12">
@@ -207,28 +223,70 @@ export default function PDV() {
       </div>
 
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-6">
-        {/* Resumo do Cliente */}
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Cliente em Atendimento</p>
-          <div className="flex justify-between items-center gap-3">
+        {/* Cliente e todos os serviços dela no dia, numa única cobrança */}
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+          <div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Cliente em Atendimento</p>
             <h3 className="text-xl font-bold text-slate-800">{appointment.clients?.name ?? 'Cliente'}</h3>
-            <span className="text-xl font-black text-rose-600">{modoAtual === 'pacote' && itemPacote && !extras.length ? (gorjetaNum ? `Gorjeta ${brl(gorjetaNum)}` : 'Pacote') : brl(cobrarAgora + gorjetaNum)}</span>
+            {itens.length > 1 && <p className="text-xs text-slate-500 mt-0.5">{itens.length} serviços agendados hoje. Desmarque o que não for cobrar agora.</p>}
           </div>
-          <p className="text-sm text-slate-500 mt-1">Serviço: {sName}</p>
-          {extras.length > 0 && (
-            <ul className="mt-2 space-y-1" aria-label="Serviços adicionais">
-              {extras.map((ex) => (
-                <li key={ex.chave} className="flex items-center gap-2 text-sm text-slate-600">
-                  <Plus size={12} className="text-rose-500 shrink-0" />
-                  <span className="flex-1 min-w-0 truncate">{ex.nome}</span>
-                  <span className="font-bold text-slate-700">{brl(ex.valorExibido)}</span>
-                  <button type="button" onClick={() => setExtras(extras.filter((x) => x.chave !== ex.chave))}
-                    disabled={criados.current.has(ex.chave) || completeCheckoutMutation.isPending} aria-label={`Remover ${ex.nome}`}
-                    className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-40"><Trash2 size={14} /></button>
+
+          <ul className="space-y-2" aria-label="Serviços da cobrança">
+            {itens.map((a) => {
+              const principal = a.id === appointment.id;
+              const l = linha(a.id);
+              const pacote = pacotes.get(a.id);
+              const noPacote = usaPacote(a.id);
+              const ativo = principal || l.incluir;
+              return (
+                <li key={a.id} className={`bg-white border rounded-xl p-3 space-y-2 ${ativo ? 'border-slate-200' : 'border-dashed border-slate-200 opacity-60'}`}>
+                  <div className="flex items-start gap-3">
+                    <input type="checkbox" checked={ativo} disabled={principal} onChange={(e) => mudar(a.id, { incluir: e.target.checked })}
+                      aria-label={`Incluir ${a.services?.name ?? 'atendimento'} na cobrança`} className="mt-1 w-4 h-4 accent-rose-600 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-800 truncate">{a.services?.name ?? 'Atendimento'}</p>
+                      <p className="text-xs text-slate-500">{horario(a)} · {nomeProf(a.professional_id)}</p>
+                    </div>
+                    {noPacote
+                      ? <span className="shrink-0 text-sm font-bold text-violet-700 flex items-center gap-1"><Package size={14} /> Pacote</span>
+                      : <input inputMode="decimal" value={l.valor} disabled={!ativo} onChange={(e) => mudar(a.id, { valor: e.target.value })}
+                          aria-label={`Valor de ${a.services?.name ?? 'atendimento'} (R$)`}
+                          className="shrink-0 w-28 border border-slate-200 p-2 rounded-lg text-right text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-500 disabled:bg-slate-100" />}
+                  </div>
+                  {pacote && ativo && (
+                    <div className="flex flex-wrap items-center gap-2 pl-7">
+                      <div className="flex bg-slate-100 p-0.5 rounded-lg text-xs font-bold" role="radiogroup" aria-label={`Como cobrar ${a.services?.name ?? 'atendimento'}`}>
+                        <button type="button" role="radio" aria-checked={noPacote} onClick={() => mudar(a.id, { pacote: true })} className={`px-2.5 py-1 rounded-md ${noPacote ? 'bg-violet-600 text-white' : 'text-slate-500'}`}>Abater do pacote</button>
+                        <button type="button" role="radio" aria-checked={!noPacote} onClick={() => mudar(a.id, { pacote: false })} className={`px-2.5 py-1 rounded-md ${!noPacote ? 'bg-rose-600 text-white' : 'text-slate-500'}`}>Cobrar à parte</button>
+                      </div>
+                      <span className="text-[11px] text-slate-500">
+                        "{pacote.pacote_nome}": restam {pacote.sessoes - pacote.usadas - pacote.faltas} de {pacote.sessoes}, até {pacote.validade.split('-').reverse().join('/')}.
+                      </span>
+                    </div>
+                  )}
                 </li>
-              ))}
-            </ul>
-          )}
+              );
+            })}
+            {extras.map((ex) => (
+              <li key={ex.chave} className="bg-white border border-rose-100 rounded-xl p-3 flex items-center gap-3">
+                <Plus size={16} className="text-rose-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-800 truncate">{ex.nome}</p>
+                  <p className="text-xs text-slate-500">Adicionado agora · {nomeProf(appointment.professional_id)}</p>
+                </div>
+                <span className="font-bold text-slate-800">{brl(ex.valorExibido)}</span>
+                <button type="button" onClick={() => setExtras(extras.filter((x) => x.chave !== ex.chave))}
+                  disabled={criados.current.has(ex.chave) || completeCheckoutMutation.isPending} aria-label={`Remover ${ex.nome}`}
+                  className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-40"><Trash2 size={14} /></button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="border-t border-slate-200 pt-3 space-y-1 text-sm">
+            <div className="flex justify-between text-slate-600"><span>Serviços</span><span>{brl(cobrarAgora)}</span></div>
+            {gorjetaNum > 0 && <div className="flex justify-between text-slate-600"><span>Gorjeta</span><span>{brl(gorjetaNum)}</span></div>}
+            <div className="flex justify-between items-center"><span className="font-bold text-slate-800">Total a cobrar</span><span className="text-2xl font-black text-rose-600">{brl(cobrarAgora + gorjetaNum)}</span></div>
+          </div>
         </div>
 
         {appointment.client_id && appointment.professional_id && (
@@ -236,27 +294,7 @@ export default function PDV() {
             <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Adicionar serviço feito neste atendimento</span>
             <FormServicoExtra ofertas={ofertas} podeDefinirValor rotuloBotao="Adicionar"
               onAdicionar={(ex) => { setExtras((lista) => [...lista, ex]); }} />
-            <p className="text-xs text-slate-400">Cada serviço entra na agenda logo depois deste, com a mesma profissional, e é concluído junto, na mesma forma de pagamento.</p>
-          </div>
-        )}
-
-        {itemPacote && (
-          <div className="space-y-2" role="radiogroup" aria-label="Como finalizar">
-            <button type="button" role="radio" aria-checked={modoAtual === 'pacote'} onClick={() => setModo('pacote')}
-              className={`w-full text-left flex items-start gap-3 p-4 rounded-xl border transition-all ${modoAtual === 'pacote' ? 'bg-violet-50 border-violet-500 ring-1 ring-violet-500' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
-              <Package size={20} className="text-violet-600 mt-0.5 shrink-0" />
-              <span>
-                <span className="block font-bold text-slate-800">Abater do pacote "{itemPacote.pacote_nome}"</span>
-                <span className="block text-xs text-slate-600 mt-0.5">
-                  {itemPacote.servico_nome}: restam {itemPacote.sessoes - itemPacote.usadas - itemPacote.faltas} de {itemPacote.sessoes}, válido até {itemPacote.validade.split('-').reverse().join('/')}.
-                  {itemPacote.valor_sessao != null && <> Valor da sessão {brl(itemPacote.valor_sessao)}; comissão de {itemPacote.comissao_percentual}% para quem executou.</>}
-                </span>
-              </span>
-            </button>
-            <button type="button" role="radio" aria-checked={modoAtual === 'pagamento'} onClick={() => setModo('pagamento')}
-              className={`w-full text-left p-3 rounded-xl border text-sm font-bold transition-all ${modoAtual === 'pagamento' ? 'bg-rose-50 border-rose-500 ring-1 ring-rose-500 text-rose-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-              Cobrar à parte (sem usar o pacote)
-            </button>
+            <p className="text-xs text-slate-400">Entra na agenda depois do último serviço do dia, com {nomeProf(appointment.professional_id)}, e é concluído junto, na mesma forma de pagamento.</p>
           </div>
         )}
 
@@ -264,7 +302,7 @@ export default function PDV() {
           {/* Forma de Pagamento */}
           {pedePagamento ? (
           <div className="space-y-3">
-            <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Forma de Pagamento{modoAtual === 'pacote' && itemPacote ? ' (serviços adicionais)' : ''}</span>
+            <span className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Forma de Pagamento</span>
             <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Forma de pagamento">
               {FORMAS.map((f) => (
                 <button key={f.id} type="button" role="radio" aria-checked={paymentMethod === f.id} onClick={() => setPaymentMethod(f.id)}
@@ -291,17 +329,12 @@ export default function PDV() {
               </div>
             )}
           </div>
-          ) : <p className="text-sm text-slate-500 self-center">A sessão já foi paga na venda do pacote. Só a gorjeta, se houver, é registrada agora.</p>}
+          ) : <p className="text-sm text-slate-500 self-center">As sessões já foram pagas na venda do pacote. Só a gorjeta, se houver, é registrada agora.</p>}
 
           <div className="space-y-4">
-            {modoAtual === 'pagamento' && (
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Valor final de {sName} (R$)
-              <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} className="mt-1 w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm font-bold text-slate-800 normal-case" />
-            </label>
-            )}
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1"><HandCoins size={14} className="text-emerald-600" /> Gorjeta (opcional)</label>
             <input inputMode="decimal" value={gorjeta} onChange={(e) => setGorjeta(e.target.value)} placeholder="0,00" aria-label="Gorjeta" className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm" />
-            <p className="text-xs text-slate-400">A gorjeta vai integralmente para o profissional no fechamento de comissões.</p>
+            <p className="text-xs text-slate-400">A gorjeta vai integralmente para {nomeProf(appointment.professional_id)} no fechamento de comissões.</p>
           </div>
         </div>
 
