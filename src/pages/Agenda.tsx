@@ -13,6 +13,7 @@ import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
 import { BLOQUEIO_MAX_REPETICOES, conflitoDoItem, conflitoLocal, datasDoBloqueio, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, itensSobrepostos, mensagemAgenda, ocupaAgenda, type ItemAgendamento, type RepeticaoBloqueio } from '../features/agenda/logic';
 import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
 import { FormServicoExtra } from '../features/agenda/FormServicoExtra';
+import { atendimentosDoCheckout } from '../features/agenda/checkout';
 import { ofertasDoProfissional, type ServicoExtra } from '../features/agenda/servicoExtra';
 import { LembretesDoDia, useEnviarLembrete } from '../features/agenda/LembreteAgendamento';
 import { diaSeguinte } from '../features/agenda/lembrete';
@@ -150,7 +151,7 @@ export default function Agenda() {
 
   // Cliente (pela view) e serviço (catálogo novo, registro antigo ou nome do lembrete) normalizados.
   const mapaClientes = new Map((clientsList as any[]).map((c) => [c.id, c]));
-  const agendamentos = (appointments as any[]).map((a) => ({
+  const normalizar = (a: any) => ({
     ...a,
     clients: a.client_id ? mapaClientes.get(a.client_id) ?? null : null,
     services: {
@@ -158,7 +159,8 @@ export default function Agenda() {
       name: a.servicos?.nome ?? a.services?.name ?? a.notes ?? 'Procedimento',
       price: a.valor_cobrado ?? a.services?.price ?? null,
     },
-  }))
+  });
+  const agendamentos = (appointments as any[]).map(normalizar)
     .filter((a) => !veEquipe || !filtroProf || (filtroProf === 'sem' ? !a.professional_id : a.professional_id === filtroProf));
 
   // Serviços que o profissional escolhido oferece, com preço e tempo dele.
@@ -681,7 +683,12 @@ export default function Agenda() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, isLoading]);
 
-  const handleSendToCheckout = (apt: any) => { setEditingAppointment(null); navigate('/pdv', { state: { appointment: apt } }); };
+  // Checkout junta os atendimentos em aberto da cliente no dia (de qualquer profissional, sem o filtro da tela).
+  const handleSendToCheckout = (apt: any) => {
+    setEditingAppointment(null);
+    const doDia = atendimentosDoCheckout(apt, (appointments as any[]).map(normalizar)).filter((a: any) => a.id !== apt.id);
+    navigate('/pdv', { state: { appointment: apt, relacionados: doDia } });
+  };
 
   const handleSendWhatsApp = (apt: any) => {
     if (!apt.clients?.contato_visivel) return alert('O contato da cliente fica com a administração do salão.');
