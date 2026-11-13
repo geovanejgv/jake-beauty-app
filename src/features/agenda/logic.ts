@@ -180,3 +180,70 @@ export function datasDoBloqueio(inicio: string, freq: RepeticaoBloqueio, termino
   }
   return datas;
 }
+
+/**
+ * Repetição do lembrete manual: no mês seguinte, por 2 meses, todo mês (24 meses no total,
+ * como antes) ou um número de meses escolhido. Os meses são contados depois do primeiro lembrete.
+ */
+export type RepeticaoLembrete = 'nao' | 'seguinte' | 'dois' | 'todo' | 'personalizado';
+/** Total de lembretes numa série (o primeiro incluído); o banco aceita de 1 a 24. */
+export const LEMBRETE_MAX_MESES = 24;
+
+/** Quantidade total de lembretes (primeiro incluído) ou mensagem quando o número é inválido. */
+export function mesesDoLembrete(rep: RepeticaoLembrete, personalizado: string | number = ''): number | string {
+  if (rep === 'nao') return 1;
+  if (rep === 'seguinte') return 2;
+  if (rep === 'dois') return 3;
+  if (rep === 'todo') return LEMBRETE_MAX_MESES;
+  const n = Number(personalizado);
+  if (!Number.isInteger(n) || n < 1 || n > LEMBRETE_MAX_MESES - 1) return `Repita por 1 a ${LEMBRETE_MAX_MESES - 1} meses.`;
+  return n + 1;
+}
+
+/** Datas (AAAA-MM-DD) dos lembretes da série, mantendo o dia (ou o último dia do mês menor). */
+export const datasDoLembrete = (inicio: string, meses: number): string[] =>
+  Array.from({ length: meses }, (_, i) => dataDaVez(inicio, 'mensal', i));
+
+export type CompromissoCliente = {
+  id: string;
+  start_time: string;
+  client_id?: string | null;
+  status?: string | null;
+  is_block?: boolean | null;
+  is_manual_reminder?: boolean | null;
+  recurring_group_id?: string | null;
+  return_reminder_date?: string | null;
+};
+export type CompromissoFuturo = { tipo: 'atendimento' | 'lembrete' | 'retorno'; data: Date | string; id: string; serie: number };
+
+/**
+ * Atendimentos, lembretes manuais e retornos da cliente a partir de `agora` (ordem de data),
+ * para avisar antes de criar outro e evitar duplicidade. Série de lembretes aparece uma vez
+ * (a próxima data), com o total restante em `serie`.
+ */
+export function compromissosFuturos(eventos: CompromissoCliente[], clienteId: string, agora: Date): CompromissoFuturo[] {
+  const hoje = `${agora.getFullYear()}-${pad2(agora.getMonth() + 1)}-${pad2(agora.getDate())}`;
+  const lista: CompromissoFuturo[] = [];
+  const series = new Map<string, CompromissoFuturo>();
+  for (const e of eventos) {
+    if (e.client_id !== clienteId || e.is_block) continue;
+    if (e.is_manual_reminder) {
+      if (e.status === 'cancelled' || new Date(e.start_time) < agora) continue;
+      const item: CompromissoFuturo = { tipo: 'lembrete', data: new Date(e.start_time), id: e.id, serie: 1 };
+      const g = e.recurring_group_id;
+      const ja = g ? series.get(g) : undefined;
+      if (ja) { ja.serie++; if (item.data < ja.data) { ja.data = item.data; ja.id = item.id; } continue; }
+      if (g) series.set(g, item);
+      lista.push(item);
+      continue;
+    }
+    if (ATIVOS.has(e.status ?? 'scheduled') && e.status !== 'completed' && new Date(e.start_time) >= agora) {
+      lista.push({ tipo: 'atendimento', data: new Date(e.start_time), id: e.id, serie: 1 });
+    }
+    if (e.return_reminder_date && e.return_reminder_date >= hoje) {
+      lista.push({ tipo: 'retorno', data: e.return_reminder_date, id: `ret-${e.id}`, serie: 1 });
+    }
+  }
+  const chave = (c: CompromissoFuturo) => (typeof c.data === 'string' ? `${c.data}T00:00` : c.data.toISOString());
+  return lista.sort((a, b) => chave(a).localeCompare(chave(b)));
+}

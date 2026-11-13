@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { atendimentosNoHorario, colunasSobrepostas, datasDoBloqueio, conflitoDoItem, conflitoLocal, fimDoItem, hhmmLocal, intervalosLivres, itensSobrepostos, mensagemAgenda, posicaoNaLinha } from './logic';
+import { atendimentosNoHorario, colunasSobrepostas, compromissosFuturos, datasDoBloqueio, datasDoLembrete, conflitoDoItem, conflitoLocal, fimDoItem, hhmmLocal, intervalosLivres, itensSobrepostos, mensagemAgenda, mesesDoLembrete, posicaoNaLinha } from './logic';
 
 const ev = (id: string, ini: string, fim: string, x: Record<string, unknown> = {}) => ({
   id, start_time: ini, end_time: fim, status: 'scheduled', professional_id: 'p1', ...x,
@@ -107,5 +107,48 @@ describe('bloqueio recorrente', () => {
     expect(datasDoBloqueio('2026-10-22', 'diaria', { tipo: 'vezes', vezes: 1 })).toMatch(/2 vezes/);
     expect(datasDoBloqueio('2026-10-22', 'diaria', { tipo: 'data', ate: '2028-01-01' })).toMatch(/máximo/);
     expect((datasDoBloqueio('2026-01-01', 'diaria', { tipo: 'data', ate: '2027-01-01' }) as string[]).length).toBe(366);
+  });
+});
+
+describe('repetição do lembrete manual', () => {
+  it('opções viram total de lembretes (o primeiro incluído)', () => {
+    expect(mesesDoLembrete('nao')).toBe(1);
+    expect(mesesDoLembrete('seguinte')).toBe(2);
+    expect(mesesDoLembrete('dois')).toBe(3);
+    expect(mesesDoLembrete('todo')).toBe(24);
+    expect(mesesDoLembrete('personalizado', '5')).toBe(6);
+    expect(mesesDoLembrete('personalizado', '23')).toBe(24);
+  });
+  it('personalizado fora de 1 a 23 meses é recusado', () => {
+    for (const v of ['', '0', '24', '2.5', 'x']) expect(typeof mesesDoLembrete('personalizado', v)).toBe('string');
+  });
+  it('datas mantêm o dia ou usam o último dia do mês', () => {
+    expect(datasDoLembrete('2026-11-13', 3)).toEqual(['2026-11-13', '2026-12-13', '2027-01-13']);
+    expect(datasDoLembrete('2027-01-31', 2)).toEqual(['2027-01-31', '2027-02-28']);
+  });
+});
+
+describe('compromissos futuros da cliente (evitar duplicidade)', () => {
+  const agora = new Date('2026-11-13T12:00:00Z');
+  const base = { client_id: 'c1', status: 'scheduled' };
+  const eventos = [
+    { ...base, id: 'passado', start_time: '2026-11-10T12:00:00Z' },
+    { ...base, id: 'at', start_time: '2026-11-20T13:00:00Z' },
+    { ...base, id: 'cancelado', start_time: '2026-11-21T13:00:00Z', status: 'cancelled' },
+    { ...base, id: 'outra', start_time: '2026-11-22T13:00:00Z', client_id: 'c2' },
+    { ...base, id: 'bloq', start_time: '2026-11-22T13:00:00Z', is_block: true },
+    { ...base, id: 'l1', start_time: '2026-10-13T13:00:00Z', is_manual_reminder: true, recurring_group_id: 'g' },
+    { ...base, id: 'l3', start_time: '2027-01-13T13:00:00Z', is_manual_reminder: true, recurring_group_id: 'g' },
+    { ...base, id: 'l2', start_time: '2026-12-13T13:00:00Z', is_manual_reminder: true, recurring_group_id: 'g' },
+    { ...base, id: 'feito', start_time: '2026-09-01T13:00:00Z', status: 'completed', return_reminder_date: '2026-12-01' },
+  ];
+  it('lista atendimento, retorno e a série de lembretes uma vez, em ordem', () => {
+    const r = compromissosFuturos(eventos, 'c1', agora);
+    expect(r.map((c) => [c.tipo, c.id, c.serie])).toEqual([
+      ['atendimento', 'at', 1], ['retorno', 'ret-feito', 1], ['lembrete', 'l2', 2],
+    ]);
+  });
+  it('cliente sem nada futuro', () => {
+    expect(compromissosFuturos(eventos, 'c9', agora)).toEqual([]);
   });
 });

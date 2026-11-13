@@ -66,7 +66,8 @@ select pg_temp.espera_erro($$select public.agendar_lembrete_grupo('60000000-0000
 -- 3) Lembrete por grupo: um por cliente do grupo, com profissional e procedimento
 select pg_temp.como('aaaaaaaa-0000-0000-0000-000000000001');
 select pg_temp.espera_erro($$select public.agendar_lembrete_grupo('6b000000-0000-0000-0000-0000000000b2', now())$$, 'Grupo não encontrado');
-select pg_temp.espera_erro($$select public.agendar_lembrete_grupo('60000000-0000-0000-0000-000000000001', now(), null, null, null, 7)$$, 'Repetição inválida');
+select pg_temp.espera_erro($$select public.agendar_lembrete_grupo('60000000-0000-0000-0000-000000000001', now(), null, null, null, 25)$$, 'Repetição inválida');
+select pg_temp.espera_erro($$select public.agendar_lembrete_grupo('60000000-0000-0000-0000-000000000001', now(), null, null, null, 0)$$, 'Repetição inválida');
 select pg_temp.ok(public.agendar_lembrete_grupo('60000000-0000-0000-0000-000000000001', '2026-11-02 12:00+00', 'bb000000-0000-0000-0000-0000000000b1', null, 'Limpeza de pele') = 2, 'retorna 2 clientes');
 select pg_temp.ok((select count(*) = 2 and bool_and(is_manual_reminder) and bool_and(notes = 'Limpeza de pele')
                           and bool_and(professional_id = 'bb000000-0000-0000-0000-0000000000b1') and bool_and(not is_recurring)
@@ -74,6 +75,10 @@ select pg_temp.ok((select count(*) = 2 and bool_and(is_manual_reminder) and bool
 select pg_temp.ok((select count(*) = 0 from public.appointments where client_id = 'c3000000-0000-0000-0000-000000000003'), 'cliente fora do grupo sem lembrete');
 select public.agendar_lembrete_grupo('60000000-0000-0000-0000-000000000001', '2026-12-01 12:00+00', null, null, 'Retorno', 24);
 select pg_temp.ok((select count(*) = 48 and count(distinct recurring_group_id) = 2 from public.appointments where notes = 'Retorno'), 'recorrente: 24 meses por cliente, série própria');
+select public.agendar_lembrete_grupo('60000000-0000-0000-0000-000000000001', '2027-01-31 12:00+00', null, null, 'Mês seguinte', 2);
+select pg_temp.ok((select count(*) = 4 and count(distinct recurring_group_id) = 2 and bool_and(is_recurring)
+                     and min(start_time) = '2027-01-31 12:00+00' and max(start_time) = '2027-02-28 12:00+00'
+                     from public.appointments where notes = 'Mês seguinte'), 'mês seguinte: 2 lembretes por cliente (31/01 e 28/02)');
 
 select pg_temp.como('bbbbbbbb-0000-0000-0000-000000000002');
 select pg_temp.ok((select count(*) = 2 from public.appointments where start_time = '2026-11-02 12:00+00'), 'profissional vê os lembretes dela');
