@@ -10,7 +10,7 @@ import { equipeKeys, listarAtivos, nomeNaAgenda } from '../features/equipe/api';
 import { acessoTela } from '../features/acesso/permissoes';
 import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '../features/catalogo/api';
 import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
-import { BLOQUEIO_MAX_REPETICOES, conflitoDoItem, conflitoLocal, datasDoBloqueio, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, itensSobrepostos, mensagemAgenda, ocupaAgenda, type ItemAgendamento, type RepeticaoBloqueio } from '../features/agenda/logic';
+import { BLOQUEIO_MAX_REPETICOES, compromissosFuturos, conflitoDoItem, datasDoLembrete, mesesDoLembrete, type CompromissoCliente, type CompromissoFuturo, type RepeticaoLembrete, conflitoLocal, datasDoBloqueio, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, itensSobrepostos, mensagemAgenda, ocupaAgenda, type ItemAgendamento, type RepeticaoBloqueio } from '../features/agenda/logic';
 import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
 import { FormServicoExtra } from '../features/agenda/FormServicoExtra';
 import { atendimentosDoCheckout } from '../features/agenda/checkout';
@@ -93,7 +93,9 @@ export default function Agenda() {
   const [servicePrice, setServicePrice] = useState('65,00');
   const [appointmentDate, setAppointmentDate] = useState(todayStr);
   const [appointmentTime, setAppointmentTime] = useState('09:00');
-  const [isRecurring, setIsRecurring] = useState(false);
+  // Repetição do lembrete manual (mês seguinte, 2 meses, todo mês ou N meses).
+  const [repLembrete, setRepLembrete] = useState<RepeticaoLembrete>('nao');
+  const [repMeses, setRepMeses] = useState('3');
   // Lembrete para um grupo inteiro de clientes (só administradora).
   const [paraGrupo, setParaGrupo] = useState(false);
   const [grupoLembrete, setGrupoLembrete] = useState('');
@@ -230,13 +232,12 @@ export default function Agenda() {
   // Lembrete manual não ocupa a agenda; o nome do procedimento fica nas observações.
   const addAppointmentMutation = useMutation({
     mutationFn: async (newApt: any) => {
-      const inicio = new Date(`${newApt.date}T${newApt.time}:00`);
+      const datas = datasDoLembrete(newApt.date, newApt.meses);
+      const recorrente = datas.length > 1;
       const inserts = [];
-      const groupId = newApt.is_recurring ? crypto.randomUUID() : null;
-      const loopCount = newApt.is_recurring ? 24 : 1;
-      for (let i = 0; i < loopCount; i++) {
-        const start = new Date(inicio);
-        start.setMonth(start.getMonth() + i);
+      const groupId = recorrente ? crypto.randomUUID() : null;
+      for (const d of datas) {
+        const start = new Date(`${d}T${newApt.time}:00`);
         const end = new Date(start.getTime() + 45 * 60000);
         inserts.push({
           client_id: newApt.client_id,
@@ -248,7 +249,7 @@ export default function Agenda() {
           status: 'scheduled',
           is_block: false,
           is_manual_reminder: true,
-          is_recurring: newApt.is_recurring,
+          is_recurring: recorrente,
           recurring_group_id: groupId
         });
       }
@@ -263,7 +264,7 @@ export default function Agenda() {
       setClientSearchTerm(''); 
       setServiceName(''); 
       setServicePrice('65,00'); 
-      setIsRecurring(false);
+      setRepLembrete('nao');
       setNovoServico('');
       setNovoValor('');
       setNovoConfirmado(false);
@@ -326,7 +327,7 @@ export default function Agenda() {
       queryClient.invalidateQueries({ queryKey: ['appointments-list'] });
       setShowAddModal(false);
       setServiceName('');
-      setIsRecurring(false);
+      setRepLembrete('nao');
       setNovoServico('');
       alert(qtd ? `Lembrete agendado para ${qtd} cliente(s) do grupo.` : 'O grupo está sem clientes: nenhum lembrete foi criado.');
     },
@@ -528,7 +529,7 @@ export default function Agenda() {
     setUsarPacote(true);
     setItens([]);
     if (hora) setAppointmentTime(hora);
-    setIsRecurring(false);
+    setRepLembrete('nao');
     setParaGrupo(false);
     setGrupoLembrete('');
     if (dateStr) setAppointmentDate(dateStr);
@@ -564,8 +565,26 @@ export default function Agenda() {
     setShowBlockModal(true);
   };
 
+  // Compromissos futuros da cliente escolhida (atendimentos, lembretes e retornos) para evitar duplicidade.
+  const compromissosCliente = useMemo(
+    () => (selectedClient?.id && showAddModal ? compromissosFuturos(appointments as CompromissoCliente[], selectedClient.id, new Date()) : []),
+    [appointments, selectedClient?.id, showAddModal],
+  );
+  const textoCompromisso = (c: CompromissoFuturo) => {
+    const ev: any = (appointments as any[]).find((a) => a.id === c.id || `ret-${a.id}` === c.id);
+    const servico = ev?.servicos?.nome ?? ev?.services?.name ?? ev?.notes ?? '';
+    if (c.tipo === 'retorno') return `Retorno em ${isoParaBR(c.data as string)}${servico ? ` (${servico})` : ''}`;
+    const d = c.data as Date;
+    const quando = `${d.toLocaleDateString('pt-BR')} às ${hhmmLocal(d)}`;
+    if (c.tipo === 'lembrete') return `Lembrete em ${quando}${servico ? `, ${servico}` : ''}${c.serie > 1 ? ` (série: mais ${c.serie - 1} mês(es))` : ''}`;
+    return `Atendimento em ${quando}${servico ? `, ${servico}` : ''}${ev?.professional_id ? ` com ${nomeProf(ev.professional_id)}` : ''}`;
+  };
+  const mesesLembrete = mesesDoLembrete(repLembrete, repMeses);
+
   const handleAddSubmit = (e: React.FormEvent) => { 
     e.preventDefault(); 
+    const meses = appointmentType === 'reminder' ? mesesDoLembrete(repLembrete, repMeses) : 1;
+    if (typeof meses === 'string') return alert(meses);
     if (appointmentType === 'reminder' && paraGrupo) {
       if (!grupoLembrete) return alert('Escolha o grupo.');
       const doCatalogo = novoServico && novoServico !== 'avulso' ? novoServico : null;
@@ -577,10 +596,12 @@ export default function Agenda() {
         profissional: novoProf || null,
         servico: doCatalogo,
         texto,
-        recorrente: isRecurring,
+        meses,
       });
     }
     if (!selectedClient) return alert("Selecione uma cliente."); 
+    // Evita duplicidade: a cliente já tem lembrete ou atendimento marcado daqui para frente.
+    if (compromissosCliente.length && !window.confirm(`${selectedClient.name} já tem: ${compromissosCliente.slice(0, 3).map(textoCompromisso).join('; ')}${compromissosCliente.length > 3 ? ` e mais ${compromissosCliente.length - 3}` : ''}. Salvar mesmo assim?`)) return;
     if (appointmentType === 'appointment') {
       // Com serviços já na lista, o formulário em branco só salva a lista.
       const atual = itens.length && !novoServico ? null : montarItem();
@@ -601,7 +622,7 @@ export default function Agenda() {
       service_name: novoServico && novoServico !== 'avulso' ? servicosCatalogo.find((x) => x.id === novoServico)?.nome : serviceName, 
       date: appointmentDate, 
       time: appointmentTime, 
-      is_recurring: isRecurring
+      meses
     }); 
   };
 
@@ -1329,6 +1350,16 @@ export default function Agenda() {
                 )}
               </div>
               )}
+              {selectedClient && !(appointmentType === 'reminder' && paraGrupo) && (
+                compromissosCliente.length === 0
+                  ? <p className="text-[11px] text-slate-500 -mt-2">Sem atendimento ou lembrete marcado daqui para frente.</p>
+                  : <div className="border border-amber-200 bg-amber-50 rounded-lg p-2.5 -mt-1 space-y-1" aria-label="Compromissos futuros da cliente">
+                      <p className="text-xs font-bold text-amber-800 flex items-center gap-1"><AlertTriangle size={12} /> Já tem marcado (confira para não duplicar):</p>
+                      <ul className="max-h-24 overflow-y-auto space-y-0.5">
+                        {compromissosCliente.map((c) => <li key={c.id} className="text-[11px] text-amber-900">{textoCompromisso(c)}</li>)}
+                      </ul>
+                    </div>
+              )}
               {selectedClient && appointmentType === 'appointment' && saldosCliente.some((l) => l.disponiveis > 0) && (
                 <div className="flex flex-wrap gap-1.5 -mt-2" aria-label="Pacotes da cliente">
                   {saldosCliente.filter((l) => l.disponiveis > 0).map((l) => (
@@ -1446,9 +1477,30 @@ export default function Agenda() {
               )}
               
               {appointmentType === 'reminder' && (
-                <div className="flex items-center space-x-2 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
-                  <input type="checkbox" id="recurrence" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded border-indigo-300 focus:ring-indigo-500 cursor-pointer" />
-                  <label htmlFor="recurrence" className="text-xs font-bold text-indigo-800 cursor-pointer select-none flex items-center gap-1"><Repeat size={12}/> Repetir todo mês</label>
+                <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100 space-y-2">
+                  <label htmlFor="repeticao-lembrete" className="text-xs font-bold text-indigo-800 flex items-center gap-1"><Repeat size={12}/> Repetir</label>
+                  <div className="flex gap-2">
+                    <select id="repeticao-lembrete" value={repLembrete} onChange={(e) => setRepLembrete(e.target.value as RepeticaoLembrete)} className="flex-1 border border-indigo-200 p-2 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500">
+                      <option value="nao">Não repetir</option>
+                      <option value="seguinte">No mês seguinte</option>
+                      <option value="dois">Pelos 2 meses seguintes</option>
+                      <option value="todo">Todo mês (24 meses)</option>
+                      <option value="personalizado">Personalizado</option>
+                    </select>
+                    {repLembrete === 'personalizado' && (
+                      <label className="flex items-center gap-1 text-xs font-bold text-indigo-800">
+                        <input type="text" inputMode="numeric" aria-label="Quantidade de meses" value={repMeses} onChange={(e) => setRepMeses(e.target.value.replace(/\D/g, '').slice(0, 2))} className="w-14 border border-indigo-200 p-2 rounded-lg text-sm text-center bg-white outline-none focus:ring-2 focus:ring-indigo-500" />
+                        meses
+                      </label>
+                    )}
+                  </div>
+                  {typeof mesesLembrete === 'string'
+                    ? <p className="text-[11px] font-bold text-red-600">{mesesLembrete}</p>
+                    : mesesLembrete > 1 && (
+                      <p className="text-[11px] text-indigo-700">
+                        {mesesLembrete} lembretes: {datasDoLembrete(appointmentDate, mesesLembrete).slice(0, 4).map(isoParaBR).join(', ')}{mesesLembrete > 4 ? ` ... até ${isoParaBR(datasDoLembrete(appointmentDate, mesesLembrete)[mesesLembrete - 1])}` : ''}
+                      </p>
+                    )}
                 </div>
               )}
 

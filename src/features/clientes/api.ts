@@ -65,9 +65,9 @@ export async function excluirGrupo(id: string) {
 }
 
 /** Um lembrete por cliente do grupo; devolve quantas clientes receberam. */
-export async function agendarLembreteGrupo(p: { grupo: string; inicio: string; profissional: string | null; servico: string | null; texto: string | null; recorrente: boolean }): Promise<number> {
+export async function agendarLembreteGrupo(p: { grupo: string; inicio: string; profissional: string | null; servico: string | null; texto: string | null; meses: number }): Promise<number> {
   const qtd = await rodar(supabase.rpc('agendar_lembrete_grupo', {
-    p_grupo: p.grupo, p_inicio: p.inicio, p_profissional: p.profissional, p_servico: p.servico, p_texto: p.texto, p_meses: p.recorrente ? 24 : 1,
+    p_grupo: p.grupo, p_inicio: p.inicio, p_profissional: p.profissional, p_servico: p.servico, p_texto: p.texto, p_meses: p.meses,
   }));
   return Number(qtd);
 }
