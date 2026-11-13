@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { atendimentosNoHorario, colunasSobrepostas, compromissosFuturos, datasDoBloqueio, datasDoLembrete, conflitoDoItem, conflitoLocal, fimDoItem, hhmmLocal, intervalosLivres, itensSobrepostos, mensagemAgenda, mesesDoLembrete, posicaoNaLinha } from './logic';
+import { atendimentosNoHorario, colunasSobrepostas, compromissosFuturos, dataDoRetorno, datasDoBloqueio, datasDoLembrete, conflitoDoItem, conflitoLocal, fimDoItem, hhmmLocal, intervalosLivres, itensSobrepostos, mensagemAgenda, mesesDoLembrete, mesesDoRetorno, posicaoNaLinha } from './logic';
 
 const ev = (id: string, ini: string, fim: string, x: Record<string, unknown> = {}) => ({
   id, start_time: ini, end_time: fim, status: 'scheduled', professional_id: 'p1', ...x,
@@ -150,5 +150,20 @@ describe('compromissos futuros da cliente (evitar duplicidade)', () => {
   });
   it('cliente sem nada futuro', () => {
     expect(compromissosFuturos(eventos, 'c9', agora)).toEqual([]);
+  });
+});
+
+describe('lembrete de retorno junto com o atendimento', () => {
+  it('opções viram meses até o retorno', () => {
+    expect(mesesDoRetorno('nao')).toBe(0);
+    expect(mesesDoRetorno('1')).toBe(1);
+    expect(mesesDoRetorno('2')).toBe(2);
+    expect(mesesDoRetorno('outro', '3')).toBe(3);
+    for (const v of ['', '0', '25', '1.5']) expect(typeof mesesDoRetorno('outro', v)).toBe('string');
+  });
+  it('data do retorno mantém o dia ou usa o último dia do mês', () => {
+    expect(dataDoRetorno('2026-11-16', 1)).toBe('2026-12-16');
+    expect(dataDoRetorno('2026-11-16', 2)).toBe('2027-01-16');
+    expect(dataDoRetorno('2026-12-31', 2)).toBe('2027-02-28');
   });
 });
