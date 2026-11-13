@@ -10,7 +10,7 @@ import { equipeKeys, listarAtivos, nomeNaAgenda } from '../features/equipe/api';
 import { acessoTela } from '../features/acesso/permissoes';
 import { catalogoKeys, listarCategorias, listarServicos, listarVinculos } from '../features/catalogo/api';
 import { condicoesEfetivas, duracaoTexto } from '../features/catalogo/logic';
-import { BLOQUEIO_MAX_REPETICOES, compromissosFuturos, conflitoDoItem, datasDoLembrete, mesesDoLembrete, type CompromissoCliente, type CompromissoFuturo, type RepeticaoLembrete, conflitoLocal, datasDoBloqueio, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, itensSobrepostos, mensagemAgenda, ocupaAgenda, type ItemAgendamento, type RepeticaoBloqueio } from '../features/agenda/logic';
+import { BLOQUEIO_MAX_REPETICOES, compromissosFuturos, conflitoDoItem, dataDoRetorno, mesesDoRetorno, type RetornoAtendimento, datasDoLembrete, mesesDoLembrete, type CompromissoCliente, type CompromissoFuturo, type RepeticaoLembrete, conflitoLocal, datasDoBloqueio, fimDoItem, hhmmLocal, inicioDoItem, intervalosLivres, itensComoEventos, itensSobrepostos, mensagemAgenda, ocupaAgenda, type ItemAgendamento, type RepeticaoBloqueio } from '../features/agenda/logic';
 import { LinhaDoTempo } from '../features/agenda/LinhaDoTempo';
 import { FormServicoExtra } from '../features/agenda/FormServicoExtra';
 import { atendimentosDoCheckout } from '../features/agenda/checkout';
@@ -96,6 +96,9 @@ export default function Agenda() {
   // Repetição do lembrete manual (mês seguinte, 2 meses, todo mês ou N meses).
   const [repLembrete, setRepLembrete] = useState<RepeticaoLembrete>('nao');
   const [repMeses, setRepMeses] = useState('3');
+  // Lembrete de retorno criado junto com o atendimento (1 mês, 2 meses ou outro).
+  const [retorno, setRetorno] = useState<RetornoAtendimento>('nao');
+  const [retornoOutro, setRetornoOutro] = useState('3');
   // Lembrete para um grupo inteiro de clientes (só administradora).
   const [paraGrupo, setParaGrupo] = useState(false);
   const [grupoLembrete, setGrupoLembrete] = useState('');
@@ -275,7 +278,7 @@ export default function Agenda() {
   // Atendimento (um ou vários serviços): um por vez pela função do banco, com trava contra
   // conflito e valores do catálogo. Se um falhar, os já salvos saem da lista e o resto fica para corrigir.
   const agendarItensMutation = useMutation({
-    mutationFn: async ({ cliente, confirmado, lista }: { cliente: string; confirmado: boolean; lista: ItemAgendamento[] }) => {
+    mutationFn: async ({ cliente, confirmado, lista, retornoMeses }: { cliente: string; confirmado: boolean; lista: ItemAgendamento[]; retornoMeses: number }) => {
       const salvos: string[] = [];
       for (const it of lista) {
         const { error } = await supabase.rpc('agendar_atendimento', {
@@ -293,10 +296,30 @@ export default function Agenda() {
         if (error) throw { salvos, lista, item: it, erro: error };
         salvos.push(it.chave);
       }
+      if (!retornoMeses) return null;
+      // Lembrete de retorno: mesma hora e profissional do primeiro serviço, N meses depois.
+      const primeiro = lista[0];
+      const inicio = new Date(`${dataDoRetorno(primeiro.data, retornoMeses)}T${primeiro.hora}:00`);
+      const { error } = await supabase.from('appointments').insert({
+        client_id: cliente,
+        professional_id: primeiro.profissionalId || null,
+        servico_id: lista.length === 1 ? primeiro.servicoId : null,
+        notes: [...new Set(lista.map((it) => it.servicoNome))].join(', ').slice(0, 255) || null,
+        start_time: inicio.toISOString(),
+        end_time: new Date(inicio.getTime() + 45 * 60000).toISOString(),
+        status: 'scheduled',
+        is_block: false,
+        is_manual_reminder: true,
+        is_recurring: false,
+        recurring_group_id: null,
+      });
+      return error ? mensagemDeErro(error, 'O lembrete de retorno não foi criado; crie pelo Lembrete Manual.', 'agenda.retorno') : inicio;
     },
-    onSuccess: () => {
+    onSuccess: (lembrete) => {
       queryClient.invalidateQueries({ queryKey: ['appointments-list'] });
       queryClient.invalidateQueries({ queryKey: pacotesKeys.base });
+      setRetorno('nao');
+      if (typeof lembrete === 'string') alert(`Atendimento agendado. ${lembrete}`);
       setShowAddModal(false);
       setSelectedClient(null);
       setClientSearchTerm('');
@@ -530,6 +553,7 @@ export default function Agenda() {
     setItens([]);
     if (hora) setAppointmentTime(hora);
     setRepLembrete('nao');
+    setRetorno('nao');
     setParaGrupo(false);
     setGrupoLembrete('');
     if (dateStr) setAppointmentDate(dateStr);
@@ -612,7 +636,9 @@ export default function Agenda() {
       if (choque && !window.confirm(`Horário bloqueado em "${choque.it.servicoNome}" (${nomeProf(choque.it.profissionalId)}, ${choque.it.hora}): ${choque.c?.block_reason ?? 'bloqueio'}. Agendar mesmo assim?`)) return;
       const juntos = itensSobrepostos(eventosAgenda, lista);
       if (juntos.length && !window.confirm(`${juntos.map((it) => `${nomeProf(it.profissionalId)} às ${it.hora}`).join(', ')}: já há atendimento nesse horário. Agendar mesmo assim?`)) return;
-      return agendarItensMutation.mutate({ cliente: selectedClient.id, confirmado: novoConfirmado, lista });
+      const retornoMeses = mesesDoRetorno(retorno, retornoOutro);
+      if (typeof retornoMeses === 'string') return alert(retornoMeses);
+      return agendarItensMutation.mutate({ cliente: selectedClient.id, confirmado: novoConfirmado, lista, retornoMeses });
     }
     const professional_id = agendaOutras ? novoProf : perfil?.id ?? '';
     addAppointmentMutation.mutate({ 
@@ -1467,6 +1493,34 @@ export default function Agenda() {
                       </div>
                     </>
                   )}
+                </div>
+              )}
+
+              {appointmentType === 'appointment' && (
+                <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100 space-y-2">
+                  <label htmlFor="retorno-atendimento" className="text-xs font-bold text-indigo-800 flex items-center gap-1"><BellRing size={12}/> Lembrete de retorno</label>
+                  <div className="flex gap-2">
+                    <select id="retorno-atendimento" value={retorno} onChange={(e) => setRetorno(e.target.value as RetornoAtendimento)} className="flex-1 border border-indigo-200 p-2 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500">
+                      <option value="nao">Não criar lembrete</option>
+                      <option value="1">Daqui a 1 mês</option>
+                      <option value="2">Daqui a 2 meses</option>
+                      <option value="outro">Outro prazo</option>
+                    </select>
+                    {retorno === 'outro' && (
+                      <label className="flex items-center gap-1 text-xs font-bold text-indigo-800">
+                        <input type="text" inputMode="numeric" aria-label="Meses até o retorno" value={retornoOutro} onChange={(e) => setRetornoOutro(e.target.value.replace(/\D/g, '').slice(0, 2))} className="w-14 border border-indigo-200 p-2 rounded-lg text-sm text-center bg-white outline-none focus:ring-2 focus:ring-indigo-500" />
+                        meses
+                      </label>
+                    )}
+                  </div>
+                  {(() => {
+                    const m = mesesDoRetorno(retorno, retornoOutro);
+                    const base = itens[0] ?? { data: appointmentDate, hora: appointmentTime };
+                    if (typeof m === 'string') return <p className="text-[11px] font-bold text-red-600">{m}</p>;
+                    return m > 0 && /^\d{4}-\d{2}-\d{2}$/.test(base.data)
+                      ? <p className="text-[11px] text-indigo-700">Lembrete em {isoParaBR(dataDoRetorno(base.data, m))} às {base.hora}, aparece em Lembretes na agenda.</p>
+                      : null;
+                  })()}
                 </div>
               )}
 

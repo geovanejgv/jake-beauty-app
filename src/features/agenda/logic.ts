@@ -247,3 +247,19 @@ export function compromissosFuturos(eventos: CompromissoCliente[], clienteId: st
   const chave = (c: CompromissoFuturo) => (typeof c.data === 'string' ? `${c.data}T00:00` : c.data.toISOString());
   return lista.sort((a, b) => chave(a).localeCompare(chave(b)));
 }
+
+/** Lembrete de retorno criado junto com o atendimento: em 1 mês, 2 meses ou outro número de meses. */
+export type RetornoAtendimento = 'nao' | '1' | '2' | 'outro';
+export const RETORNO_MAX_MESES = 24;
+
+/** Meses até o retorno (0 = sem lembrete) ou mensagem quando o número é inválido. */
+export function mesesDoRetorno(op: RetornoAtendimento, outro: string | number = ''): number | string {
+  if (op === 'nao') return 0;
+  if (op !== 'outro') return Number(op);
+  const n = Number(outro);
+  if (!Number.isInteger(n) || n < 1 || n > RETORNO_MAX_MESES) return `Retorno entre 1 e ${RETORNO_MAX_MESES} meses.`;
+  return n;
+}
+
+/** Data (AAAA-MM-DD) do retorno: mesmo dia, N meses depois (último dia se o mês for menor). */
+export const dataDoRetorno = (data: string, meses: number): string => dataDaVez(data, 'mensal', meses);
