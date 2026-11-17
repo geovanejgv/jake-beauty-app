@@ -1,5 +1,5 @@
 // Lembrete do agendamento por WhatsApp: mensagem no modelo do salão e quem ainda falta avisar.
-import { dataBR, dataLocal, horaBR } from '../../lib/formatos';
+import { brl, dataBR, dataLocal, FUSO, horaBR } from '../../lib/formatos';
 import { linkWhatsapp } from '../leads/logic';
 
 export type AgendamentoLembrete = {
@@ -75,4 +75,45 @@ export function situacaoRetorno(a: RetornoLembrete): SituacaoLembrete {
   if (!a.clients?.contato_visivel) return 'contato_restrito';
   if (!telefoneValido(a.clients.phone)) return 'sem_telefone';
   return a.return_reminder_sent_at ? 'enviado' : 'pronto';
+}
+
+/** Um serviço do agendamento na mensagem de confirmação. */
+export type ItemConfirmacao = {
+  inicio: string | Date;
+  servico: string;
+  profissional?: string | null;
+  valor?: number | null;
+  pacote?: boolean;
+};
+
+const diaDaSemana = (d: string | Date) =>
+  new Intl.DateTimeFormat('pt-BR', { timeZone: FUSO, weekday: 'long' }).format(typeof d === 'string' ? new Date(d) : d);
+
+/**
+ * Confirmação do agendamento por WhatsApp com os dados do dia: data, dia da semana, horário,
+ * serviço(s), profissional e valor (sessão de pacote aparece como "sessão do pacote").
+ */
+export function mensagemConfirmacao(nome: string, itens: ItemConfirmacao[], estabelecimento?: string | null, mostrarValor = true): string {
+  const lista = [...itens].sort((a, b) => new Date(a.inicio).getTime() - new Date(b.inicio).getTime());
+  if (!lista.length) return '';
+  const primeiro = lista[0].inicio;
+  const linha = (it: ItemConfirmacao) => {
+    const partes = [`*${horaBR(it.inicio)}* ${it.servico.trim() || 'Procedimento'}`];
+    if (it.profissional) partes.push(`com ${it.profissional}`);
+    if (it.pacote) partes.push('(sessão do pacote)');
+    else if (mostrarValor && it.valor != null) partes.push(`(${brl(it.valor)})`);
+    return `- ${partes.join(' ')}`;
+  };
+  const total = lista.reduce((t, it) => t + (it.pacote ? 0 : Number(it.valor ?? 0)), 0);
+  return [
+    `Olá, ${primeiroNome(nome)}! Tudo bem?`,
+    '',
+    `Aqui é ${estabelecimento?.trim() ? `do *${estabelecimento.trim()}*` : 'do salão'}. Passando para confirmar o seu agendamento:`,
+    '',
+    `*Data:* ${dataBR(primeiro)} (${diaDaSemana(primeiro)})`,
+    ...lista.map(linha),
+    ...(mostrarValor && lista.length > 1 && total > 0 ? [`*Total:* ${brl(total)}`] : []),
+    '',
+    'Posso confirmar a sua presença? Responda *SIM* para confirmar ou me avise se precisar remarcar.',
+  ].join('\n');
 }
