@@ -16,8 +16,9 @@ import { FormServicoExtra } from '../features/agenda/FormServicoExtra';
 import { atendimentosDoCheckout } from '../features/agenda/checkout';
 import { ofertasDoProfissional, type ServicoExtra } from '../features/agenda/servicoExtra';
 import { LembretesDoDia, useEnviarLembrete } from '../features/agenda/LembreteAgendamento';
-import { diaSeguinte } from '../features/agenda/lembrete';
-import { brl, dataLocal, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
+import { diaSeguinte, mensagemConfirmacao, telefoneValido } from '../features/agenda/lembrete';
+import { linkWhatsapp } from '../features/leads/logic';
+import { brl, dataHoraBR, dataLocal, isoParaBR, lerValor, valorParaCampo } from '../lib/formatos';
 import { listarSaldos, pacotesKeys } from '../features/pacotes/api';
 import { itemParaAbater } from '../features/pacotes/logic';
 import { agendarLembreteGrupo, clientesKeys, listarGrupos, listarMembros, listarOrigens } from '../features/clientes/api';
@@ -737,17 +738,21 @@ export default function Agenda() {
     navigate('/pdv', { state: { appointment: apt, relacionados: doDia } });
   };
 
+  // Confirmação por WhatsApp com os dados do agendamento: todos os serviços da cliente no dia.
   const handleSendWhatsApp = (apt: any) => {
     if (!apt.clients?.contato_visivel) return alert('O contato da cliente fica com a administração do salão.');
-    const phone = apt.clients?.phone;
-    const cName = apt.clients?.name.split(' ')[0] || 'Cliente'; 
-    if (!phone) return alert(`O cadastro de ${cName} está sem número de WhatsApp.`);
-    let cleanPhone = phone.replace(/\D/g, ''); if (cleanPhone.length === 11 || cleanPhone.length === 10) cleanPhone = `55${cleanPhone}`;
-    const sName = Array.isArray(apt.services) ? apt.services[0]?.name : apt.services?.name || 'seu procedimento';
-    const aptDate = new Date(apt.start_time);
-    const message = `Olá, ${cName}! Tudo bem? 🌸\n\nPassando aqui para confirmar o seu horário, dia *${aptDate.toLocaleDateString('pt-BR')}* às *${aptDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}* para realizar o serviço de *${sName}*.\n\nPodemos confirmar sua presença? Te aguardo! 🥰`;
-    markWhatsAppSentMutation.mutate({id: apt.id, type: 'appointment'});
-    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+    const nome = apt.clients?.name ?? 'Cliente';
+    if (!telefoneValido(apt.clients?.phone)) return alert(`O cadastro de ${nome.split(' ')[0]} está sem número de WhatsApp válido.`);
+    const doDia = atendimentosDoCheckout(apt, (appointments as any[]).map(normalizar));
+    const texto = mensagemConfirmacao(nome, doDia.map((a: any) => ({
+      inicio: a.start_time,
+      servico: a.services?.name ?? 'Procedimento',
+      profissional: a.professional_id ? nomeProf(a.professional_id) : null,
+      valor: a.services?.price ?? null,
+      pacote: !!a.pacote_item_id,
+    })), perfil?.estabelecimento?.nome);
+    markWhatsAppSentMutation.mutate({ id: apt.id, type: 'appointment' });
+    window.open(linkWhatsapp(apt.clients.phone, texto), '_blank', 'noopener');
   };
 
   const enviarLembrete = useEnviarLembrete((texto) => alert(texto));
@@ -1623,6 +1628,13 @@ export default function Agenda() {
 
             <div className="pt-4 mt-4 border-t border-slate-100 flex flex-col gap-2">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center mb-1">Ações Rápidas</p>
+              {(editingAppointment.status === 'scheduled' || editingAppointment.status === 'confirmed') && editingAppointment.clients?.contato_visivel && (
+                <button type="button" onClick={() => handleSendWhatsApp(editingAppointment)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg font-bold text-sm transition-colors shadow-sm flex items-center justify-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+                  Enviar confirmação no WhatsApp
+                  {editingAppointment.whatsapp_sent_at && <span className="text-[10px] font-semibold bg-white/20 rounded px-1.5 py-0.5">enviada {dataHoraBR(editingAppointment.whatsapp_sent_at)}</span>}
+                </button>
+              )}
               {(editingAppointment.status === 'scheduled' || editingAppointment.status === 'confirmed') && (
                 <div className="flex gap-2">
                   {editingAppointment.status === 'scheduled' && <button type="button" onClick={() => updateStatusMutation.mutate({id: editingAppointment.id, status: 'confirmed'})} className="flex-1 bg-emerald-50 text-emerald-700 py-2 rounded-lg font-bold text-xs hover:bg-emerald-100 transition-colors shadow-sm">Confirmar</button>}

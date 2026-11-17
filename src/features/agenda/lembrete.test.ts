@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agendamentosParaLembrar, diaSeguinte, linkLembrete, mensagemLembrete, retornosDoDia, situacaoLembrete, situacaoRetorno, telefoneValido, type RetornoLembrete } from './lembrete';
+import { agendamentosParaLembrar, diaSeguinte, linkLembrete, mensagemConfirmacao, mensagemLembrete, retornosDoDia, situacaoLembrete, situacaoRetorno, telefoneValido, type RetornoLembrete } from './lembrete';
 
 const ag = (p: Partial<RetornoLembrete> = {}): RetornoLembrete => ({
   id: 'a1',
@@ -96,5 +96,31 @@ describe('retornosDoDia', () => {
     expect(situacaoRetorno(ag())).toBe('pronto');
     expect(situacaoRetorno(ag({ return_reminder_sent_at: '2026-11-05T13:00:00Z' }))).toBe('enviado');
     expect(situacaoRetorno(ag({ clients: { name: 'Ana', phone: null, contato_visivel: true } }))).toBe('sem_telefone');
+  });
+});
+
+describe('mensagemConfirmacao', () => {
+  it('leva data, dia da semana, horário, serviço, profissional e valor', () => {
+    const m = mensagemConfirmacao('Ana Paula', [{ inicio: '2026-11-16T12:00:00Z', servico: 'Depilação a laser - rosto', profissional: 'Jakeline', valor: 99.9 }], 'Studio Labeli');
+    expect(m).toContain('Olá, Ana!');
+    expect(m).toContain('do *Studio Labeli*');
+    expect(m).toContain('*Data:* 16/11/2026 (segunda-feira)');
+    expect(m).toMatch(/\*09:00\* Depilação a laser - rosto com Jakeline \(R\$\s99,90\)/);
+    expect(m).not.toContain('Total');
+  });
+  it('vários serviços em ordem, pacote sem valor e total só do que é cobrado', () => {
+    const m = mensagemConfirmacao('Bia', [
+      { inicio: '2026-11-16T14:00:00Z', servico: 'Sobrancelha', valor: 40 },
+      { inicio: '2026-11-16T13:00:00Z', servico: 'Limpeza de pele', valor: 150, pacote: true },
+      { inicio: '2026-11-16T15:00:00Z', servico: 'Buço', valor: 20 },
+    ]);
+    const linhas = m.split('\n');
+    expect(linhas.findIndex((l) => l.includes('Limpeza'))).toBeLessThan(linhas.findIndex((l) => l.includes('Sobrancelha')));
+    expect(m).toContain('Limpeza de pele (sessão do pacote)');
+    expect(m).toMatch(/\*Total:\* R\$\s60,00/);
+    expect(m).toContain('do salão');
+  });
+  it('sem valor quando não deve mostrar', () => {
+    expect(mensagemConfirmacao('Ana', [{ inicio: '2026-11-16T12:00:00Z', servico: 'Escova', valor: 50 }], null, false)).not.toContain('R$');
   });
 });
